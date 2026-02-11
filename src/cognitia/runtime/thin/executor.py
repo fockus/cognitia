@@ -1,0 +1,170 @@
+"""ToolExecutor — исполнитель инструментов для ThinRuntime.
+
+Local tools: вызываются напрямую (pure python functions).
+MCP tools: HTTP JSON-RPC через httpx (если доступен).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Callable
+from typing import Any
+
+from cognitia.runtime.thin.mcp_client import McpClient
+
+
+class ToolExecutor:
+    """Исполнитель инструментов для ThinRuntime.
+
+    Args:
+        local_tools: Маппинг tool_name → callable (sync или async).
+        timeout_seconds: Таймаут на одно выполнение.
+    """
+
+    def __init__(
+        self,
+        local_tools: dict[str, Callable[..., Any]] | None = None,
+        mcp_servers: dict[str, Any] | None = None,
+        mcp_client: McpClient | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        self._local_tools = local_tools or {}
+        self._mcp_servers = mcp_servers or {}
+        self._timeout = timeout_seconds
+        self._mcp_client = mcp_client or McpClient(timeout_seconds=timeout_seconds)
+
+    async def execute(self, tool_name: str, args: dict[str, Any]) -> str:
+        """Выполнить инструмент по имени.
+
+        Args:
+            tool_name: Полное имя (mcp__server__tool или local_name).
+            args: Аргументы вызова.
+
+        Returns:
+            JSON-строка с результатом.
+
+        Raises:
+            asyncio.TimeoutError: При превышении timeout.
+            Exception: При ошибке выполнения.
+        """
+        # Local tool
+        if tool_name in self._local_tools:
+            return await self._execute_local(tool_name, args)
+
+        # MCP tool (формат mcp__server__tool)
+        if tool_name.startswith("mcp__"):
+            return await self._execute_mcp(tool_name, args)
+
+        return json.dumps(
+            {"error": f"Инструмент '{tool_name}' не найден"},
+            ensure_ascii=False,
+        )
+
+    async def _execute_local(self, tool_name: str, args: dict[str, Any]) -> str:
+        """Выполнить local tool."""
+        func = self._local_tools[tool_name]
+
+        try:
+            result = await asyncio.wait_for(
+                self._call_func(func, args),
+                timeout=self._timeout,
+            )
+            if isinstance(result, str):
+                return result
+            return json.dumps(result, ensure_ascii=False, default=str)
+        except asyncio.TimeoutError:
+            return json.dumps(
+                {"error": f"Таймаут выполнения {tool_name} ({self._timeout}s)"},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            return json.dumps(
+                {"error": f"Ошибка {tool_name}: {e}"},
+                ensure_ascii=False,
+            )
+
+    @staticmethod
+    async def _call_func(func: Callable[..., Any], args: dict[str, Any]) -> Any:
+        """Вызвать функцию (sync или async)."""
+        if asyncio.iscoroutinefunction(func):
+            return await func(args)
+        result = await asyncio.to_thread(func, args)
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
+
+    async def _execute_mcp(self, tool_name: str, args: dict[str, Any]) -> str:
+        """Выполнить MCP tool через HTTP JSON-RPC."""
+        parsed = self._parse_mcp_tool_name(tool_name)
+        if parsed is None:
+            return json.dumps(
+                {"error": f"Некорректное имя MCP tool: '{tool_name}'"},
+                ensure_ascii=False,
+            )
+
+        server_id, remote_tool_name = parsed
+        server_url = self._resolve_server_url(server_id)
+        if not server_url:
+            return json.dumps(
+                {"error": f"MCP server '{server_id}' не найден или не имеет URL"},
+                ensure_ascii=False,
+            )
+
+        try:
+            data = await self._mcp_client.call_tool(
+                server_url=server_url,
+                tool_name=remote_tool_name,
+                arguments=args,
+            )
+            if isinstance(data, dict) and data.get("error"):
+                return json.dumps(
+                    {"error": f"MCP error: {data['error']}"},
+                    ensure_ascii=False,
+                    default=str,
+                )
+            if isinstance(data, str):
+                return data
+            return json.dumps(data or {}, ensure_ascii=False, default=str)
+        except Exception as e:
+            return json.dumps(
+                {"error": f"Ошибка MCP '{tool_name}': {e}"},
+                ensure_ascii=False,
+            )
+
+    @staticmethod
+    def _parse_mcp_tool_name(tool_name: str) -> tuple[str, str] | None:
+        """Разобрать mcp__server__tool → (server, tool)."""
+        parts = tool_name.split("__", 2)
+        if len(parts) != 3 or parts[0] != "mcp" or not parts[1] or not parts[2]:
+            return None
+        return parts[1], parts[2]
+
+    def _resolve_server_url(self, server_id: str) -> str | None:
+        """Получить URL MCP сервера по id."""
+        server = self._mcp_servers.get(server_id)
+        if server is None:
+            return None
+
+        if isinstance(server, str):
+            return server
+
+        # McpServerSpec или совместимый объект
+        url = getattr(server, "url", None)
+        if isinstance(url, str) and url:
+            return url
+        return None
+
+    def has_tool(self, tool_name: str) -> bool:
+        """Проверить доступность инструмента."""
+        if tool_name in self._local_tools:
+            return True
+        parsed = self._parse_mcp_tool_name(tool_name)
+        if parsed is None:
+            return False
+        return self._resolve_server_url(parsed[0]) is not None
+
+    @property
+    def local_tool_names(self) -> list[str]:
+        """Список имён зарегистрированных local tools."""
+        return list(self._local_tools.keys())

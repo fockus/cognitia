@@ -1,0 +1,66 @@
+# Реестр доступных LLM моделей.
+#
+# Формат:
+#   providers:
+#     <provider_name>:
+#       <full_model_id>:
+#         aliases: [short_alias, ...]   # Опционально
+#         description: "..."            # Опционально
+#
+#   default_model: <full_model_id>
+#
+# Добавление новой модели:
+#   1. Добавить запись в нужный provider
+#   2. Указать alias (опционально)
+#   3. resolve_model_name() автоматически подхватит
+
+default_model: "claude-sonnet-4-20250514"
+
+providers:
+  anthropic:
+    claude-sonnet-4-20250514:
+      aliases: [sonnet, sonnet-4, claude-sonnet]
+      description: "Быстрая и дешёвая модель для большинства задач"
+
+    claude-opus-4-20250514:
+      aliases: [opus, opus-4, claude-opus]
+      description: "Мощная модель для сложных задач"
+
+    claude-haiku-3-20250307:
+      aliases: [haiku, haiku-3, claude-haiku]
+      description: "Самая быстрая и дешёвая модель"
+
+  openai:
+    gpt-4o:
+      aliases: [4o, gpt4o]
+      description: "Флагманская модель OpenAI"
+
+    gpt-4o-mini:
+      aliases: [4o-mini, gpt4o-mini, mini]
+      description: "Быстрая и дешёвая OpenAI модель"
+
+    o3:
+      aliases: [o3-reasoning]
+      description: "Reasoning модель OpenAI"
+
+    o3-mini:
+      aliases: [o3m]
+      description: "Быстрая reasoning модель OpenAI"
+
+  google:
+    gemini-2.5-pro:
+      aliases: [gemini-pro, gemini]
+      description: "Флагманская модель Google"
+
+    gemini-2.5-flash:
+      aliases: [gemini-flash, flash]
+      description: "Быстрая модель Google"
+
+  deepseek:
+    deepseek-chat:
+      aliases: [deepseek, ds-chat]
+      description: "DeepSeek V3 chat модель"
+
+    deepseek-reasoner:
+      aliases: [deepseek-r1, ds-r1, r1]
+      description: "DeepSeek R1 reasoning модель"

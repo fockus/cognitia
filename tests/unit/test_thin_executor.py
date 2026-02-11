@@ -1,0 +1,160 @@
+"""Тесты для ToolExecutor ThinRuntime."""
+
+import json
+
+import httpx
+import pytest
+
+from cognitia.runtime.thin.executor import ToolExecutor
+
+
+class TestToolExecutorLocal:
+    """Выполнение local tools."""
+
+    @pytest.mark.asyncio
+    async def test_sync_local_tool(self) -> None:
+        """Sync local tool выполняется через asyncio.to_thread."""
+        def calc(args):
+            return {"result": args["a"] + args["b"]}
+
+        executor = ToolExecutor(local_tools={"calc": calc})
+        result = await executor.execute("calc", {"a": 2, "b": 3})
+        data = json.loads(result)
+        assert data["result"] == 5
+
+    @pytest.mark.asyncio
+    async def test_async_local_tool(self) -> None:
+        """Async local tool выполняется напрямую."""
+        async def acalc(args):
+            return {"result": args["x"] * 2}
+
+        executor = ToolExecutor(local_tools={"acalc": acalc})
+        result = await executor.execute("acalc", {"x": 10})
+        data = json.loads(result)
+        assert data["result"] == 20
+
+    @pytest.mark.asyncio
+    async def test_local_tool_error(self) -> None:
+        """Ошибка local tool → JSON с error."""
+        def bad_tool(args):
+            raise ValueError("bad input")
+
+        executor = ToolExecutor(local_tools={"bad": bad_tool})
+        result = await executor.execute("bad", {})
+        data = json.loads(result)
+        assert "error" in data
+        assert "bad input" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_local_tool_returns_string(self) -> None:
+        """Local tool возвращает строку — не переоборачиваем."""
+        def str_tool(args):
+            return "hello world"
+
+        executor = ToolExecutor(local_tools={"stool": str_tool})
+        result = await executor.execute("stool", {})
+        assert result == "hello world"
+
+
+class TestToolExecutorMcp:
+    """MCP tools через HTTP JSON-RPC."""
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """MCP tool успешно вызывается через configured server URL."""
+
+        class _Response:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"result": {"items": [1, 2, 3]}}
+
+        class _Client:
+            def __init__(self, *args, **kwargs) -> None:
+                _ = (args, kwargs)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                _ = (exc_type, exc, tb)
+                return None
+
+            async def post(self, *args, **kwargs):
+                _ = (args, kwargs)
+                return _Response()
+
+        monkeypatch.setattr("cognitia.runtime.thin.mcp_client.httpx.AsyncClient", _Client)
+
+        executor = ToolExecutor(mcp_servers={"iss": "https://example.test/mcp"})
+        result = await executor.execute("mcp__iss__get_bonds", {"q": "test"})
+        data = json.loads(result)
+        assert data["items"] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_unknown_server(self) -> None:
+        """MCP tool с неизвестным server id возвращает ошибку."""
+        executor = ToolExecutor(mcp_servers={"funds": "https://example.test/mcp"})
+        result = await executor.execute("mcp__iss__get_bonds", {"q": "test"})
+        data = json.loads(result)
+        assert "error" in data
+        assert "не найден" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Таймаут MCP вызова возвращает понятную ошибку."""
+
+        class _Client:
+            def __init__(self, *args, **kwargs) -> None:
+                _ = (args, kwargs)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                _ = (exc_type, exc, tb)
+                return None
+
+            async def post(self, *args, **kwargs):
+                _ = (args, kwargs)
+                raise httpx.TimeoutException("timeout")
+
+        monkeypatch.setattr("cognitia.runtime.thin.mcp_client.httpx.AsyncClient", _Client)
+
+        executor = ToolExecutor(mcp_servers={"iss": "https://example.test/mcp"}, timeout_seconds=0.01)
+        result = await executor.execute("mcp__iss__get_bonds", {"q": "test"})
+        data = json.loads(result)
+        assert "error" in data
+        assert "Таймаут" in data["error"]
+
+
+class TestToolExecutorUnknown:
+    """Неизвестный инструмент."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool(self) -> None:
+        executor = ToolExecutor()
+        result = await executor.execute("nonexistent", {})
+        data = json.loads(result)
+        assert "error" in data
+        assert "не найден" in data["error"]
+
+
+class TestToolExecutorProperties:
+    """Свойства и проверки."""
+
+    def test_has_tool_local(self) -> None:
+        executor = ToolExecutor(local_tools={"calc": lambda x: x})
+        assert executor.has_tool("calc") is True
+        assert executor.has_tool("unknown") is False
+
+    def test_has_tool_mcp(self) -> None:
+        executor = ToolExecutor(mcp_servers={"iss": "https://example.test/mcp"})
+        assert executor.has_tool("mcp__iss__bonds") is True
+        assert executor.has_tool("mcp__funds__bonds") is False
+        assert executor.has_tool("random") is False
+
+    def test_local_tool_names(self) -> None:
+        executor = ToolExecutor(local_tools={"a": lambda x: x, "b": lambda x: x})
+        assert sorted(executor.local_tool_names) == ["a", "b"]

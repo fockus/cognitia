@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cognitia"
+version = "0.2.0"
+description = "Переиспользуемая библиотека для построения AI-агентов на Claude Agent SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "claude-agent-sdk>=0.1.33",
+    "structlog>=24.0.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "asyncpg>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.14",
+]
+
+[project.optional-dependencies]
+thin = [
+    "anthropic>=0.40",
+    "httpx>=0.27",
+]
+deepagents = [
+    "langchain-core>=0.3",
+    "langchain-anthropic>=0.3",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.8",
+    "mypy>=1.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cognitia"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/cognitia/runtime/models.yaml" = "cognitia/runtime/models.yaml"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+# Ruff конфиг — в корневом pyproject.toml (единый для monorepo)

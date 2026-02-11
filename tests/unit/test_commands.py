@@ -1,0 +1,107 @@
+"""Тесты для CommandRegistry."""
+
+import pytest
+
+from cognitia.commands import CommandRegistry
+
+
+@pytest.fixture
+def registry() -> CommandRegistry:
+    reg = CommandRegistry()
+
+    async def hello(*args, **kwargs):
+        name = args[0] if args else "world"
+        return f"Hello, {name}!"
+
+    async def goodbye(**kwargs):
+        return "Goodbye!"
+
+    reg.add("hello", hello, aliases=["hi", "h"], description="Приветствие")
+    reg.add("goodbye", goodbye, aliases=["bye"], description="Прощание")
+    return reg
+
+
+class TestCommandRegistry:
+    """Тесты реестра команд."""
+
+    def test_resolve_by_name(self, registry: CommandRegistry) -> None:
+        """Находит команду по имени."""
+        cmd = registry.resolve("hello")
+        assert cmd is not None
+        assert cmd.name == "hello"
+
+    def test_resolve_by_alias(self, registry: CommandRegistry) -> None:
+        """Находит команду по алиасу."""
+        cmd = registry.resolve("hi")
+        assert cmd is not None
+        assert cmd.name == "hello"
+
+    def test_resolve_nonexistent(self, registry: CommandRegistry) -> None:
+        """Несуществующая команда возвращает None."""
+        assert registry.resolve("nonexistent") is None
+
+    @pytest.mark.asyncio
+    async def test_execute_with_args(self, registry: CommandRegistry) -> None:
+        """Выполнение команды с аргументами."""
+        result = await registry.execute("hello", args=["Freedom"])
+        assert result == "Hello, Freedom!"
+
+    @pytest.mark.asyncio
+    async def test_execute_by_alias(self, registry: CommandRegistry) -> None:
+        """Выполнение по алиасу."""
+        result = await registry.execute("bye")
+        assert result == "Goodbye!"
+
+    @pytest.mark.asyncio
+    async def test_execute_nonexistent(self, registry: CommandRegistry) -> None:
+        """Несуществующая команда → сообщение об ошибке."""
+        result = await registry.execute("nonexistent")
+        assert "Неизвестная" in result
+
+    def test_is_command(self, registry: CommandRegistry) -> None:
+        """Текст, начинающийся с /, является командой."""
+        assert registry.is_command("/hello")
+        assert not registry.is_command("hello")
+        assert not registry.is_command("привет")
+
+    def test_parse_command(self, registry: CommandRegistry) -> None:
+        """Парсинг команды на имя и аргументы."""
+        name, args = registry.parse_command("/topic.new my_goal")
+        assert name == "topic.new"
+        assert args == ["my_goal"]
+
+    def test_parse_command_with_underscore(self, registry: CommandRegistry) -> None:
+        """Парсинг underscore-формата команды в canonical dotted-name."""
+        name, args = registry.parse_command("/topic_new my_goal")
+        assert name == "topic.new"
+        assert args == ["my_goal"]
+
+    @pytest.mark.asyncio
+    async def test_execute_dotted_command_via_underscore_name(self) -> None:
+        """`/role_set`-подобные имена должны резолвиться в `role.set`."""
+        reg = CommandRegistry()
+
+        async def _handler(*args, **kwargs):
+            return "ok"
+
+        reg.add("role.set", _handler, aliases=["r"])
+        result = await reg.execute("role_set")
+        assert result == "ok"
+
+    def test_parse_command_no_args(self, registry: CommandRegistry) -> None:
+        """Парсинг команды без аргументов."""
+        name, args = registry.parse_command("/help")
+        assert name == "help"
+        assert args == []
+
+    def test_list_commands(self, registry: CommandRegistry) -> None:
+        """Список всех команд."""
+        commands = registry.list_commands()
+        assert len(commands) == 2
+
+    def test_help_text(self, registry: CommandRegistry) -> None:
+        """Генерация help текста."""
+        text = registry.help_text()
+        assert "/hello" in text
+        assert "/goodbye" in text
+        assert "Приветствие" in text
