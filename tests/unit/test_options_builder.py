@@ -15,16 +15,16 @@ class TestSpecToSdkConfig:
     """Конвертация McpServerSpec в SDK-совместимый dict."""
 
     def test_url_transport(self) -> None:
-        """URL transport → SSE dict (url/http endpoints → type=sse для SDK)."""
+        """URL transport → Streamable HTTP (type=http для SDK)."""
         spec = McpServerSpec(name="iss", transport="url", url="https://example.com/mcp")
         result = _spec_to_sdk_config(spec)
-        assert result == {"type": "sse", "url": "https://example.com/mcp"}
+        assert result == {"type": "http", "url": "https://example.com/mcp"}
 
     def test_http_transport(self) -> None:
-        """HTTP transport → аналогично url (SSE)."""
+        """HTTP transport → аналогично url (Streamable HTTP)."""
         spec = McpServerSpec(name="iss", transport="http", url="https://example.com/mcp")
         result = _spec_to_sdk_config(spec)
-        assert result == {"type": "sse", "url": "https://example.com/mcp"}
+        assert result == {"type": "http", "url": "https://example.com/mcp"}
 
     def test_sse_transport(self) -> None:
         """SSE transport → type: sse + url."""
@@ -70,7 +70,7 @@ class TestBuildUrlConfig:
 
     def test_build_url(self) -> None:
         spec = McpServerSpec(name="t", url="http://test")
-        assert _build_url_config(spec) == {"type": "sse", "url": "http://test"}
+        assert _build_url_config(spec) == {"type": "http", "url": "http://test"}
 
     def test_build_sse(self) -> None:
         spec = McpServerSpec(name="t", url="http://test")
@@ -149,3 +149,29 @@ class TestClaudeOptionsBuilder:
         builder = ClaudeOptionsBuilder(cwd="/tmp/test")
         opts = builder.build(role_id="coach", system_prompt="test")
         assert opts.cwd == "/tmp/test"
+
+    def test_default_setting_sources_empty(self) -> None:
+        """По умолчанию setting_sources=[] — не читаем CLAUDE.md и .claude/settings.json.
+
+        CLAUDE.md содержит developer-facing инструкции (архитектура, команды),
+        которые конфликтуют с ролью финансового коуча из system_prompt.
+        """
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(role_id="coach", system_prompt="test")
+        assert opts.setting_sources == []
+
+    def test_explicit_setting_sources_override(self) -> None:
+        """Явно переданные setting_sources имеют приоритет."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach",
+            system_prompt="test",
+            setting_sources=["project", "user"],
+        )
+        assert opts.setting_sources == ["project", "user"]
+
+    def test_override_model_has_priority(self) -> None:
+        """override_model имеет приоритет над ModelPolicy."""
+        builder = ClaudeOptionsBuilder(override_model="custom-model-v2")
+        opts = builder.build(role_id="coach", system_prompt="test")
+        assert opts.model == "custom-model-v2"

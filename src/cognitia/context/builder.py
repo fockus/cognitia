@@ -168,11 +168,21 @@ class DefaultContextBuilder:
             truncated.append("tool_hints")
 
         # P2.5: Последние сообщения диалога (rehydration)
+        # Фильтруем ошибочные сообщения (MCP errors, пустые) чтобы не загрязнять контекст.
         if last_messages and remaining > 0:
             msg_lines = []
             for msg in last_messages:
+                content = (msg.content or "").strip()
+                if not content:
+                    continue
+                # Пропускаем MCP error / runtime error сообщения
+                if _is_error_message(content):
+                    continue
                 role_label = "user" if msg.role == "user" else "assistant"
-                msg_lines.append(f"- [{role_label}]: {msg.content}")
+                # Обрезаем слишком длинные сообщения (макс 500 символов)
+                if len(content) > 500:
+                    content = content[:500] + "..."
+                msg_lines.append(f"- [{role_label}]: {content}")
             messages_pack = "\n## Последние сообщения диалога\n" + "\n".join(msg_lines)
             msg_tokens = estimate_tokens(messages_pack)
             if msg_tokens > budget.messages_max:
@@ -239,3 +249,31 @@ class DefaultContextBuilder:
                 "prompt_hash": p_hash,
             },
         )
+
+
+# ---------- Утилиты для фильтрации сообщений ----------
+
+# Маркеры ошибочных сообщений, которые не несут полезного контекста для модели.
+_ERROR_MARKERS = (
+    '{"error"',
+    "MCP error",
+    "Таймаут при вызове",
+    "HTTP ошибка MCP",
+    "Runtime не ответил вовремя",
+    "Не удалось получить ответ",
+    "SDK subprocess упал",
+    "Ошибка SDK",
+    "Client error",
+)
+
+
+def _is_error_message(content: str) -> bool:
+    """Проверить, является ли сообщение ошибкой / шумом, который не стоит класть в контекст."""
+    if not content:
+        return True
+    # Быстрая проверка по первым символам
+    if content.startswith('{"error"') or content.startswith("⚠️"):
+        return True
+    # Проверка по маркерам (в первых 200 символах для скорости)
+    prefix = content[:200]
+    return any(marker in prefix for marker in _ERROR_MARKERS)

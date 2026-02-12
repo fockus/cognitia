@@ -1,8 +1,23 @@
-"""Тесты для DeepAgentsRuntime — LangChain Deep Agents runtime."""
+"""Тесты для DeepAgentsRuntime — LangChain Deep Agents runtime.
+
+Покрытые кейсы:
+- Built-in tools filtering (frozenset, filter_builtin_tools)
+- Dependency check (_check_langchain_available)
+- run(): missing deps, happy path, empty response, exception, base_url, tool events
+- run(): built-in tools фильтруются внутри run()
+- run(): new_messages содержит assistant text
+- run(): multiple tool_call_finished → metrics.tool_calls_count
+- _build_lc_messages: user/assistant/system → LangChain messages
+- _build_llm: с и без base_url
+- _stream_langchain: event parsing (on_chat_model_stream, on_tool_start, on_tool_end)
+- _stream_langchain: tool correlation (run_id → correlation_id)
+- create_langchain_tool: с executor, без executor (noop), dict-based executor
+- cleanup: noop
+"""
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -14,9 +29,11 @@ from cognitia.runtime.deepagents import (
 )
 from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent, ToolSpec
 
+
 # ---------------------------------------------------------------------------
 # Built-in tools filtering
 # ---------------------------------------------------------------------------
+
 
 class TestBuiltinToolsFiltering:
     """DeepAgentsRuntime НЕ добавляет built-in tools."""
@@ -60,10 +77,17 @@ class TestBuiltinToolsFiltering:
         """filter_builtin_tools на пустом списке → пустой список."""
         assert DeepAgentsRuntime.filter_builtin_tools([]) == []
 
+    def test_all_builtins_removed(self) -> None:
+        """Каждый builtin из frozenset действительно фильтруется."""
+        tools = [ToolSpec(name=name, description="x", parameters={}) for name in _DEEPAGENTS_BUILTIN_TOOLS]
+        filtered = DeepAgentsRuntime.filter_builtin_tools(tools)
+        assert filtered == []
+
 
 # ---------------------------------------------------------------------------
 # Dependency check
 # ---------------------------------------------------------------------------
+
 
 class TestDependencyCheck:
     """Проверка наличия langchain deps."""
@@ -71,33 +95,40 @@ class TestDependencyCheck:
     def test_check_with_missing_deps(self) -> None:
         """Если langchain не установлен — возвращает RuntimeErrorData."""
         with patch.dict("sys.modules", {"langchain_core": None}):
-            # Нужно убрать из кеша, чтобы _check_langchain_available поймал ImportError
             error = _check_langchain_available()
-            # Зависит от наличия langchain в окружении — если установлен, будет None
-            # Поэтому тестируем только формат ответа
             if error is not None:
                 assert error.kind == "dependency_missing"
                 assert "langchain" in error.message.lower()
 
+    def test_check_with_both_missing(self) -> None:
+        """Оба модуля отсутствуют — ошибка."""
+        with patch.dict(
+            "sys.modules",
+            {"langchain_core": None, "langchain_anthropic": None},
+        ):
+            error = _check_langchain_available()
+            if error is not None:
+                assert error.kind == "dependency_missing"
+
 
 # ---------------------------------------------------------------------------
-# Runtime run() — missing deps
+# Runtime run() — основной pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestDeepAgentsRuntimeRun:
-    """DeepAgentsRuntime.run() — при отсутствии deps."""
+    """DeepAgentsRuntime.run() — полный pipeline."""
 
     @pytest.mark.asyncio
     async def test_run_without_deps_yields_error(self) -> None:
         """Если deps отсутствуют → error event."""
-        runtime = DeepAgentsRuntime()
+        from cognitia.runtime.types import RuntimeErrorData
 
-        # Мокаем отсутствие langchain
+        runtime = DeepAgentsRuntime()
+        fake_error = RuntimeErrorData(kind="dependency_missing", message="not installed")
         with patch(
             "cognitia.runtime.deepagents._check_langchain_available",
-            return_value=__import__("cognitia.runtime.types", fromlist=["RuntimeErrorData"]).RuntimeErrorData(
-                kind="dependency_missing", message="not installed",
-            ),
+            return_value=fake_error,
         ):
             events = []
             async for ev in runtime.run(
@@ -113,14 +144,16 @@ class TestDeepAgentsRuntimeRun:
 
     @pytest.mark.asyncio
     async def test_run_emits_assistant_delta_before_final(self) -> None:
-        """Stage 0+7: run() стримит assistant_delta перед final."""
+        """run() стримит assistant_delta перед final."""
         runtime = DeepAgentsRuntime()
 
         async def _fake_stream(**kwargs):
             yield RuntimeEvent.assistant_delta("Привет, мир!")
 
-        with patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None), \
-             patch.object(runtime, "_stream_langchain", side_effect=_fake_stream):
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_stream),
+        ):
             events = []
             async for ev in runtime.run(
                 messages=[Message(role="user", content="hi")],
@@ -142,10 +175,12 @@ class TestDeepAgentsRuntimeRun:
 
         async def _fake_stream(**kwargs):
             return
-            yield  # сделать async generator
+            yield  # async generator
 
-        with patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None), \
-             patch.object(runtime, "_stream_langchain", side_effect=_fake_stream):
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_stream),
+        ):
             events = []
             async for ev in runtime.run(
                 messages=[Message(role="user", content="hi")],
@@ -156,18 +191,21 @@ class TestDeepAgentsRuntimeRun:
 
             assert len(events) == 1
             assert events[0].type == "final"
+            assert events[0].data["text"] == ""
 
     @pytest.mark.asyncio
     async def test_run_exception_yields_error(self) -> None:
-        """Ошибка в LangChain → error event."""
+        """Ошибка в LangChain → error event, без final."""
         runtime = DeepAgentsRuntime()
 
         async def _failing_stream(**kwargs):
             raise RuntimeError("LLM fail")
-            yield  # сделать async generator
+            yield  # async generator
 
-        with patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None), \
-             patch.object(runtime, "_stream_langchain", side_effect=_failing_stream):
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_failing_stream),
+        ):
             events = []
             async for ev in runtime.run(
                 messages=[Message(role="user", content="hi")],
@@ -182,15 +220,20 @@ class TestDeepAgentsRuntimeRun:
 
     @pytest.mark.asyncio
     async def test_run_passes_base_url(self) -> None:
-        """Stage 5: base_url из config пробрасывается в _stream_langchain."""
-        cfg = RuntimeConfig(runtime_name="deepagents", model="test", base_url="https://proxy.example.com")
+        """base_url из config пробрасывается в _stream_langchain."""
+        cfg = RuntimeConfig(
+            runtime_name="deepagents", model="test",
+            base_url="https://proxy.example.com",
+        )
         runtime = DeepAgentsRuntime(config=cfg)
 
         async def _fake_stream(**kwargs):
             yield RuntimeEvent.assistant_delta("ok")
 
-        with patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None), \
-             patch.object(runtime, "_stream_langchain", side_effect=_fake_stream) as mock_stream:
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_stream) as mock_stream,
+        ):
             events = []
             async for ev in runtime.run(
                 messages=[Message(role="user", content="hi")],
@@ -205,16 +248,18 @@ class TestDeepAgentsRuntimeRun:
 
     @pytest.mark.asyncio
     async def test_run_tool_events_in_stream(self) -> None:
-        """Stage 7: tool events (started/finished) пробрасываются в стрим."""
+        """Tool events (started/finished) пробрасываются + metrics."""
         runtime = DeepAgentsRuntime()
 
         async def _fake_stream_with_tools(**kwargs):
-            yield RuntimeEvent.tool_call_started(name="calc", args={"x": 1}, correlation_id="test-cid")
-            yield RuntimeEvent.tool_call_finished(name="calc", correlation_id="test-cid", result_summary="42")
+            yield RuntimeEvent.tool_call_started(name="calc", args={"x": 1}, correlation_id="cid-1")
+            yield RuntimeEvent.tool_call_finished(name="calc", correlation_id="cid-1", result_summary="42")
             yield RuntimeEvent.assistant_delta("Результат: 42")
 
-        with patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None), \
-             patch.object(runtime, "_stream_langchain", side_effect=_fake_stream_with_tools):
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_stream_with_tools),
+        ):
             events = []
             async for ev in runtime.run(
                 messages=[Message(role="user", content="hi")],
@@ -228,38 +273,497 @@ class TestDeepAgentsRuntimeRun:
             assert "tool_call_finished" in types
             assert "assistant_delta" in types
             assert types[-1] == "final"
-            # Metrics должны содержать tool_calls_count
             final = events[-1]
             assert final.data["metrics"]["tool_calls_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_run_filters_builtins_from_active_tools(self) -> None:
+        """run() фильтрует built-in tools перед передачей в _stream_langchain."""
+        runtime = DeepAgentsRuntime()
+
+        captured_tools: list[ToolSpec] = []
+
+        async def _capturing_stream(**kwargs):
+            captured_tools.extend(kwargs.get("tools", []))
+            yield RuntimeEvent.assistant_delta("ok")
+
+        tools = [
+            ToolSpec(name="Bash", description="shell", parameters={}),
+            ToolSpec(name="mcp__iss__search", description="s", parameters={}),
+            ToolSpec(name="Read", description="r", parameters={}),
+        ]
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_capturing_stream),
+        ):
+            async for _ in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=tools,
+            ):
+                pass
+
+        names = [t.name for t in captured_tools]
+        assert "Bash" not in names
+        assert "Read" not in names
+        assert "mcp__iss__search" in names
+
+    @pytest.mark.asyncio
+    async def test_run_new_messages_in_final(self) -> None:
+        """final event содержит new_messages с assistant text."""
+        runtime = DeepAgentsRuntime()
+
+        async def _fake_stream(**kwargs):
+            yield RuntimeEvent.assistant_delta("Ответ модели")
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_stream),
+        ):
+            events = []
+            async for ev in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[],
+            ):
+                events.append(ev)
+
+            final = events[-1]
+            new_msgs = final.data["new_messages"]
+            assert len(new_msgs) == 1
+            # Message может быть dict или объект с полями role/content
+            msg = new_msgs[0]
+            if isinstance(msg, dict):
+                assert msg["role"] == "assistant"
+                assert msg["content"] == "Ответ модели"
+            else:
+                assert msg.role == "assistant"
+                assert msg.content == "Ответ модели"
+
+    @pytest.mark.asyncio
+    async def test_run_multiple_tool_calls_counted(self) -> None:
+        """Несколько tool_call_finished → metrics.tool_calls_count суммируется."""
+        runtime = DeepAgentsRuntime()
+
+        async def _multi_tools(**kwargs):
+            yield RuntimeEvent.tool_call_started(name="a", args={})
+            yield RuntimeEvent.tool_call_finished(name="a", correlation_id="1", result_summary="r1")
+            yield RuntimeEvent.tool_call_started(name="b", args={})
+            yield RuntimeEvent.tool_call_finished(name="b", correlation_id="2", result_summary="r2")
+            yield RuntimeEvent.tool_call_started(name="c", args={})
+            yield RuntimeEvent.tool_call_finished(name="c", correlation_id="3", result_summary="r3")
+            yield RuntimeEvent.assistant_delta("done")
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_multi_tools),
+        ):
+            events = []
+            async for ev in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[],
+            ):
+                events.append(ev)
+
+            final = events[-1]
+            assert final.data["metrics"]["tool_calls_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_run_uses_override_config(self) -> None:
+        """per-call config имеет приоритет над default."""
+        default_cfg = RuntimeConfig(runtime_name="deepagents", model="default-model")
+        override_cfg = RuntimeConfig(runtime_name="deepagents", model="override-model")
+        runtime = DeepAgentsRuntime(config=default_cfg)
+
+        async def _fake_stream(**kwargs):
+            yield RuntimeEvent.assistant_delta("ok")
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_stream) as mock_stream,
+        ):
+            async for _ in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[],
+                config=override_cfg,
+            ):
+                pass
+
+            call_kwargs = mock_stream.call_args.kwargs
+            assert call_kwargs["model"] == "override-model"
+
+
+# ---------------------------------------------------------------------------
+# _build_lc_messages
+# ---------------------------------------------------------------------------
+
+
+class TestBuildLcMessages:
+    """_build_lc_messages — конвертация cognitia Message → LangChain."""
+
+    def _make_runtime(self) -> DeepAgentsRuntime:
+        return DeepAgentsRuntime()
+
+    def test_system_prompt_first(self) -> None:
+        """System prompt идёт первым как SystemMessage."""
+        runtime = self._make_runtime()
+        try:
+            from langchain_core.messages import SystemMessage
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+        messages = [Message(role="user", content="hi")]
+        lc = runtime._build_lc_messages(messages, "You are a test bot")
+
+        assert len(lc) == 2
+        assert isinstance(lc[0], SystemMessage)
+        assert lc[0].content == "You are a test bot"
+
+    def test_user_message_converted(self) -> None:
+        """user → HumanMessage."""
+        runtime = self._make_runtime()
+        try:
+            from langchain_core.messages import HumanMessage
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+        lc = runtime._build_lc_messages(
+            [Message(role="user", content="Привет")], "sys",
+        )
+        assert isinstance(lc[1], HumanMessage)
+        assert lc[1].content == "Привет"
+
+    def test_assistant_message_converted(self) -> None:
+        """assistant → AIMessage."""
+        runtime = self._make_runtime()
+        try:
+            from langchain_core.messages import AIMessage
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+        lc = runtime._build_lc_messages(
+            [Message(role="assistant", content="Ответ")], "sys",
+        )
+        assert isinstance(lc[1], AIMessage)
+        assert lc[1].content == "Ответ"
+
+    def test_system_message_in_history(self) -> None:
+        """system в history → SystemMessage (в дополнение к system_prompt)."""
+        runtime = self._make_runtime()
+        try:
+            from langchain_core.messages import SystemMessage
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+        lc = runtime._build_lc_messages(
+            [Message(role="system", content="extra context")], "main prompt",
+        )
+        system_msgs = [m for m in lc if isinstance(m, SystemMessage)]
+        assert len(system_msgs) == 2
+
+    def test_mixed_conversation(self) -> None:
+        """Микс ролей → правильный порядок."""
+        runtime = self._make_runtime()
+        try:
+            from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+        messages = [
+            Message(role="user", content="q1"),
+            Message(role="assistant", content="a1"),
+            Message(role="user", content="q2"),
+        ]
+        lc = runtime._build_lc_messages(messages, "sys")
+
+        assert len(lc) == 4  # system + 3 messages
+        assert isinstance(lc[0], SystemMessage)
+        assert isinstance(lc[1], HumanMessage)
+        assert isinstance(lc[2], AIMessage)
+        assert isinstance(lc[3], HumanMessage)
+
+    def test_empty_history(self) -> None:
+        """Пустая history → только system prompt."""
+        runtime = self._make_runtime()
+        try:
+            from langchain_core.messages import SystemMessage
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+        lc = runtime._build_lc_messages([], "sys")
+        assert len(lc) == 1
+        assert isinstance(lc[0], SystemMessage)
+
+
+# ---------------------------------------------------------------------------
+# _build_llm
+# ---------------------------------------------------------------------------
+
+
+class TestBuildLlm:
+    """_build_llm — создание ChatAnthropic."""
+
+    def test_build_llm_basic(self) -> None:
+        """Без base_url — ChatAnthropic(model=...)."""
+        runtime = DeepAgentsRuntime()
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError:
+            pytest.skip("langchain_anthropic не установлен")
+
+        llm = runtime._build_llm("claude-sonnet-4-20250514")
+        assert isinstance(llm, ChatAnthropic)
+
+    def test_build_llm_with_base_url(self) -> None:
+        """С base_url — ChatAnthropic(model=..., base_url=...)."""
+        runtime = DeepAgentsRuntime()
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError:
+            pytest.skip("langchain_anthropic не установлен")
+
+        llm = runtime._build_llm("test-model", base_url="https://proxy.test")
+        assert isinstance(llm, ChatAnthropic)
+
+
+# ---------------------------------------------------------------------------
+# _stream_langchain — event parsing
+# ---------------------------------------------------------------------------
+
+
+class TestStreamLangchain:
+    """_stream_langchain — парсинг LangChain astream_events → RuntimeEvent."""
+
+    @pytest.mark.asyncio
+    async def test_on_chat_model_stream_yields_delta(self) -> None:
+        """on_chat_model_stream с текстовым chunk → assistant_delta."""
+        runtime = DeepAgentsRuntime()
+
+        mock_chunk = MagicMock()
+        mock_chunk.content = "Hello world"
+
+        mock_runnable = AsyncMock()
+
+        async def fake_astream_events(*args, **kwargs):
+            yield {
+                "event": "on_chat_model_stream",
+                "data": {"chunk": mock_chunk},
+            }
+
+        mock_runnable.astream_events = fake_astream_events
+
+        with (
+            patch.object(runtime, "_build_lc_messages", return_value=[]),
+            patch.object(runtime, "_build_llm", return_value=mock_runnable),
+        ):
+            events = []
+            async for ev in runtime._stream_langchain(
+                messages=[], system_prompt="sys", tools=[], model="test",
+            ):
+                events.append(ev)
+
+        assert len(events) == 1
+        assert events[0].type == "assistant_delta"
+        assert events[0].data["text"] == "Hello world"
+
+    @pytest.mark.asyncio
+    async def test_on_tool_start_and_end_events(self) -> None:
+        """on_tool_start → tool_call_started, on_tool_end → tool_call_finished."""
+        runtime = DeepAgentsRuntime()
+
+        mock_runnable = AsyncMock()
+
+        async def fake_astream_events(*args, **kwargs):
+            yield {
+                "event": "on_tool_start",
+                "name": "calc",
+                "data": {"input": {"x": 42}},
+                "run_id": "run-123",
+            }
+            yield {
+                "event": "on_tool_end",
+                "name": "calc",
+                "data": {"output": "result: 42"},
+                "run_id": "run-123",
+            }
+
+        mock_runnable.astream_events = fake_astream_events
+
+        with (
+            patch.object(runtime, "_build_lc_messages", return_value=[]),
+            patch.object(runtime, "_build_llm", return_value=mock_runnable),
+        ):
+            events = []
+            async for ev in runtime._stream_langchain(
+                messages=[], system_prompt="sys", tools=[], model="test",
+            ):
+                events.append(ev)
+
+        assert len(events) == 2
+        assert events[0].type == "tool_call_started"
+        assert events[0].data["name"] == "calc"
+        assert events[0].data["args"] == {"x": 42}
+        assert events[1].type == "tool_call_finished"
+        assert events[1].data["name"] == "calc"
+        assert "result: 42" in events[1].data["result_summary"]
+
+    @pytest.mark.asyncio
+    async def test_tool_correlation_id_linked(self) -> None:
+        """correlation_id из started пробрасывается в finished через run_id."""
+        runtime = DeepAgentsRuntime()
+        mock_runnable = AsyncMock()
+
+        async def fake_astream_events(*args, **kwargs):
+            yield {"event": "on_tool_start", "name": "t", "data": {"input": {}}, "run_id": "r1"}
+            yield {"event": "on_tool_end", "name": "t", "data": {"output": "ok"}, "run_id": "r1"}
+
+        mock_runnable.astream_events = fake_astream_events
+
+        with (
+            patch.object(runtime, "_build_lc_messages", return_value=[]),
+            patch.object(runtime, "_build_llm", return_value=mock_runnable),
+        ):
+            events = []
+            async for ev in runtime._stream_langchain(
+                messages=[], system_prompt="sys", tools=[], model="test",
+            ):
+                events.append(ev)
+
+        started_cid = events[0].data["correlation_id"]
+        finished_cid = events[1].data["correlation_id"]
+        assert started_cid == finished_cid
+        assert started_cid != ""
+
+    @pytest.mark.asyncio
+    async def test_empty_chunk_content_ignored(self) -> None:
+        """on_chat_model_stream с пустым content → ничего не yield'ит."""
+        runtime = DeepAgentsRuntime()
+
+        mock_chunk = MagicMock()
+        mock_chunk.content = ""  # пустой
+
+        mock_runnable = AsyncMock()
+
+        async def fake_astream_events(*args, **kwargs):
+            yield {"event": "on_chat_model_stream", "data": {"chunk": mock_chunk}}
+
+        mock_runnable.astream_events = fake_astream_events
+
+        with (
+            patch.object(runtime, "_build_lc_messages", return_value=[]),
+            patch.object(runtime, "_build_llm", return_value=mock_runnable),
+        ):
+            events = []
+            async for ev in runtime._stream_langchain(
+                messages=[], system_prompt="sys", tools=[], model="test",
+            ):
+                events.append(ev)
+
+        assert events == []
+
+    @pytest.mark.asyncio
+    async def test_non_string_content_ignored(self) -> None:
+        """on_chat_model_stream с не-строковым content (list) → игнорируется."""
+        runtime = DeepAgentsRuntime()
+
+        mock_chunk = MagicMock()
+        mock_chunk.content = [{"type": "tool_use"}]  # не строка
+
+        mock_runnable = AsyncMock()
+
+        async def fake_astream_events(*args, **kwargs):
+            yield {"event": "on_chat_model_stream", "data": {"chunk": mock_chunk}}
+
+        mock_runnable.astream_events = fake_astream_events
+
+        with (
+            patch.object(runtime, "_build_lc_messages", return_value=[]),
+            patch.object(runtime, "_build_llm", return_value=mock_runnable),
+        ):
+            events = []
+            async for ev in runtime._stream_langchain(
+                messages=[], system_prompt="sys", tools=[], model="test",
+            ):
+                events.append(ev)
+
+        assert events == []
+
+    @pytest.mark.asyncio
+    async def test_tools_bound_when_provided(self) -> None:
+        """Если tools переданы — вызывается llm.bind_tools()."""
+        runtime = DeepAgentsRuntime()
+        mock_llm = MagicMock()
+        mock_bound = AsyncMock()
+
+        async def fake_astream_events(*args, **kwargs):
+            return
+            yield  # async generator
+
+        mock_bound.astream_events = fake_astream_events
+        mock_llm.bind_tools.return_value = mock_bound
+
+        spec = ToolSpec(name="test", description="d", parameters={})
+
+        with (
+            patch.object(runtime, "_build_lc_messages", return_value=[]),
+            patch.object(runtime, "_build_llm", return_value=mock_llm),
+            patch("cognitia.runtime.deepagents.create_langchain_tool", return_value=MagicMock()),
+        ):
+            async for _ in runtime._stream_langchain(
+                messages=[], system_prompt="sys", tools=[spec], model="test",
+            ):
+                pass
+
+        mock_llm.bind_tools.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_tools_no_bind(self) -> None:
+        """Без tools — llm используется напрямую (без bind_tools)."""
+        runtime = DeepAgentsRuntime()
+        mock_llm = MagicMock()
+
+        async def fake_astream_events(*args, **kwargs):
+            return
+            yield  # async generator
+
+        mock_llm.astream_events = fake_astream_events
+
+        with (
+            patch.object(runtime, "_build_lc_messages", return_value=[]),
+            patch.object(runtime, "_build_llm", return_value=mock_llm),
+        ):
+            async for _ in runtime._stream_langchain(
+                messages=[], system_prompt="sys", tools=[], model="test",
+            ):
+                pass
+
+        mock_llm.bind_tools.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
 # LangChain tool wrapper
 # ---------------------------------------------------------------------------
 
+
 class TestCreateLangchainTool:
     """create_langchain_tool — обёртка ToolSpec в LangChain."""
 
     def test_create_tool_requires_langchain(self) -> None:
         """create_langchain_tool требует langchain-core."""
-        spec = ToolSpec(
-            name="test_tool", description="test", parameters={},
-        )
+        spec = ToolSpec(name="test_tool", description="test", parameters={})
         try:
             tool = create_langchain_tool(spec)
-            # Если langchain установлен — проверяем что tool создан
             assert tool.name == "test_tool"
             assert tool.description == "test"
         except ImportError:
-            # langchain не установлен — ожидаемо
-            pass
+            pytest.skip("langchain_core не установлен")
 
     def test_create_tool_with_executor(self) -> None:
         """create_langchain_tool с кастомным executor."""
-        spec = ToolSpec(
-            name="calc", description="calculator", parameters={},
-            is_local=True,
-        )
+        spec = ToolSpec(name="calc", description="calculator", parameters={}, is_local=True)
 
         async def my_executor(**kwargs):
             return "42"
@@ -268,12 +772,84 @@ class TestCreateLangchainTool:
             tool = create_langchain_tool(spec, executor=my_executor)
             assert tool.name == "calc"
         except ImportError:
-            pass
+            pytest.skip("langchain_core не установлен")
+
+    def test_create_tool_without_executor(self) -> None:
+        """create_langchain_tool без executor — noop, не падает."""
+        spec = ToolSpec(name="noop", description="noop", parameters={})
+        try:
+            tool = create_langchain_tool(spec, executor=None)
+            assert tool.name == "noop"
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+    @pytest.mark.asyncio
+    async def test_noop_executor_returns_error_json(self) -> None:
+        """Tool без executor → coroutine возвращает JSON с ошибкой."""
+        spec = ToolSpec(name="noexec", description="d", parameters={})
+        try:
+            tool = create_langchain_tool(spec, executor=None)
+            result = await tool.ainvoke({})
+            assert "error" in result.lower() or "noexec" in result.lower()
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+    @pytest.mark.asyncio
+    async def test_executor_receives_kwargs(self) -> None:
+        """Executor получает kwargs из tool call."""
+        spec = ToolSpec(name="adder", description="add", parameters={})
+        received = {}
+
+        async def executor(**kwargs):
+            received.update(kwargs)
+            return "ok"
+
+        try:
+            tool = create_langchain_tool(spec, executor=executor)
+            await tool.ainvoke({"a": 1, "b": 2})
+            assert received == {"a": 1, "b": 2}
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+    @pytest.mark.asyncio
+    async def test_executor_dict_fallback(self) -> None:
+        """Executor с сигнатурой (dict) → backward compat."""
+        spec = ToolSpec(name="old_style", description="d", parameters={})
+        received = {}
+
+        def executor(args: dict):
+            received.update(args)
+            return "ok"
+
+        try:
+            tool = create_langchain_tool(spec, executor=executor)
+            await tool.ainvoke({"key": "value"})
+            assert received.get("key") == "value"
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+    @pytest.mark.asyncio
+    async def test_executor_returns_dict_serialized(self) -> None:
+        """Executor возвращает dict → сериализуется в JSON."""
+        import json
+        spec = ToolSpec(name="json_tool", description="d", parameters={})
+
+        async def executor(**kwargs):
+            return {"result": 42}
+
+        try:
+            tool = create_langchain_tool(spec, executor=executor)
+            result = await tool.ainvoke({})
+            parsed = json.loads(result)
+            assert parsed["result"] == 42
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
 
 
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
+
 
 class TestDeepAgentsCleanup:
     """Cleanup — stateless, нечего очищать."""
@@ -282,3 +858,11 @@ class TestDeepAgentsCleanup:
     async def test_cleanup_noop(self) -> None:
         runtime = DeepAgentsRuntime()
         await runtime.cleanup()  # не должно бросить
+
+    @pytest.mark.asyncio
+    async def test_cleanup_idempotent(self) -> None:
+        """Многократный cleanup — безопасен."""
+        runtime = DeepAgentsRuntime()
+        await runtime.cleanup()
+        await runtime.cleanup()
+        await runtime.cleanup()

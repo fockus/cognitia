@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
+import logging
+import sys
 from typing import Any
 
 import structlog
 
 
 def configure_logging(level: str = "info", fmt: str = "json") -> None:
-    """Настроить structlog с JSON-форматом в stdout."""
+    """Настроить structlog + стандартный logging в stdout.
+
+    Стандартный logging нужен т.к. многие модули (adapter, service, session_factory)
+    используют ``logging.getLogger(__name__)`` вместо structlog.
+    Без basicConfig их вывод молча теряется.
+    """
+    numeric_level = _level_to_int(level)
+
+    # --- Стандартный logging (для logging.getLogger) ---
+    logging.basicConfig(
+        level=numeric_level,
+        stream=sys.stdout,
+        format="%(levelname)s %(name)s: %(message)s",
+        force=True,  # перенастроить даже если уже был вызов basicConfig
+    )
+
+    # --- structlog (для AgentLogger) ---
     processors = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -24,7 +42,7 @@ def configure_logging(level: str = "info", fmt: str = "json") -> None:
 
     structlog.configure(
         processors=processors,  # type: ignore[arg-type]
-        wrapper_class=structlog.make_filtering_bound_logger(_level_to_int(level)),
+        wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,

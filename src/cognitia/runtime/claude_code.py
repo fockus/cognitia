@@ -12,6 +12,7 @@ Ownership: runtime НЕ владеет историей. SDK управляет 
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -23,6 +24,8 @@ from cognitia.runtime.types import (
     ToolSpec,
     TurnMetrics,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeCodeRuntime:
@@ -70,7 +73,10 @@ class ClaudeCodeRuntime:
         Извлекает последнее user message, делегирует в SDK,
         конвертирует StreamEvent → RuntimeEvent.
         """
+        logger.info("ClaudeCodeRuntime.run(): начало (adapter=%s)", type(self._adapter).__name__ if self._adapter else "None")
+
         if self._adapter is None:
+            logger.error("ClaudeCodeRuntime.run(): adapter is None")
             yield RuntimeEvent.error(
                 RuntimeErrorData(
                     kind="runtime_crash",
@@ -80,6 +86,7 @@ class ClaudeCodeRuntime:
             )
             return
 
+        logger.info("ClaudeCodeRuntime.run(): is_connected=%s", self._adapter.is_connected)
         if not self._adapter.is_connected:
             yield RuntimeEvent.error(
                 RuntimeErrorData(
@@ -93,6 +100,7 @@ class ClaudeCodeRuntime:
         # Извлекаем последнее user message
         user_text = self._extract_last_user_text(messages)
         if not user_text:
+            logger.error("ClaudeCodeRuntime.run(): нет user message в messages")
             yield RuntimeEvent.error(
                 RuntimeErrorData(
                     kind="runtime_crash",
@@ -101,6 +109,8 @@ class ClaudeCodeRuntime:
                 )
             )
             return
+
+        logger.info("ClaudeCodeRuntime.run(): передаю в adapter.stream_reply(%r)", user_text[:50])
 
         # Стримим через SDK
         full_text = ""
@@ -121,6 +131,7 @@ class ClaudeCodeRuntime:
                     if stream_event.type != "done":
                         yield runtime_event
         except Exception as e:
+            logger.exception("ClaudeCodeRuntime.run(): ошибка стриминга")
             yield RuntimeEvent.error(
                 RuntimeErrorData(
                     kind="runtime_crash",

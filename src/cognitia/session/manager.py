@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
 from cognitia.runtime import StreamEvent
 from cognitia.runtime.types import Message, RuntimeErrorData, RuntimeEvent, ToolSpec
 from cognitia.session.types import SessionKey, SessionState
+
+logger = logging.getLogger(__name__)
 
 
 class InMemorySessionManager:
@@ -74,10 +77,14 @@ class InMemorySessionManager:
         mode_hint: str | None = None,
     ) -> AsyncIterator[RuntimeEvent]:
         """Выполнить turn через AgentRuntime v1 (новый контракт)."""
+        ks = self._key_str(key)
         lock = self._get_lock(key)
+        logger.info("run_turn[%s]: ожидание lock (locked=%s)", ks, lock.locked())
         async with lock:
+            logger.info("run_turn[%s]: lock получен", ks)
             state = self.get(key)
             if not state:
+                logger.error("run_turn[%s]: сессия не найдена", ks)
                 yield RuntimeEvent.error(
                     RuntimeErrorData(
                         kind="runtime_crash",
@@ -88,6 +95,7 @@ class InMemorySessionManager:
                 return
 
             if state.runtime is None:
+                logger.error("run_turn[%s]: runtime is None", ks)
                 yield RuntimeEvent.error(
                     RuntimeErrorData(
                         kind="runtime_crash",
@@ -97,6 +105,13 @@ class InMemorySessionManager:
                 )
                 return
 
+            logger.info(
+                "run_turn[%s]: вызов runtime.run() (type=%s, user_text_len=%d)",
+                ks,
+                type(state.runtime).__name__,
+                len(messages[-1].content) if messages else 0,
+            )
+            event_count = 0
             async for event in state.runtime.run(
                 messages=messages,
                 system_prompt=system_prompt,
@@ -104,7 +119,10 @@ class InMemorySessionManager:
                 config=state.runtime_config,
                 mode_hint=mode_hint,
             ):
+                event_count += 1
                 yield event
+            logger.info("run_turn[%s]: завершён, events=%d", ks, event_count)
+        logger.info("run_turn[%s]: lock отпущен", ks)
 
     async def stream_reply(self, key: SessionKey, user_text: str) -> AsyncIterator[Any]:
         """Legacy API: отправить сообщение и стримить ответ (RuntimePort/adapter path)."""

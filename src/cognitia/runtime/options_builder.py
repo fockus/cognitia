@@ -81,8 +81,11 @@ class ClaudeOptionsBuilder:
         if sdk_mcp_servers:
             all_mcp.update(sdk_mcp_servers)
 
-        # §2.2: включаем чтение .claude/settings.json (R-401 acceptance)
-        sources = setting_sources if setting_sources is not None else ["project", "user"]
+        # По умолчанию НЕ читаем project/user settings (CLAUDE.md, .claude/settings.json).
+        # system_prompt через ClaudeAgentOptions — единственный источник инструкций.
+        # CLAUDE.md содержит developer-facing инструкции, которые конфликтуют с ролью агента.
+        # Чтение project/user settings включается явно через setting_sources=["project", "user"].
+        sources = setting_sources if setting_sources is not None else []
 
         opts = ClaudeAgentOptions(
             model=model,
@@ -105,13 +108,14 @@ class ClaudeOptionsBuilder:
 
 
 def _build_url_config(spec: McpServerSpec) -> dict[str, Any]:
-    """Конфиг для URL транспорта.
+    """Конфиг для URL транспорта (Streamable HTTP).
 
-    В нашем проекте url/http MCP endpoints — это SSE endpoints.
-    Для Claude SDK необходимо явно указать type="sse", иначе connect()
-    зависает на initialize timeout.
+    MCP серверы calculado.ru используют Streamable HTTP (MCP 2024-11-05+):
+    - POST с Accept: application/json, text/event-stream
+    - Сессия через заголовок mcp-session-id
+    Claude SDK тип "http" = McpHttpServerConfig (Streamable HTTP).
     """
-    return {"type": "sse", "url": spec.url or ""}
+    return {"type": "http", "url": spec.url or ""}
 
 
 def _build_sse_config(spec: McpServerSpec) -> dict[str, Any]:
