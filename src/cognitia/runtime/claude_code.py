@@ -116,6 +116,7 @@ class ClaudeCodeRuntime:
         full_text = ""
         tool_calls_count = 0
         new_messages: list[Message] = []
+        result_meta: dict[str, Any] = {}
 
         try:
             async for stream_event in self._adapter.stream_reply(user_text):
@@ -130,6 +131,13 @@ class ClaudeCodeRuntime:
                     # Не пробрасываем done — мы сами сформируем final
                     if stream_event.type != "done":
                         yield runtime_event
+                if stream_event.type == "done":
+                    result_meta = {
+                        "session_id": getattr(stream_event, "session_id", None),
+                        "total_cost_usd": getattr(stream_event, "total_cost_usd", None),
+                        "usage": getattr(stream_event, "usage", None),
+                        "structured_output": getattr(stream_event, "structured_output", None),
+                    }
         except Exception as e:
             logger.exception("ClaudeCodeRuntime.run(): ошибка стриминга")
             yield RuntimeEvent.error(
@@ -159,6 +167,10 @@ class ClaudeCodeRuntime:
             text=full_text,
             new_messages=new_messages,
             metrics=metrics,
+            session_id=result_meta.get("session_id"),
+            total_cost_usd=result_meta.get("total_cost_usd"),
+            usage=result_meta.get("usage"),
+            structured_output=result_meta.get("structured_output"),
         )
 
     async def cleanup(self) -> None:

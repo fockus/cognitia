@@ -1,73 +1,263 @@
 # Getting Started
 
-## Установка
+## Installation
 
-### Минимум (только типы, протоколы, in-memory)
+### Core (protocols, types, in-memory providers)
 
 ```bash
 pip install cognitia
 ```
 
-### С конкретным runtime
+### With a runtime
 
 ```bash
-# Claude Agent SDK
-pip install cognitia[claude]
-
-# ThinRuntime (собственная реализация)
-pip install cognitia[thin]
-
-# DeepAgents (LangChain/LangGraph)
-pip install cognitia[deepagents]
+pip install cognitia[thin]          # Built-in lightweight runtime (Anthropic API)
+pip install cognitia[claude]        # Claude Agent SDK runtime (subprocess + MCP)
+pip install cognitia[deepagents]    # LangChain Deep Agents runtime
 ```
 
-### С хранилищем
+### With storage
 
 ```bash
-# PostgreSQL
-pip install cognitia[postgres]
-
-# SQLite
-pip install cognitia[sqlite]
+pip install cognitia[postgres]      # PostgreSQL memory provider
+pip install cognitia[sqlite]        # SQLite memory provider
 ```
 
-### С capability
+### With web tools
 
 ```bash
-# Web tools (fetch/search)
-pip install cognitia[web]
-
-# E2B cloud sandbox
-pip install cognitia[e2b]
-
-# Docker sandbox
-pip install cognitia[docker]
+pip install cognitia[web]           # Base web fetch (httpx)
+pip install cognitia[web-duckduckgo] # DuckDuckGo search (no API key)
+pip install cognitia[web-tavily]    # Tavily AI search
+pip install cognitia[web-jina]      # Jina Reader (URL → markdown)
+pip install cognitia[web-crawl4ai]  # Crawl4AI (Playwright-based)
 ```
 
-### Всё сразу (для разработки)
+### With sandbox
+
+```bash
+pip install cognitia[e2b]           # E2B cloud sandbox
+pip install cognitia[docker]        # Docker sandbox
+```
+
+### Everything (for development)
 
 ```bash
 pip install cognitia[all,dev]
 ```
 
-## Быстрый старт
+## Quick Start: Agent Facade (simplest)
 
-### 1. Структура проекта
+The fastest way to get started — 3 lines of code:
+
+```python
+from cognitia import Agent, AgentConfig
+
+agent = Agent(AgentConfig(system_prompt="You are a helpful assistant.", runtime="thin"))
+result = await agent.query("What is the capital of France?")
+print(result.text)  # "The capital of France is Paris."
+```
+
+That's it. No config files, no project structure — just an agent that works.
+
+## Step-by-Step Guide
+
+### 1. Custom Tools
+
+Define tools as async Python functions. Cognitia auto-infers JSON Schema from type hints:
+
+```python
+from cognitia import Agent, AgentConfig, tool
+
+@tool(name="weather", description="Get current weather for a city")
+async def get_weather(city: str, units: str = "celsius") -> str:
+    # In production, call a real weather API here
+    return f"Weather in {city}: 22 {units}"
+
+agent = Agent(AgentConfig(
+    system_prompt="You are a weather assistant.",
+    runtime="thin",
+    tools=(get_weather,),
+))
+
+result = await agent.query("What's the weather in Paris?")
+print(result.text)  # "The weather in Paris is 22 celsius."
+```
+
+Type mapping: `str` → `"string"`, `int` → `"integer"`, `float` → `"number"`, `bool` → `"boolean"`. Parameters with defaults are optional in the schema.
+
+### 2. Streaming
+
+Get tokens as they arrive from the model:
+
+```python
+agent = Agent(AgentConfig(system_prompt="You are a writer.", runtime="thin"))
+
+async for event in agent.stream("Write a haiku about Python"):
+    if event.type == "text_delta":
+        print(event.text, end="", flush=True)
+    elif event.type == "tool_use_start":
+        print(f"\n[Using tool: {event.tool_name}]")
+```
+
+Event types: `text_delta`, `tool_use_start`, `tool_use_result`, `done`, `error`.
+
+### 3. Multi-Turn Conversation
+
+Maintain context across turns:
+
+```python
+async with agent.conversation() as conv:
+    r1 = await conv.say("My name is Alice")
+    r2 = await conv.say("What's my name?")
+    print(r2.text)  # "Your name is Alice."
+
+    # Streaming in conversation
+    async for event in conv.stream("Tell me a joke"):
+        if event.type == "text_delta":
+            print(event.text, end="", flush=True)
+```
+
+### 4. Structured Output
+
+Force the model to return JSON matching a schema:
+
+```python
+agent = Agent(AgentConfig(
+    system_prompt="Extract user info from text.",
+    runtime="thin",
+    output_format={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name", "age"],
+    },
+))
+
+result = await agent.query("John is 30 years old")
+print(result.structured_output)  # {"name": "John", "age": 30}
+```
+
+### 5. Middleware
+
+Intercept requests and responses for cost tracking, security, logging:
+
+```python
+from cognitia.agent import CostTracker, SecurityGuard
+
+tracker = CostTracker(budget_usd=5.0)
+guard = SecurityGuard(blocked_patterns=["password", "secret", "api_key"])
+
+agent = Agent(AgentConfig(
+    system_prompt="You are a helpful assistant.",
+    runtime="thin",
+    middleware=(tracker, guard),
+))
+
+result = await agent.query("Hello!")
+print(tracker.total_cost_usd)    # 0.002
+print(tracker.budget_exceeded)   # False
+```
+
+You can write custom middleware by extending the `Middleware` base class:
+
+```python
+from cognitia.agent import Middleware
+
+class LoggingMiddleware(Middleware):
+    async def before_query(self, prompt: str, config) -> str:
+        print(f"→ {prompt}")
+        return prompt
+
+    async def after_result(self, result) -> "Result":
+        print(f"← {result.text[:50]}")
+        return result
+```
+
+### 6. Switching Runtimes
+
+Same code, different execution engines. Switch with one config change:
+
+```python
+# Development: fast, no subprocess
+agent = Agent(AgentConfig(system_prompt="...", runtime="thin"))
+
+# Production: full Claude ecosystem with MCP
+agent = Agent(AgentConfig(system_prompt="...", runtime="claude_sdk"))
+
+# Experiments: LangChain integration
+agent = Agent(AgentConfig(system_prompt="...", runtime="deepagents"))
+```
+
+Or via environment variable:
+
+```bash
+export COGNITIA_RUNTIME=thin
+```
+
+### 7. Model Selection
+
+Use human-friendly aliases for any supported provider:
+
+```python
+# Anthropic
+agent = Agent(AgentConfig(runtime="thin", model="sonnet"))   # Claude Sonnet 4
+agent = Agent(AgentConfig(runtime="thin", model="opus"))     # Claude Opus 4
+agent = Agent(AgentConfig(runtime="thin", model="haiku"))    # Claude Haiku 3
+
+# OpenAI (via base_url or thin runtime)
+agent = Agent(AgentConfig(runtime="thin", model="gpt-4o"))
+
+# Google
+agent = Agent(AgentConfig(runtime="thin", model="gemini"))
+
+# DeepSeek
+agent = Agent(AgentConfig(runtime="thin", model="r1"))
+```
+
+### 8. Resource Cleanup
+
+Always clean up when done:
+
+```python
+# Option 1: async context manager (recommended)
+async with Agent(config) as agent:
+    result = await agent.query("Hello")
+# cleanup called automatically
+
+# Option 2: explicit cleanup
+agent = Agent(config)
+try:
+    result = await agent.query("Hello")
+finally:
+    await agent.cleanup()
+```
+
+## Advanced: CognitiaStack
+
+For production applications that need memory, sandbox, web tools, planning, and MCP skills — use `CognitiaStack`:
+
+### Project Structure
 
 ```
 your_app/
 ├── prompts/
-│   ├── identity.md        # Личность агента
-│   ├── guardrails.md      # Ограничения безопасности
-│   ├── role_router.yaml   # Правила переключения ролей
-│   ├── role_skills.yaml   # Маппинг ролей на инструменты
+│   ├── identity.md         # Agent personality
+│   ├── guardrails.md       # Security constraints
+│   ├── role_router.yaml    # Auto role-switching rules
+│   ├── role_skills.yaml    # Role → tools/skills mapping
 │   └── roles/
-│       └── assistant.md   # Промпт роли
-├── skills/                # MCP skills (опционально)
+│       └── assistant.md    # Per-role prompts
+├── skills/                 # MCP skills (optional)
+│   └── my_skill/
+│       ├── skill.yaml
+│       └── INSTRUCTION.md
 └── main.py
 ```
 
-### 2. Минимальный агент (ThinRuntime, без sandbox)
+### Minimal Stack
 
 ```python
 from pathlib import Path
@@ -79,21 +269,21 @@ stack = CognitiaStack.create(
     prompts_dir=Path("prompts"),
     skills_dir=Path("skills"),
     project_root=Path("."),
-    runtime_config=RuntimeConfig(runtime_name="thin", model="claude-sonnet-4-20250514"),
+    runtime_config=RuntimeConfig(runtime_name="thin", model="sonnet"),
     todo_provider=InMemoryTodoProvider(user_id="user-1", topic_id="general"),
     thinking_enabled=True,
 )
-
-# stack.capability_specs содержит: thinking, todo_read, todo_write
-# stack.context_builder собирает system prompt
-# stack.runtime_factory создаёт ThinRuntime
 ```
 
-### 3. Агент с sandbox и memory bank
+### Full-Featured Stack
 
 ```python
+from cognitia.bootstrap.stack import CognitiaStack
+from cognitia.runtime.types import RuntimeConfig
 from cognitia.tools.sandbox_local import LocalSandboxProvider
 from cognitia.tools.types import SandboxConfig
+from cognitia.tools.web_httpx import HttpxWebProvider
+from cognitia.todo.inmemory_provider import InMemoryTodoProvider
 from cognitia.memory_bank.fs_provider import FilesystemMemoryBankProvider
 from cognitia.memory_bank.types import MemoryBankConfig
 
@@ -105,52 +295,62 @@ sandbox = LocalSandboxProvider(SandboxConfig(
     denied_commands=frozenset({"rm", "sudo"}),
 ))
 
-memory_config = MemoryBankConfig(enabled=True, root_path=Path("/data/memory"))
-memory = FilesystemMemoryBankProvider(memory_config, user_id="user-1", topic_id="project-1")
+memory = FilesystemMemoryBankProvider(
+    MemoryBankConfig(enabled=True, root_path=Path("/data/memory")),
+    user_id="user-1",
+    topic_id="project-1",
+)
 
 stack = CognitiaStack.create(
     prompts_dir=Path("prompts"),
     skills_dir=Path("skills"),
     project_root=Path("."),
+    runtime_config=RuntimeConfig(runtime_name="thin", model="sonnet"),
     sandbox_provider=sandbox,
+    web_provider=HttpxWebProvider(timeout=30),
+    todo_provider=InMemoryTodoProvider(user_id="user-1", topic_id="project-1"),
     memory_bank_provider=memory,
     thinking_enabled=True,
-    allowed_system_tools={"bash", "read", "write"},
+    allowed_system_tools={"bash", "read", "write", "edit"},
 )
-
-# stack.capability_specs содержит: sandbox tools + memory tools + thinking
 ```
 
-### 4. Запуск runtime
+### Running the Stack
 
 ```python
 from cognitia.runtime.types import Message
 
+# Create runtime
 runtime = stack.runtime_factory.create(
     runtime_name="thin",
     config=stack.runtime_config,
 )
 
-messages = [Message(role="user", content="Привет, помоги мне")]
-system_prompt = "Ты полезный ассистент."
+# Run a query
+messages = [Message(role="user", content="Help me analyze this project")]
 
 async for event in runtime.run(
     messages=messages,
-    system_prompt=system_prompt,
+    system_prompt="You are a helpful assistant.",
     active_tools=list(stack.capability_specs.values()),
 ):
     if event.type == "assistant_delta":
         print(event.data["text"], end="")
+    elif event.type == "tool_call_started":
+        print(f"\n[Tool: {event.data['name']}]")
     elif event.type == "final":
         new_messages = event.data["new_messages"]
 ```
 
-## Следующие шаги
+## Next Steps
 
-- [Capabilities](capabilities.md) — подробнее о каждой capability
-- [Runtimes](runtimes.md) — сравнение runtime
-- [Configuration](configuration.md) — настройка через конфиги
-- [Examples](examples.md) — примеры для разных доменов
-
-> Примечание по readiness: orchestration-команды `/plan_*` и `/team_*` доступны на уровне приложения.
-> Для `team` включай `CAP_TEAM_ENABLED=1`; для `planning` — `CAP_PLANNING_ENABLED=1`.
+- [Agent Facade API](agent-facade.md) — full reference for Agent, AgentConfig, @tool, Result, Conversation, Middleware
+- [Runtimes](runtimes.md) — Claude SDK vs ThinRuntime vs DeepAgents: comparison, switching, capabilities
+- [Capabilities](capabilities.md) — sandbox, web, todo, memory bank, planning, thinking
+- [Memory Providers](memory.md) — InMemory, PostgreSQL, SQLite: 8 protocols, summarization
+- [Tools & Skills](tools-and-skills.md) — @tool decorator, MCP skills (YAML), tool policy
+- [Web Tools](web-tools.md) — search providers (DuckDuckGo, Brave, Tavily, SearXNG), fetch providers
+- [Configuration](configuration.md) — CognitiaStack, RuntimeConfig, ToolPolicy, environment variables
+- [Orchestration](orchestration.md) — planning mode, subagents, team mode
+- [Architecture](architecture.md) — Clean Architecture layers, protocols, design principles
+- [Examples](examples.md) — integration examples for different domains

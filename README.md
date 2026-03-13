@@ -1,494 +1,371 @@
 # Cognitia
 
-LLM-агностичная библиотека для построения AI-агентов. Предоставляет инфраструктуру: сессии, память, политики инструментов, контекст-инжиниринг, skills/MCP, observability.
+**LLM-agnostic Python framework for building AI agents** with pluggable runtimes, persistent memory, tool management, and structured observability.
 
-**Cognitia ничего не знает о предметной области.** Финансы, медицина, образование — любой домен подключается через приложение.
+[![PyPI version](https://img.shields.io/pypi/v/cognitia.svg)](https://pypi.org/project/cognitia/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-```
-pip install -e packages/cognitia
-```
+## Why Cognitia?
 
-## Quickstart (Bootstrap API)
+Building production AI agents requires more than an LLM API call. You need memory, tool management, security policies, session handling, observability, and the ability to swap providers without rewriting your app.
 
-```python
-from pathlib import Path
+**Cognitia solves this** by providing a modular, protocol-driven framework where every component is pluggable:
 
-from cognitia.bootstrap import CognitiaStack
-from cognitia.runtime.types import RuntimeConfig
+- **Switch LLM providers** (Anthropic, OpenAI, Google, DeepSeek) with one config change — no code modifications
+- **Swap runtimes** — from a lightweight built-in loop to Claude Agent SDK to LangChain — same business code
+- **Pick your storage** — InMemory for prototyping, SQLite for single-user, PostgreSQL for production
+- **Compose capabilities** — sandbox, web search, todo lists, memory bank, planning — enable only what you need
+- **Stay secure** — default-deny tool policy, sandboxed execution, input validation built-in
 
-root = Path(".").resolve()
-stack = CognitiaStack.create(
-    prompts_dir=root / "prompts",
-    skills_dir=root / "skills",
-    project_root=root,
-    runtime_config=RuntimeConfig(runtime_name="claude_sdk"),
-)
-```
+Unlike monolithic agent frameworks, cognitia follows **Clean Architecture**: your business logic depends on protocols (abstractions), not implementations. Swap any layer without touching the rest.
 
-Дальше приложение использует `stack.skill_registry`, `stack.context_builder`,
-`stack.role_skills_loader`, `stack.role_router`, `stack.tool_policy`, `stack.runtime_factory`.
-
-Полный пример wiring: `docs/integration-guide.md`.
-
-## Пример: один turn через CognitiaStack
-
-```python
-from __future__ import annotations
-
-import asyncio
-from pathlib import Path
-
-from cognitia.bootstrap import CognitiaStack
-from cognitia.context.builder import ContextInput
-from cognitia.runtime.types import Message, RuntimeConfig, ToolSpec
-
-
-async def main() -> None:
-    root = Path(".").resolve()
-    runtime_config = RuntimeConfig(
-        runtime_name="thin",
-        model="claude-sonnet-4-20250514",
-    )
-
-    stack = CognitiaStack.create(
-        prompts_dir=root / "prompts",
-        skills_dir=root / "skills",
-        project_root=root,
-        runtime_config=runtime_config,
-    )
-
-    user_id = "demo_user"
-    topic_id = "default"
-    role_id = "coach"
-    user_text = "Помоги составить план накопления на 1 000 000 за 12 месяцев."
-
-    active_skill_ids = stack.role_skills_loader.get_skills(role_id)
-    skills = [
-        skill
-        for skill in stack.skill_registry.list_all()
-        if skill.spec.skill_id in active_skill_ids
-    ]
-
-    context_input = ContextInput(
-        user_id=user_id,
-        topic_id=topic_id,
-        role_id=role_id,
-        user_text=user_text,
-        active_skill_ids=active_skill_ids,
-    )
-    built = await stack.context_builder.build(context_input, skills=skills)
-
-    tool_allowlist = stack.skill_registry.get_tool_allowlist(active_skill_ids)
-    active_tools: list[ToolSpec] = [
-        ToolSpec(
-            name=tool_name,
-            description=f"MCP tool: {tool_name}",
-            parameters={"type": "object"},
-            is_local=False,
-        )
-        for tool_name in sorted(tool_allowlist)
-        if tool_name.startswith("mcp__")
-    ]
-
-    runtime = stack.runtime_factory.create(
-        config=runtime_config,
-        local_tools={},
-        mcp_servers={},
-    )
-
-    try:
-        messages = [Message(role="user", content=user_text)]
-        async for event in runtime.run(
-            messages=messages,
-            system_prompt=built.system_prompt,
-            active_tools=active_tools,
-            config=runtime_config,
-        ):
-            if event.type == "assistant_delta":
-                print(event.data.get("text", ""), end="", flush=True)
-            elif event.type == "final":
-                print("\n\n[FINAL]")
-                print(event.data.get("text", ""))
-            elif event.type == "error":
-                print("\n[ERROR]", event.data.get("message", "unknown"))
-    finally:
-        await runtime.cleanup()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-## Архитектура
-
-```
-Приложение (Freedom Agent, ваш бот, ...)
-       │
-       │ использует протоколы
-       ▼
-┌─── Cognitia ──────────────────────────────┐
-│                                           │
-│  Protocols (14 портов, ISP ≤5 методов)    │
-│  ┌──────────┐ ┌──────────┐ ┌───────────┐ │
-│  │FactStore │ │GoalStore │ │MessageStore│ │
-│  └──────────┘ └──────────┘ └───────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌───────────┐ │
-│  │UserStore │ │PhaseStore│ │SummaryStore│ │
-│  └──────────┘ └──────────┘ └───────────┘ │
-│  ┌──────────────┐ ┌─────────────────────┐ │
-│  │SessionState  │ │ToolEventStore       │ │
-│  │Store         │ │                     │ │
-│  └──────────────┘ └─────────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌───────────┐ │
-│  │ToolPolicy│ │RoleRouter│ │ModelSelect │ │
-│  └──────────┘ └──────────┘ └───────────┘ │
-│  ┌─────────────┐ ┌────────────────────┐  │
-│  │ContextBuild │ │SessionRehydrator   │  │
-│  └─────────────┘ └────────────────────┘  │
-│                                           │
-│  Implementations                          │
-│  ├── memory/     InMemory + Postgres      │
-│  ├── context/    DefaultContextBuilder    │
-│  ├── policy/     DefaultToolPolicy        │
-│  ├── routing/    KeywordRoleRouter        │
-│  ├── session/    InMemorySessionManager   │
-│  ├── skills/     YamlSkillLoader          │
-│  ├── runtime/    Claude SDK adapter       │
-│  ├── resilience/ CircuitBreaker           │
-│  └── observability/ AgentLogger           │
-│                                           │
-└───────────────────────────────────────────┘
-```
-
-## Ключевые принципы
-
-- **ISP** — каждый протокол ≤5 методов. `FactStore` не знает о `GoalStore`.
-- **DIP** — приложение зависит от протоколов, не от реализаций.
-- **Pluggable** — поменяй `PostgresMemoryProvider` на `InMemoryMemoryProvider` одной строкой.
-- **Domain-agnostic** — в коде cognitia нет слов "финансы", "вклад", "кредит".
-
-## Протоколы (порты)
-
-### Память (8 протоколов)
-
-```python
-class FactStore(Protocol):
-    async def upsert_fact(self, user_id: str, key: str, value: Any,
-                          topic_id: str | None = None, source: str = "user") -> None: ...
-    async def get_facts(self, user_id: str, topic_id: str | None = None) -> dict[str, Any]: ...
-
-class GoalStore(Protocol):
-    async def save_goal(self, user_id: str, goal: GoalState) -> None: ...
-    async def get_active_goal(self, user_id: str, topic_id: str) -> GoalState | None: ...
-
-class MessageStore(Protocol):
-    async def save_message(self, user_id: str, topic_id: str, role: str, content: str, ...) -> None: ...
-    async def get_messages(self, user_id: str, topic_id: str, limit: int = 10) -> list[MemoryMessage]: ...
-    async def count_messages(self, user_id: str, topic_id: str) -> int: ...
-    async def delete_messages_before(self, user_id: str, topic_id: str, keep_last: int = 10) -> int: ...
-
-class SummaryStore(Protocol):
-    async def save_summary(self, user_id: str, topic_id: str, summary: str, messages_covered: int) -> None: ...
-    async def get_summary(self, user_id: str, topic_id: str) -> str | None: ...
-
-class UserStore(Protocol):
-    async def ensure_user(self, external_id: str) -> str: ...
-    async def get_user_profile(self, user_id: str) -> UserProfile: ...
-
-class SessionStateStore(Protocol):
-    async def save_session_state(self, user_id: str, topic_id: str, role_id: str,
-                                  active_skill_ids: list[str], prompt_hash: str = "") -> None: ...
-    async def get_session_state(self, user_id: str, topic_id: str) -> dict[str, Any] | None: ...
-
-class PhaseStore(Protocol):
-    async def save_phase_state(self, user_id: str, phase: str, notes: str = "") -> None: ...
-    async def get_phase_state(self, user_id: str) -> PhaseState | None: ...
-
-class ToolEventStore(Protocol):
-    async def save_tool_event(self, user_id: str, event: ToolEvent) -> None: ...
-```
-
-### Поведение (6 протоколов)
-
-```python
-class RoleRouter(Protocol):
-    def resolve(self, user_text: str, explicit_role: str | None = None) -> str: ...
-
-class ModelSelector(Protocol):
-    def select(self, role_id: str, tool_failure_count: int = 0) -> str: ...
-    def select_for_turn(self, role_id: str, user_text: str, ...) -> str: ...
-
-class ToolIdCodec(Protocol):
-    def matches(self, tool_name: str, server_id: str) -> bool: ...
-    def encode(self, server_id: str, tool_name: str) -> str: ...
-    def extract_server(self, tool_name: str) -> str | None: ...
-
-class ContextBuilder(Protocol):
-    async def build(self, inp: Any, **kwargs: Any) -> Any: ...
-
-class SessionRehydrator(Protocol):
-    async def build_rehydration_payload(self, ctx: TurnContext) -> Mapping[str, Any]: ...
-
-class RuntimePort(Protocol):
-    @property
-    def is_connected(self) -> bool: ...
-    async def connect(self) -> None: ...
-    async def disconnect(self) -> None: ...
-    async def stream_reply(self, user_text: str) -> AsyncIterator[Any]: ...
-```
-
-## Типы
-
-```python
-@dataclass(frozen=True)
-class TurnContext:
-    """Контекст одного turn'а — единица обработки."""
-    user_id: str
-    topic_id: str
-    role_id: str
-    model: str
-    active_skill_ids: tuple[str, ...]
-
-@dataclass(frozen=True)
-class ContextPack:
-    """Блок контекста для system prompt."""
-    pack_id: str            # "guardrails", "active_goals", "user_profile"
-    priority: int           # 0 = highest (guardrails), 6 = lowest (profile)
-    content: str            # Текст для вставки в prompt
-    tokens_estimate: int    # Оценка размера в токенах
-
-@dataclass(frozen=True)
-class SkillSet:
-    """Набор skills для роли."""
-    set_id: str
-    skill_ids: tuple[str, ...] = ()
-    local_tool_ids: tuple[str, ...] = ()
-```
-
-## Модули
-
-### memory/ — персистентность
-
-Две реализации одних протоколов:
-
-```python
-from cognitia.memory import InMemoryMemoryProvider, PostgresMemoryProvider
-
-# Dev/тесты — без БД
-memory = InMemoryMemoryProvider()
-
-# Production — Postgres
-from sqlalchemy.ext.asyncio import async_sessionmaker
-memory = PostgresMemoryProvider(session_factory)
-
-# Оба реализуют: FactStore, GoalStore, MessageStore, SummaryStore,
-# UserStore, SessionStateStore, PhaseStore, ToolEventStore
-```
-
-### context/ — сборка system prompt
-
-```python
-from cognitia.context import DefaultContextBuilder, ContextInput, ContextBudget
-
-builder = DefaultContextBuilder(prompts_dir="./prompts")
-
-inp = ContextInput(
-    user_id="u1", topic_id="t1", role_id="coach",
-    user_text="Как накопить на отпуск?",
-    active_skill_ids=["finuslugi"],
-    budget=ContextBudget(total_tokens=8000),
-)
-
-built = await builder.build(
-    inp,
-    user_profile=profile,     # ContextPack priority=6
-    active_goal=goal,          # ContextPack priority=2
-    phase_state=phase,         # ContextPack priority=3
-    summary="...",             # ContextPack priority=5
-)
-
-print(built.system_prompt)     # Собранный prompt из слоёв
-print(built.prompt_hash)       # SHA256 hash (первые 16 символов)
-print(built.truncated_packs)   # Какие пакеты обрезаны по бюджету
-```
-
-Приоритеты при бюджетном overflow (от высшего):
-0. Guardrails
-1. Role instruction
-2. Active goals
-3. Phase
-4. Tool hints
-5. Memory recall
-6. User profile
-
-### policy/ — безопасность инструментов
-
-```python
-from cognitia.policy import DefaultToolPolicy, ToolPolicyInput
-
-policy = DefaultToolPolicy()
-
-state = ToolPolicyInput(
-    tool_name="mcp__finuslugi__get_deposits",
-    input_data={"amount": 500000},
-    active_skill_ids=["finuslugi"],
-    allowed_local_tools={"mcp__freedom_tools__calculate_goal_plan"},
-)
-
-result = policy.can_use_tool("mcp__finuslugi__get_deposits", {}, state)
-# → PermissionAllow (finuslugi в active skills)
-
-result = policy.can_use_tool("Bash", {}, state)
-# → PermissionDeny (ALWAYS_DENIED_TOOLS)
-```
-
-**Всегда запрещены:** Bash, Read, Write, Edit, MultiEdit, Glob, Grep, LS, TodoRead, TodoWrite, WebFetch, WebSearch.
-
-### skills/ — декларативные MCP skills
-
-```yaml
-# skills/finuslugi/skill.yaml
-skill_id: finuslugi
-title: "ФинУслуги — банковские продукты"
-mcp_servers:
-  - name: user-finuslugi
-    transport: url
-    url: "https://..."
-tool_include:
-  - get_bank_deposits
-  - get_bank_credits
-intents: [deposits, credits, insurance]
-```
-
-```python
-from cognitia.skills import YamlSkillLoader, SkillRegistry
-
-loader = YamlSkillLoader("./skills")
-skills = loader.load_all()
-registry = SkillRegistry(skills)
-
-# Получить MCP серверы для роли
-servers = registry.get_mcp_servers_for_skills(["finuslugi", "iss"])
-
-# Получить allowlist инструментов
-tools = registry.get_tool_allowlist(["finuslugi"])
-# → {"mcp__finuslugi__get_bank_deposits", "mcp__finuslugi__get_bank_credits"}
-```
-
-### session/ — управление сессиями
-
-```python
-from cognitia.session import InMemorySessionManager, SessionKey
-
-manager = InMemorySessionManager()
-
-# Регистрация сессии
-manager.register(session_state)
-
-# Получение по ключу (user_id + topic_id)
-state = manager.get(SessionKey("user_1", "topic_deposits"))
-
-# Streaming ответа
-async for event in manager.stream_reply(key, "Хочу вклад"):
-    if event.type == "text_delta":
-        print(event.text, end="")
-    elif event.type == "tool_use_start":
-        print(f"[tool: {event.tool_name}]")
-```
-
-**Rehydration** — восстановление после рестарта:
-
-```python
-from cognitia.session import DefaultSessionRehydrator
-
-rehydrator = DefaultSessionRehydrator(
-    messages=memory, summaries=memory,
-    goals=memory, sessions=memory, phases=memory,
-)
-
-payload = await rehydrator.build_rehydration_payload(turn_context)
-# → {role_id, active_skill_ids, prompt_hash, summary, last_messages, goal, phase_state}
-```
-
-### routing/ — маршрутизация ролей
-
-```python
-from cognitia.routing import KeywordRoleRouter
-
-router = KeywordRoleRouter(
-    default_role="coach",
-    keyword_map={
-        "deposit_advisor": ["вклад", "депозит"],
-        "credit_advisor": ["кредит", "ипотека"],
-    },
-)
-
-role = router.resolve("Хочу открыть вклад")     # → "deposit_advisor"
-role = router.resolve("Привет")                   # → "coach"
-role = router.resolve("...", explicit_role="coach") # → "coach" (explicit wins)
-```
-
-### runtime/ — Claude Agent SDK
-
-```python
-from cognitia.runtime import RuntimeAdapter, ClaudeOptionsBuilder, ModelPolicy
-
-options = ClaudeOptionsBuilder(model_policy=ModelPolicy()).build(
-    role_id="coach",
-    system_prompt="...",
-    mcp_servers=servers,
-)
-
-adapter = RuntimeAdapter(options)
-await adapter.connect()
-
-async for event in adapter.stream_reply("Как накопить?"):
-    # StreamEvent: text_delta | tool_use_start | tool_use_result | done | error
-    ...
-```
-
-### resilience/ — устойчивость
-
-```python
-from cognitia.resilience import CircuitBreaker
-
-cb = CircuitBreaker(failure_threshold=3, recovery_timeout_s=60)
-
-if cb.can_execute():
-    try:
-        result = await call_mcp()
-        cb.record_success()
-    except Exception:
-        cb.record_failure()
-```
-
-### observability/ — structured logging
-
-```python
-from cognitia.observability import AgentLogger, configure_logging
-
-configure_logging(level="info", fmt="json")
-logger = AgentLogger(component="my_app")
-
-logger.session_created(user_id="u1", topic_id="t1", role_id="coach")
-logger.turn_start(user_id="u1", topic_id="t1")
-logger.tool_call(tool_name="finuslugi__get_deposits", latency_ms=450)
-logger.tool_policy_event(tool_name="Bash", allowed=False, reason="ALWAYS_DENIED")
-logger.turn_complete(user_id="u1", topic_id="t1", role_id="coach", prompt_hash="abc123")
-```
-
-JSON в stdout: `ts`, `level`, `event_type`, `user_id`, `topic_id`, `role_id`, `tool_name`, `latency_ms`.
-
-## Тесты
+## Install
 
 ```bash
-pytest packages/cognitia/tests/ -v
-# 334+ тестов, 96% coverage
+pip install cognitia                # core (protocols, types, in-memory providers)
+pip install cognitia[thin]          # + lightweight built-in runtime (Anthropic API)
+pip install cognitia[claude]        # + Claude Agent SDK runtime (subprocess + MCP)
+pip install cognitia[deepagents]    # + LangChain Deep Agents runtime
 ```
 
-## Зависимости
+## Quick Start
 
-- `structlog` — structured logging
-- `pyyaml` — загрузка skill.yaml
-- `sqlalchemy[asyncio]` + `asyncpg` — Postgres (опционально)
-- `claude-agent-sdk` — runtime (опционально, только adapter)
+### One-shot query (3 lines)
+
+```python
+from cognitia import Agent, AgentConfig
+
+agent = Agent(AgentConfig(system_prompt="You are a helpful assistant.", runtime="thin"))
+result = await agent.query("What is the capital of France?")
+print(result.text)  # "The capital of France is Paris."
+```
+
+### Streaming
+
+```python
+async for event in agent.stream("Explain quantum computing"):
+    if event.type == "text_delta":
+        print(event.text, end="", flush=True)
+```
+
+### Multi-turn conversation
+
+```python
+async with agent.conversation() as conv:
+    r1 = await conv.say("My name is Alice")
+    r2 = await conv.say("What's my name?")
+    print(r2.text)  # "Your name is Alice."
+```
+
+### Custom tools
+
+```python
+from cognitia import AgentConfig, Agent, tool
+
+@tool(name="calculate", description="Calculate a math expression")
+async def calculate(expression: str) -> str:
+    return str(eval(expression))  # simplified for demo
+
+agent = Agent(AgentConfig(
+    system_prompt="You are a calculator assistant.",
+    runtime="thin",
+    tools=(calculate,),
+))
+result = await agent.query("What is 15 * 23?")
+print(result.text)  # "345"
+```
+
+### Structured output
+
+```python
+agent = Agent(AgentConfig(
+    system_prompt="Extract user info.",
+    runtime="thin",
+    output_format={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name", "age"],
+    },
+))
+result = await agent.query("John is 30 years old")
+print(result.structured_output)  # {"name": "John", "age": 30}
+```
+
+### Middleware (cost tracking, security)
+
+```python
+from cognitia.agent import CostTracker, SecurityGuard
+
+tracker = CostTracker(budget_usd=1.0)
+guard = SecurityGuard(blocked_patterns=["password", "secret"])
+
+agent = Agent(AgentConfig(
+    system_prompt="You are a helpful assistant.",
+    runtime="thin",
+    middleware=(tracker, guard),
+))
+result = await agent.query("Hello")
+print(tracker.total_cost_usd)  # 0.002
+```
+
+## Features
+
+### Core
+
+| Feature | Description |
+|---------|-------------|
+| **Agent Facade** | High-level API: `query()`, `stream()`, `conversation()` — build agents in 3-5 lines |
+| **3 Pluggable Runtimes** | `thin` (built-in Anthropic loop), `claude_sdk` (Claude Agent SDK), `deepagents` (LangChain) |
+| **@tool Decorator** | Define tools with auto-inferred JSON Schema from Python type hints |
+| **Middleware Chain** | Pluggable request/response interceptors: `CostTracker`, `SecurityGuard`, custom |
+| **14 ISP Protocols** | Every interface has ≤5 methods. Depend on abstractions, swap implementations freely |
+| **Multi-provider Models** | Anthropic, OpenAI, Google, DeepSeek — alias resolution (`"sonnet"` → `claude-sonnet-4-20250514`) |
+
+### Memory & Persistence
+
+| Feature | Description |
+|---------|-------------|
+| **3 Memory Providers** | InMemory (dev), SQLite (single-user), PostgreSQL (production) — same 8 protocols |
+| **8 Memory Protocols** | `MessageStore`, `FactStore`, `GoalStore`, `SummaryStore`, `UserStore`, `SessionStateStore`, `PhaseStore`, `ToolEventStore` |
+| **Memory Bank** | Long-term file-based memory across sessions (filesystem or database backend) |
+| **Auto-summarization** | Template-based or LLM-powered conversation summarization |
+
+### Capabilities (toggle independently)
+
+| Capability | What it does | Tools provided |
+| ----------- | ------------- | ---------------- |
+| **Sandbox** | Isolated file I/O and command execution | `bash`, `read`, `write`, `edit`, `glob`, `grep`, `ls` |
+| **Web** | Internet access with pluggable providers | `web_fetch`, `web_search` |
+| **Todo** | Structured task tracking | `todo_read`, `todo_write` |
+| **Memory Bank** | Persistent knowledge across sessions | `memory_read`, `memory_write`, `memory_list`, `memory_delete` |
+| **Planning** | Step-by-step task decomposition and execution | `plan_create`, `plan_status`, `plan_execute` |
+| **Thinking** | Chain-of-thought reasoning | `thinking` |
+
+### Advanced
+
+| Feature | Description |
+|---------|-------------|
+| **Tool Policy** | Default-deny with allowlists per role/skill. `ALWAYS_DENIED` set for dangerous tools |
+| **Tool Budget** | Priority-based tool selection when too many tools would confuse the model |
+| **MCP Skills** | Declarative YAML skill definitions with automatic MCP server management |
+| **Role Routing** | Keyword-based automatic role switching with per-role tool/skill mapping |
+| **Context Builder** | Token-budget-aware system prompt assembly with priority-based overflow |
+| **Hooks** | Lifecycle hooks: `PreToolUse`, `PostToolUse`, `Stop`, `UserPromptSubmit` |
+| **Observability** | Structured JSON logging via structlog |
+| **Circuit Breaker** | Resilience pattern for external service calls |
+| **Session Management** | Multi-session support with rehydration from persistent storage |
+| **Orchestration** | Subagents, team mode (lead + workers), planning mode |
+| **Commands** | Custom slash-command registry |
+
+## Runtimes
+
+Cognitia supports 3 interchangeable runtimes. Switch with a single config change — your business code stays the same:
+
+```python
+# Built-in lightweight loop (direct Anthropic API)
+agent = Agent(AgentConfig(system_prompt="...", runtime="thin"))
+
+# Claude Agent SDK (subprocess with full MCP support)
+agent = Agent(AgentConfig(system_prompt="...", runtime="claude_sdk"))
+
+# LangChain Deep Agents
+agent = Agent(AgentConfig(system_prompt="...", runtime="deepagents"))
+```
+
+Or via environment variable:
+```bash
+export COGNITIA_RUNTIME=thin
+```
+
+| Runtime | Best For | LLM Support | MCP | Install |
+| ------- | -------- | ----------- | --- | ------- |
+| `thin` | Fast prototyping, direct API, alternative LLMs | Any (via `base_url`) | Built-in client | `cognitia[thin]` |
+| `claude_sdk` | Full Claude ecosystem, native MCP, subagents | Claude only | Native | `cognitia[claude]` |
+| `deepagents` | LangChain ecosystem, LangGraph workflows | Any (LangChain) | Via LangChain | `cognitia[deepagents]` |
+
+### Capability negotiation
+
+Each runtime declares its capabilities. Use `CapabilityRequirements` to ensure your chosen runtime supports what you need:
+
+```python
+from cognitia.runtime.capabilities import CapabilityRequirements
+
+agent = Agent(AgentConfig(
+    system_prompt="...",
+    runtime="claude_sdk",
+    require_capabilities=CapabilityRequirements(
+        tier="full",
+        flags=("mcp", "resume"),
+    ),
+))
+# Fails fast if the runtime doesn't support required features
+```
+
+## Architecture
+
+```
+Your Application
+       │
+       │ depends on protocols (DIP)
+       ▼
+╔══════════════════════════════════════════════════════════╗
+║                      Cognitia                            ║
+║                                                          ║
+║  ┌─────────────────────────────────────────────────────┐ ║
+║  │  Agent Facade                                       │ ║
+║  │  Agent · AgentConfig · @tool · Middleware · Result   │ ║
+║  └─────────────────┬───────────────────────────────────┘ ║
+║                    │                                     ║
+║  ┌─────────────────▼───────────────────────────────────┐ ║
+║  │  14 Protocols (ISP: ≤5 methods each)                │ ║
+║  │  MessageStore · FactStore · GoalStore · SummaryStore │ ║
+║  │  UserStore · SessionStateStore · PhaseStore          │ ║
+║  │  ToolEventStore · RoleRouter · ToolIdCodec          │ ║
+║  │  ModelSelector · ContextBuilder · RuntimePort       │ ║
+║  │  AgentRuntime                                       │ ║
+║  └─────────────────┬───────────────────────────────────┘ ║
+║                    │                                     ║
+║  ┌─────────────────▼───────────────────────────────────┐ ║
+║  │  Implementations                                    │ ║
+║  │  memory/      InMemory │ PostgreSQL │ SQLite        │ ║
+║  │  runtime/     thin │ claude_sdk │ deepagents        │ ║
+║  │  context/     DefaultContextBuilder (token budget)  │ ║
+║  │  policy/      DefaultToolPolicy (default-deny)      │ ║
+║  │  routing/     KeywordRoleRouter                     │ ║
+║  │  skills/      YamlSkillLoader + SkillRegistry       │ ║
+║  │  hooks/       HookRegistry + SDK bridge             │ ║
+║  │  tools/       Sandbox · Web · Todo · MemoryBank     │ ║
+║  │  orchestration/  Planning · Subagents · Team        │ ║
+║  │  observability/  AgentLogger (structlog)            │ ║
+║  └─────────────────────────────────────────────────────┘ ║
+╚══════════════════════════════════════════════════════════╝
+```
+
+**Key principles:**
+
+- **Domain-agnostic** — no business domain logic in the library
+- **Protocol-first** — depend on abstractions, not implementations
+- **Pluggable** — swap any component with a single line change
+- **Clean Architecture** — dependencies point inward only (Infrastructure → Application → Domain)
+- **ISP** — Interface Segregation: each protocol has ≤5 focused methods
+- **Immutable types** — all domain objects are frozen dataclasses
+
+## Memory Providers
+
+Three interchangeable providers, all implementing the same 8 protocols:
+
+```python
+# Development — no database needed
+from cognitia.memory import InMemoryMemoryProvider
+memory = InMemoryMemoryProvider()
+
+# Lightweight persistence — SQLite
+from cognitia.memory import SQLiteMemoryProvider
+memory = SQLiteMemoryProvider(db_path="./agent.db")
+
+# Production — PostgreSQL
+from cognitia.memory import PostgresMemoryProvider
+memory = PostgresMemoryProvider(session_factory)
+```
+
+## Capabilities
+
+Enable only what you need — each capability is an independent toggle:
+
+```python
+from cognitia.bootstrap import CognitiaStack
+from cognitia.runtime.types import RuntimeConfig
+from cognitia.tools.sandbox_local import LocalSandboxProvider
+from cognitia.tools.web_httpx import HttpxWebProvider
+from cognitia.todo.inmemory_provider import InMemoryTodoProvider
+
+stack = CognitiaStack.create(
+    prompts_dir="./prompts",
+    skills_dir="./skills",
+    project_root=".",
+    runtime_config=RuntimeConfig(runtime_name="thin"),
+    # Toggle capabilities independently:
+    sandbox_provider=LocalSandboxProvider(sandbox_config),  # file I/O, bash
+    web_provider=HttpxWebProvider(),                        # web search/fetch
+    todo_provider=InMemoryTodoProvider(user_id="u1", topic_id="t1"),
+    thinking_enabled=True,                                  # chain-of-thought
+)
+```
+
+## Web Search Providers
+
+Pluggable web search with 4 providers and 3 fetch backends:
+
+```python
+# Search providers (pick one)
+from cognitia.tools.web_providers.duckduckgo import DuckDuckGoSearchProvider  # no API key
+from cognitia.tools.web_providers.brave import BraveSearchProvider            # BRAVE_API_KEY
+from cognitia.tools.web_providers.tavily import TavilySearchProvider          # TAVILY_API_KEY
+from cognitia.tools.web_providers.searxng import SearXNGSearchProvider        # self-hosted
+
+# Fetch providers (pick one)
+from cognitia.tools.web_httpx import HttpxWebProvider           # default (httpx)
+from cognitia.tools.web_providers.jina import JinaReaderFetchProvider    # JINA_API_KEY
+from cognitia.tools.web_providers.crawl4ai import Crawl4AIFetchProvider  # Playwright
+```
+
+## Model Registry
+
+Multi-provider model resolution with human-friendly aliases:
+
+```python
+from cognitia.runtime.types import resolve_model_name
+
+resolve_model_name("sonnet")   # "claude-sonnet-4-20250514"
+resolve_model_name("opus")     # "claude-opus-4-20250514"
+resolve_model_name("gpt-4o")   # "gpt-4o"
+resolve_model_name("gemini")   # "gemini-2.5-pro"
+resolve_model_name("r1")       # "deepseek-reasoner"
+```
+
+Supported providers: **Anthropic** (Claude), **OpenAI** (GPT-4o, o3), **Google** (Gemini), **DeepSeek** (R1).
+
+## Optional Dependencies
+
+| Extra | Packages | Purpose |
+|-------|----------|---------|
+| `thin` | anthropic, httpx | Built-in lightweight runtime |
+| `claude` | claude-agent-sdk | Claude Agent SDK runtime |
+| `deepagents` | langchain-core, langchain-anthropic | LangChain runtime |
+| `postgres` | asyncpg, sqlalchemy | PostgreSQL memory provider |
+| `sqlite` | aiosqlite, sqlalchemy | SQLite memory provider |
+| `web` | httpx | Web fetch (base) |
+| `web-duckduckgo` | ddgs | DuckDuckGo search (no API key) |
+| `web-tavily` | tavily-python | Tavily AI search |
+| `web-jina` | httpx | Jina Reader (URL → markdown) |
+| `web-crawl4ai` | crawl4ai | Crawl4AI (Playwright-based) |
+| `e2b` | e2b | E2B cloud sandbox |
+| `docker` | docker | Docker sandbox |
+| `all` | All of the above | Development convenience |
+
+## Documentation
+
+- [Why Cognitia?](docs/why-cognitia.md) — value proposition, design philosophy
+- [Getting Started](docs/getting-started.md) — installation, first agent, step-by-step
+- [Agent Facade API](docs/agent-facade.md) — Agent, AgentConfig, @tool, Result, Conversation, Middleware
+- [Runtimes](docs/runtimes.md) — Claude SDK vs ThinRuntime vs DeepAgents
+- [Memory](docs/memory.md) — InMemory, PostgreSQL, SQLite providers
+- [Tools & Skills](docs/tools-and-skills.md) — @tool decorator, MCP skills, tool policy
+- [Capabilities](docs/capabilities.md) — sandbox, web, todo, memory bank, planning, thinking
+- [Web Tools](docs/web-tools.md) — search and fetch providers
+- [Configuration](docs/configuration.md) — CognitiaStack, RuntimeConfig, environment variables
+- [Orchestration](docs/orchestration.md) — planning, subagents, team mode
+- [Architecture](docs/architecture.md) — layers, protocols, packages
+- [API Reference](docs/api-reference.md) — comprehensive API documentation
+- [Advanced](docs/advanced.md) — hooks, observability, circuit breaker, context builder
+- [Examples](docs/examples.md) — integration examples for different domains
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+
+## License
+
+[MIT](LICENSE)

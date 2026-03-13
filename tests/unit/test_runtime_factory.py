@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from cognitia.runtime.capabilities import CapabilityRequirements
 from cognitia.runtime.factory import RuntimeFactory, _ErrorRuntime
 from cognitia.runtime.types import RuntimeConfig
 
@@ -102,6 +103,41 @@ class TestCreate:
         """Невалидное имя в config → ValueError в RuntimeConfig.__post_init__."""
         with pytest.raises(ValueError, match="Неизвестный runtime"):
             RuntimeConfig(runtime_name="bad_name")
+
+    def test_create_with_unsupported_override_returns_error_runtime(
+        self,
+        factory: RuntimeFactory,
+    ) -> None:
+        """override runtime, не удовлетворяющий capability requirements → _ErrorRuntime."""
+        cfg = RuntimeConfig(
+            runtime_name="claude_sdk",
+            required_capabilities=CapabilityRequirements(tier="full"),
+        )
+        runtime = factory.create(config=cfg, runtime_override="thin")
+        assert isinstance(runtime, _ErrorRuntime)
+
+
+class TestCapabilities:
+    """RuntimeFactory capability-aware helpers."""
+
+    def test_get_capabilities_returns_descriptor(self, factory: RuntimeFactory) -> None:
+        caps = factory.get_capabilities(RuntimeConfig(runtime_name="thin"))
+        assert caps.runtime_name == "thin"
+        assert caps.tier == "light"
+
+    def test_validate_capabilities_returns_typed_error(
+        self,
+        factory: RuntimeFactory,
+    ) -> None:
+        cfg = RuntimeConfig(runtime_name="claude_sdk")
+        err = factory.validate_capabilities(
+            config=cfg,
+            runtime_override="thin",
+            required_capabilities=CapabilityRequirements(tier="full"),
+        )
+        assert err is not None
+        assert err.kind == "capability_unsupported"
+        assert "tier:full" in err.details["missing"]
 
 
 # ---------------------------------------------------------------------------

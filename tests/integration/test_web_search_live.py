@@ -1,12 +1,14 @@
 """Integration: live smoke тесты для web search/fetch провайдеров.
 
 Выполняют реальные сетевые запросы. Пропускаются если зависимость не установлена.
-Маркер: @pytest.mark.integration.
+Маркеры: @pytest.mark.integration, @pytest.mark.live.
 """
 
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.live
 
 from cognitia.tools.web_httpx import HttpxWebProvider, _extract_text
 from cognitia.tools.web_protocols import SearchResult

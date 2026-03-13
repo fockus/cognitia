@@ -13,11 +13,14 @@
 - _reconnect: disconnect старого client → новый connect
 """
 
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from cognitia.runtime.adapter import RuntimeAdapter, StreamEvent
+
+pytestmark = pytest.mark.requires_claude_sdk
 
 
 # ---------------------------------------------------------------------------
@@ -55,12 +58,76 @@ def _make_tool_result_block(content: str = "result") -> MagicMock:
     return block
 
 
+def _make_thinking_block(thinking: str = "Let me think...", signature: str = "sig") -> MagicMock:
+    """Мок ThinkingBlock."""
+    from cognitia.runtime.adapter import ThinkingBlock
+
+    block = MagicMock(spec=ThinkingBlock)
+    block.thinking = thinking
+    block.signature = signature
+    return block
+
+
 def _make_assistant_msg(blocks: list) -> MagicMock:
     """Мок AssistantMessage с заданными content blocks."""
     from cognitia.runtime.adapter import AssistantMessage
 
     msg = MagicMock(spec=AssistantMessage)
     msg.content = blocks
+    return msg
+
+
+def _make_sdk_stream_event(event: dict[str, Any]) -> MagicMock:
+    """Мок raw SDK StreamEvent."""
+    from claude_agent_sdk.types import StreamEvent
+
+    msg = MagicMock(spec=StreamEvent)
+    msg.uuid = "ev-1"
+    msg.session_id = "sess-1"
+    msg.event = event
+    msg.parent_tool_use_id = None
+    return msg
+
+
+def _make_task_started_msg(description: str = "Research task") -> MagicMock:
+    """Мок TaskStartedMessage (или SystemMessage fallback)."""
+    from claude_agent_sdk import SystemMessage
+
+    msg = MagicMock(spec=SystemMessage)
+    msg.description = description
+    msg.session_id = "sess-1"
+    msg.subtype = "task_started"
+    msg.data = {"description": description}
+    return msg
+
+
+def _make_task_progress_msg(
+    description: str = "Working", last_tool_name: str | None = None,
+) -> MagicMock:
+    """Мок TaskProgressMessage (или SystemMessage fallback)."""
+    from claude_agent_sdk import SystemMessage
+
+    msg = MagicMock(spec=SystemMessage)
+    msg.description = description
+    msg.last_tool_name = last_tool_name
+    msg.session_id = "sess-1"
+    msg.subtype = "task_progress"
+    msg.data = {"description": description, "last_tool_name": last_tool_name}
+    return msg
+
+
+def _make_task_notification_msg(
+    summary: str = "Task complete", status: str = "completed",
+) -> MagicMock:
+    """Мок TaskNotificationMessage (или SystemMessage fallback)."""
+    from claude_agent_sdk import SystemMessage
+
+    msg = MagicMock(spec=SystemMessage)
+    msg.summary = summary
+    msg.status = status
+    msg.session_id = "sess-1"
+    msg.subtype = "task_notification"
+    msg.data = {"summary": summary, "status": status}
     return msg
 
 
@@ -332,6 +399,31 @@ class TestStreamReply:
         assert tool_event.tool_name == "mcp__iss__search"
 
     @pytest.mark.asyncio
+    async def test_thinking_block_not_emitted_as_text(self) -> None:
+        """ThinkingBlock не стримится пользователю — только логируется."""
+        mock_client = AsyncMock()
+
+        async def fake_receive_response():
+            yield _make_assistant_msg([
+                _make_thinking_block("Analyzing the question..."),
+                _make_text_block("Вот ответ"),
+            ])
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("вопрос"):
+            events.append(event)
+
+        types = [e.type for e in events]
+        # ThinkingBlock не должен генерировать text_delta
+        text_events = [e for e in events if e.type == "text_delta"]
+        assert len(text_events) == 1
+        assert text_events[0].text == "Вот ответ"
+        assert "done" in types
+
+    @pytest.mark.asyncio
     async def test_result_message_not_emitted_as_text(self) -> None:
         """ResultMessage НЕ дублирует текст — текст уже был в AssistantMessage."""
         mock_client = AsyncMock()
@@ -539,8 +631,9 @@ class TestStreamReplyGenericErrors:
         mock_client = AsyncMock()
 
         async def broken_receive():
+            if False:  # pragma: no cover
+                yield None
             raise RuntimeError("unexpected SDK error")
-            yield  # noqa: unreachable — нужен для async generator
 
         mock_client.receive_response = broken_receive
         adapter, _ = _make_adapter_with_client(mock_client)
@@ -555,3 +648,308 @@ class TestStreamReplyGenericErrors:
         assert "Ошибка SDK" in events[0].text
         # reconnect НЕ вызван
         adapter._reconnect.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Dynamic Control — set_model, interrupt, set_permission_mode, get_mcp_status, rewind_files
+# ---------------------------------------------------------------------------
+
+
+class TestDynamicControl:
+    """Dynamic control методы RuntimeAdapter."""
+
+    @pytest.mark.asyncio
+    async def test_set_model_delegates_to_client(self) -> None:
+        """set_model() делегирует в client.set_model()."""
+        mock_client = AsyncMock()
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        await adapter.set_model("claude-opus-4-20250514")
+
+        mock_client.set_model.assert_awaited_once_with("claude-opus-4-20250514")
+
+    @pytest.mark.asyncio
+    async def test_set_model_not_connected_raises(self) -> None:
+        """set_model() без подключения → RuntimeError."""
+        mock_options = MagicMock()
+        adapter = RuntimeAdapter(mock_options)
+
+        with pytest.raises(RuntimeError, match="не подключён"):
+            await adapter.set_model("sonnet")
+
+    @pytest.mark.asyncio
+    async def test_interrupt_delegates_to_client(self) -> None:
+        """interrupt() делегирует в client.interrupt()."""
+        mock_client = AsyncMock()
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        await adapter.interrupt()
+
+        mock_client.interrupt.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_interrupt_not_connected_raises(self) -> None:
+        """interrupt() без подключения → RuntimeError."""
+        mock_options = MagicMock()
+        adapter = RuntimeAdapter(mock_options)
+
+        with pytest.raises(RuntimeError, match="не подключён"):
+            await adapter.interrupt()
+
+    @pytest.mark.asyncio
+    async def test_set_permission_mode_delegates_to_client(self) -> None:
+        """set_permission_mode() делегирует в client.set_permission_mode()."""
+        mock_client = AsyncMock()
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        await adapter.set_permission_mode("acceptEdits")
+
+        mock_client.set_permission_mode.assert_awaited_once_with("acceptEdits")
+
+    @pytest.mark.asyncio
+    async def test_set_permission_mode_not_connected_raises(self) -> None:
+        """set_permission_mode() без подключения → RuntimeError."""
+        mock_options = MagicMock()
+        adapter = RuntimeAdapter(mock_options)
+
+        with pytest.raises(RuntimeError, match="не подключён"):
+            await adapter.set_permission_mode("default")
+
+    @pytest.mark.asyncio
+    async def test_get_mcp_status_delegates_to_client(self) -> None:
+        """get_mcp_status() делегирует в client.get_mcp_status()."""
+        mock_client = AsyncMock()
+        mock_client.get_mcp_status.return_value = {
+            "mcpServers": [{"name": "iss", "status": "connected"}],
+        }
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        result = await adapter.get_mcp_status()
+
+        mock_client.get_mcp_status.assert_awaited_once()
+        assert result["mcpServers"][0]["name"] == "iss"
+
+    @pytest.mark.asyncio
+    async def test_get_mcp_status_not_connected_raises(self) -> None:
+        """get_mcp_status() без подключения → RuntimeError."""
+        mock_options = MagicMock()
+        adapter = RuntimeAdapter(mock_options)
+
+        with pytest.raises(RuntimeError, match="не подключён"):
+            await adapter.get_mcp_status()
+
+    @pytest.mark.asyncio
+    async def test_rewind_files_delegates_to_client(self) -> None:
+        """rewind_files() делегирует в client.rewind_files()."""
+        mock_client = AsyncMock()
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        await adapter.rewind_files("msg-uuid-123")
+
+        mock_client.rewind_files.assert_awaited_once_with("msg-uuid-123")
+
+    @pytest.mark.asyncio
+    async def test_rewind_files_not_connected_raises(self) -> None:
+        """rewind_files() без подключения → RuntimeError."""
+        mock_options = MagicMock()
+        adapter = RuntimeAdapter(mock_options)
+
+        with pytest.raises(RuntimeError, match="не подключён"):
+            await adapter.rewind_files("msg-uuid-123")
+
+
+# ---------------------------------------------------------------------------
+# ResultMessage metrics extraction
+# ---------------------------------------------------------------------------
+
+
+def _make_result_msg_with_metrics(
+    session_id: str = "sess-1",
+    total_cost_usd: float | None = 0.05,
+    usage: dict | None = None,
+    structured_output: Any = None,
+    duration_ms: int = 1500,
+    num_turns: int = 3,
+) -> MagicMock:
+    """Мок ResultMessage с метриками."""
+    from cognitia.runtime.adapter import ResultMessage
+
+    msg = MagicMock(spec=ResultMessage)
+    msg.session_id = session_id
+    msg.total_cost_usd = total_cost_usd
+    msg.usage = usage or {"input_tokens": 100, "output_tokens": 50}
+    msg.structured_output = structured_output
+    msg.duration_ms = duration_ms
+    msg.duration_api_ms = duration_ms
+    msg.num_turns = num_turns
+    msg.is_error = False
+    msg.result = None
+    msg.subtype = "success"
+    return msg
+
+
+class TestResultMessageMetrics:
+    """Extraction метрик из ResultMessage в done StreamEvent."""
+
+    @pytest.mark.asyncio
+    async def test_done_event_contains_session_id(self) -> None:
+        """done event содержит session_id из ResultMessage."""
+        mock_client = AsyncMock()
+
+        async def fake_receive_response():
+            yield _make_assistant_msg([_make_text_block("OK")])
+            yield _make_result_msg_with_metrics(session_id="sess-abc")
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("test"):
+            events.append(event)
+
+        done_event = events[-1]
+        assert done_event.type == "done"
+        assert done_event.session_id == "sess-abc"
+
+    @pytest.mark.asyncio
+    async def test_done_event_contains_cost(self) -> None:
+        """done event содержит total_cost_usd."""
+        mock_client = AsyncMock()
+
+        async def fake_receive_response():
+            yield _make_assistant_msg([_make_text_block("OK")])
+            yield _make_result_msg_with_metrics(total_cost_usd=0.123)
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("test"):
+            events.append(event)
+
+        done_event = events[-1]
+        assert done_event.total_cost_usd == 0.123
+
+    @pytest.mark.asyncio
+    async def test_done_event_contains_usage(self) -> None:
+        """done event содержит usage."""
+        mock_client = AsyncMock()
+        usage = {"input_tokens": 200, "output_tokens": 100}
+
+        async def fake_receive_response():
+            yield _make_assistant_msg([_make_text_block("OK")])
+            yield _make_result_msg_with_metrics(usage=usage)
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("test"):
+            events.append(event)
+
+        done_event = events[-1]
+        assert done_event.usage == usage
+
+    @pytest.mark.asyncio
+    async def test_done_event_contains_structured_output(self) -> None:
+        """done event содержит structured_output."""
+        mock_client = AsyncMock()
+        struct = {"answer": "42", "confidence": 0.99}
+
+        async def fake_receive_response():
+            yield _make_assistant_msg([_make_text_block("OK")])
+            yield _make_result_msg_with_metrics(structured_output=struct)
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("test"):
+            events.append(event)
+
+        done_event = events[-1]
+        assert done_event.structured_output == struct
+
+    @pytest.mark.asyncio
+    async def test_done_event_without_result_message_has_none_metrics(self) -> None:
+        """Без ResultMessage — метрики None."""
+        mock_client = AsyncMock()
+
+        async def fake_receive_response():
+            yield _make_assistant_msg([_make_text_block("OK")])
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("test"):
+            events.append(event)
+
+        done_event = events[-1]
+        assert done_event.type == "done"
+        assert done_event.session_id is None
+        assert done_event.total_cost_usd is None
+        assert done_event.usage is None
+        assert done_event.structured_output is None
+
+
+class TestPartialAndStatusEvents:
+    """Raw partial SDK events и system task messages."""
+
+    @pytest.mark.asyncio
+    async def test_partial_stream_events_emit_text_without_duplication(self) -> None:
+        mock_client = AsyncMock()
+        mock_options = MagicMock()
+        mock_options.stderr = None
+        mock_options.include_partial_messages = True
+
+        async def fake_receive_response():
+            yield _make_sdk_stream_event(
+                {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": "Hel"},
+                }
+            )
+            yield _make_sdk_stream_event(
+                {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": "lo"},
+                }
+            )
+            yield _make_assistant_msg([_make_text_block("Hello")])
+            yield _make_result_msg_with_metrics()
+
+        mock_client.receive_response = fake_receive_response
+        adapter = RuntimeAdapter(mock_options)
+        adapter._client = mock_client
+
+        events = []
+        async for event in adapter.stream_reply("test"):
+            events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "text_delta", "done"]
+        assert events[0].text == "Hel"
+        assert events[1].text == "lo"
+        assert events[2].text == "Hello"
+
+    @pytest.mark.asyncio
+    async def test_task_system_messages_emit_status_events(self) -> None:
+        mock_client = AsyncMock()
+
+        async def fake_receive_response():
+            yield _make_task_started_msg("Research started")
+            yield _make_task_progress_msg("Searching", last_tool_name="WebSearch")
+            yield _make_task_notification_msg("Research complete")
+            yield _make_result_msg_with_metrics()
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("test"):
+            events.append(event)
+
+        assert [event.type for event in events] == ["status", "status", "status", "done"]
+        assert "Research started" in events[0].text
+        assert "Searching" in events[1].text
+        assert "Research complete" in events[2].text

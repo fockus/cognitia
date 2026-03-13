@@ -4,31 +4,68 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cognitia"
-version = "0.2.0"
-description = "Переиспользуемая библиотека для построения AI-агентов на Claude Agent SDK"
+version = "0.3.0b1"
+description = "LLM-agnostic framework for building AI agents with pluggable runtimes, memory, tools, and observability"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+authors = [
+    { name = "cognitia contributors" },
+]
+keywords = [
+    "ai",
+    "agent",
+    "llm",
+    "claude",
+    "openai",
+    "langchain",
+    "mcp",
+    "framework",
+    "multi-agent",
+    "tools",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
+]
 dependencies = [
     "structlog>=24.0.0",
     "pyyaml>=6.0",
     "pydantic>=2.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/fockus/cognitia"
+Documentation = "https://github.com/fockus/cognitia#readme"
+Repository = "https://github.com/fockus/cognitia"
+Issues = "https://github.com/fockus/cognitia/issues"
+Changelog = "https://github.com/fockus/cognitia/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 # Runtime: Claude Agent SDK
 claude = [
-    "claude-agent-sdk>=0.1.33",
+    "claude-agent-sdk>=0.1.48",
 ]
-# Runtime: ThinRuntime (наша реализация)
+# Runtime: ThinRuntime (lightweight built-in loop)
 thin = [
     "anthropic>=0.40",
     "httpx>=0.27",
 ]
 # Runtime: DeepAgents (LangChain/LangGraph)
 deepagents = [
-    "langchain-core>=0.3",
-    "langchain-anthropic>=0.3",
+    "deepagents>=0.4.11",
+    "langchain>=1.2",
+    "langchain-core>=1.2",
+    "langchain-anthropic>=1.3",
 ]
 # Database: PostgreSQL
 postgres = [
@@ -44,23 +81,23 @@ sqlite = [
 web = [
     "httpx>=0.27",
 ]
-# Web search: DuckDuckGo (default, без API key). Метапоиск по 9 движкам.
+# Web search: DuckDuckGo (default, no API key needed)
 web-duckduckgo = [
     "ddgs>=9.0",
 ]
-# Web search: Tavily (AI-оптимизированный, требует TAVILY_API_KEY)
+# Web search: Tavily (AI-optimized, requires TAVILY_API_KEY)
 web-tavily = [
     "tavily-python",
 ]
-# Web fetch: Jina Reader API (URL → markdown, требует JINA_API_KEY)
+# Web fetch: Jina Reader API (URL to markdown, requires JINA_API_KEY)
 web-jina = [
     "httpx>=0.27",
 ]
-# Web fetch: Crawl4AI (URL → markdown, Playwright)
+# Web fetch: Crawl4AI (URL to markdown, Playwright)
 web-crawl4ai = [
     "crawl4ai>=0.8",
 ]
-# Web fetch: trafilatura (качественное извлечение текста из HTML)
+# Web fetch: trafilatura (high-quality text extraction from HTML)
 web-extract = [
     "trafilatura>=2.0",
 ]
@@ -72,7 +109,7 @@ e2b = [
 docker = [
     "docker>=7.0",
 ]
-# Всё вместе (для разработки Freedom)
+# All runtimes + postgres + web (for development)
 all = [
     "cognitia[claude,thin,postgres,web,web-duckduckgo]",
 ]
@@ -93,8 +130,14 @@ packages = ["src/cognitia"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = ["-m", "not live"]
 markers = [
-    "security: security regression и изоляция провайдеров",
+    "security: security regression and provider isolation",
+    "requires_claude_sdk: requires claude-agent-sdk (pip install cognitia[claude])",
+    "requires_anthropic: requires anthropic SDK (pip install cognitia[thin])",
+    "requires_langchain: requires langchain (pip install cognitia[deepagents])",
+    "live: requires network access (web search, API calls)",
+    "integration: integration tests with external dependencies",
 ]
 
-# Ruff конфиг — в корневом pyproject.toml (единый для monorepo)
+# Ruff config is in the root pyproject.toml (shared across monorepo)

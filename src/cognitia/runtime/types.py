@@ -15,6 +15,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from cognitia.runtime.capabilities import (
+    VALID_FEATURE_MODES,
+    VALID_RUNTIME_NAMES,
+    CapabilityRequirements,
+    get_runtime_capabilities,
+)
+
 # ---------------------------------------------------------------------------
 # Message — каноническое сообщение для runtime
 # ---------------------------------------------------------------------------
@@ -97,6 +104,7 @@ RUNTIME_ERROR_KINDS = frozenset(
         "mcp_timeout",  # таймаут MCP-вызова
         "tool_error",  # ошибка выполнения инструмента
         "dependency_missing",  # отсутствует optional dependency
+        "capability_unsupported",  # runtime не поддерживает требуемые features
     }
 )
 
@@ -187,7 +195,7 @@ class RuntimeEvent:
     - status: data={"text": "..."}
     - tool_call_started: data={"name": "...", "correlation_id": "...", "args": {...}}
     - tool_call_finished: data={"name": "...", "correlation_id": "...", "ok": bool, "result_summary": "..."}
-    - final: data={"text": "...", "new_messages": [...], "metrics": {...}}
+    - final: data={"text": "...", "new_messages": [...], "metrics": {...}, ...metadata}
     - error: data=RuntimeErrorData.to_dict()
     """
 
@@ -240,16 +248,26 @@ class RuntimeEvent:
         text: str,
         new_messages: list[Message] | None = None,
         metrics: TurnMetrics | None = None,
+        session_id: str | None = None,
+        total_cost_usd: float | None = None,
+        usage: dict[str, Any] | None = None,
+        structured_output: Any = None,
     ) -> RuntimeEvent:
         """Финальный ответ."""
-        return RuntimeEvent(
-            type="final",
-            data={
-                "text": text,
-                "new_messages": [m.to_dict() for m in (new_messages or [])],
-                "metrics": metrics.to_dict() if metrics else {},
-            },
-        )
+        data: dict[str, Any] = {
+            "text": text,
+            "new_messages": [m.to_dict() for m in (new_messages or [])],
+            "metrics": metrics.to_dict() if metrics else {},
+        }
+        if session_id is not None:
+            data["session_id"] = session_id
+        if total_cost_usd is not None:
+            data["total_cost_usd"] = total_cost_usd
+        if usage is not None:
+            data["usage"] = usage
+        if structured_output is not None:
+            data["structured_output"] = structured_output
+        return RuntimeEvent(type="final", data=data)
 
     @staticmethod
     def error(error: RuntimeErrorData) -> RuntimeEvent:
@@ -264,9 +282,6 @@ class RuntimeEvent:
 # ---------------------------------------------------------------------------
 # RuntimeConfig — конфигурация runtime
 # ---------------------------------------------------------------------------
-
-# Допустимые имена runtime
-VALID_RUNTIME_NAMES = frozenset({"claude_sdk", "deepagents", "thin"})
 
 # ---------------------------------------------------------------------------
 # Модели — делегируем в ModelRegistry (models.yaml)
@@ -354,9 +369,29 @@ class RuntimeConfig:
     # Дополнительные параметры (extensible)
     extra: dict[str, Any] = field(default_factory=dict)
 
+    # Runtime convergence / capability negotiation
+    feature_mode: str = "portable"
+    required_capabilities: CapabilityRequirements | None = None
+    allow_native_features: bool = False
+    native_config: dict[str, Any] = field(default_factory=dict)
+
     def __post_init__(self) -> None:
         if self.runtime_name not in VALID_RUNTIME_NAMES:
             raise ValueError(
                 f"Неизвестный runtime: '{self.runtime_name}'. "
                 f"Допустимые: {', '.join(sorted(VALID_RUNTIME_NAMES))}"
             )
+        if self.feature_mode not in VALID_FEATURE_MODES:
+            raise ValueError(
+                f"Неизвестный feature_mode: '{self.feature_mode}'. "
+                f"Допустимые: {', '.join(sorted(VALID_FEATURE_MODES))}"
+            )
+        if self.required_capabilities is not None:
+            caps = get_runtime_capabilities(self.runtime_name)
+            missing = caps.missing(self.required_capabilities)
+            if missing:
+                raise ValueError(
+                    "Runtime "
+                    f"'{self.runtime_name}' не поддерживает требуемые capabilities: "
+                    f"{', '.join(missing)}"
+                )

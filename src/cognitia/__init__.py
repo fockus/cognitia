@@ -1,7 +1,8 @@
-"""Cognitia — переиспользуемая библиотека для AI-агентов на Claude Agent SDK."""
+"""Cognitia — LLM-agnostic framework for building AI agents."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0b1"
 
+from cognitia.agent import Agent, AgentConfig, Conversation, Result, tool
 from cognitia.protocols import (
     ContextBuilder,
     FactStore,
@@ -35,9 +36,12 @@ from cognitia.runtime.types import (
 from cognitia.types import ContextPack, SkillSet, TurnContext
 
 __all__ = [
+    "Agent",
+    "AgentConfig",
     "AgentRuntime",
     "ContextBuilder",
     "ContextPack",
+    "Conversation",
     "FactStore",
     "GoalStore",
     "LocalToolResolver",
@@ -45,6 +49,7 @@ __all__ = [
     "MessageStore",
     "ModelSelector",
     "PhaseStore",
+    "Result",
     "RoleRouter",
     "RoleSkillsProvider",
     "RuntimeConfig",
@@ -64,4 +69,5 @@ __all__ = [
     "TurnContext",
     "TurnMetrics",
     "UserStore",
+    "tool",
 ]

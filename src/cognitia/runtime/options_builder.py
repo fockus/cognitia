@@ -7,10 +7,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
+    HookMatcher,
     McpSdkServerConfig,
     PermissionResultAllow,
     PermissionResultDeny,
+    SandboxSettings,
+    SdkBeta,
+    SdkPluginConfig,
     ToolPermissionContext,
 )
 
@@ -55,14 +60,45 @@ class ClaudeOptionsBuilder:
         disallowed_tools: list[str] | None = None,
         can_use_tool: CanUseToolFn | None = None,
         max_turns: int | None = None,
+        permission_mode: str = "bypassPermissions",
         tool_failure_count: int = 0,
         setting_sources: list[str] | None = None,
+        max_thinking_tokens: int | None = None,
+        sandbox: SandboxSettings | None = None,
+        agents: dict[str, AgentDefinition] | None = None,
+        env: dict[str, str] | None = None,
+        output_format: dict[str, Any] | None = None,
+        continue_conversation: bool = False,
+        resume: str | None = None,
+        fork_session: bool = False,
+        betas: list[SdkBeta] | None = None,
+        plugins: list[SdkPluginConfig] | None = None,
+        include_partial_messages: bool = False,
+        enable_file_checkpointing: bool = False,
+        max_budget_usd: float | None = None,
+        fallback_model: str | None = None,
+        hooks: dict[str, list[HookMatcher]] | None = None,
     ) -> ClaudeAgentOptions:
         """Собрать ClaudeAgentOptions.
 
         Args:
-            setting_sources: источники настроек SDK (§2.2, R-401).
-                По умолчанию ["project", "user"] — SDK читает .claude/settings.json.
+            setting_sources: источники настроек SDK.
+                По умолчанию [] — не читаем CLAUDE.md и .claude/settings.json.
+            max_thinking_tokens: лимит токенов для extended thinking.
+            sandbox: настройки sandbox для Bash-команд.
+            agents: определения sub-agents (AgentDefinition).
+            env: переменные окружения для subprocess.
+            output_format: JSON Schema для structured output.
+            continue_conversation: продолжить предыдущую сессию.
+            resume: session_id для возобновления.
+            fork_session: форкнуть сессию при resume (новый session_id).
+            betas: список beta-фич (например, 1M context).
+            plugins: список SDK plugin конфигураций.
+            include_partial_messages: включить partial StreamEvent.
+            enable_file_checkpointing: трекинг изменений файлов.
+            max_budget_usd: лимит бюджета в USD.
+            fallback_model: fallback модель при ошибке.
+            hooks: SDK hooks (dict[HookEvent, list[HookMatcher]]).
         """
         # override_model имеет приоритет над ModelPolicy
         model = (
@@ -82,9 +118,6 @@ class ClaudeOptionsBuilder:
             all_mcp.update(sdk_mcp_servers)
 
         # По умолчанию НЕ читаем project/user settings (CLAUDE.md, .claude/settings.json).
-        # system_prompt через ClaudeAgentOptions — единственный источник инструкций.
-        # CLAUDE.md содержит developer-facing инструкции, которые конфликтуют с ролью агента.
-        # Чтение project/user settings включается явно через setting_sources=["project", "user"].
         sources = setting_sources if setting_sources is not None else []
 
         opts = ClaudeAgentOptions(
@@ -95,9 +128,24 @@ class ClaudeOptionsBuilder:
             disallowed_tools=disallowed_tools or [],
             can_use_tool=can_use_tool,
             max_turns=max_turns,
-            permission_mode="bypassPermissions",
+            permission_mode=permission_mode,
             cwd=str(self._cwd) if self._cwd else None,
             setting_sources=sources,  # type: ignore[arg-type]
+            max_thinking_tokens=max_thinking_tokens,
+            sandbox=sandbox,
+            agents=agents,
+            env=env or {},
+            output_format=output_format,
+            continue_conversation=continue_conversation,
+            resume=resume,
+            fork_session=fork_session,
+            betas=betas or [],
+            plugins=plugins or [],
+            include_partial_messages=include_partial_messages,
+            enable_file_checkpointing=enable_file_checkpointing,
+            max_budget_usd=max_budget_usd,
+            fallback_model=fallback_model,
+            hooks=hooks,  # type: ignore[arg-type]
         )
         return opts
 

@@ -25,6 +25,10 @@ class FakeStreamEvent:
     tool_input: dict[str, Any] | None = None
     tool_result: str = ""
     is_final: bool = False
+    session_id: str | None = None
+    total_cost_usd: float | None = None
+    usage: dict[str, Any] | None = None
+    structured_output: Any = None
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +126,15 @@ class TestClaudeCodeRuntimeStreaming:
         adapter = FakeAdapter(events=[
             FakeStreamEvent(type="text_delta", text="Привет"),
             FakeStreamEvent(type="text_delta", text=", мир!"),
-            FakeStreamEvent(type="done", text="Привет, мир!", is_final=True),
+            FakeStreamEvent(
+                type="done",
+                text="Привет, мир!",
+                is_final=True,
+                session_id="sess-1",
+                total_cost_usd=0.2,
+                usage={"input_tokens": 10, "output_tokens": 5},
+                structured_output={"answer": "Привет, мир!"},
+            ),
         ])
         runtime = ClaudeCodeRuntime(adapter=adapter)
         events = await collect_events(runtime, [Message(role="user", content="say hi")])
@@ -137,6 +149,10 @@ class TestClaudeCodeRuntimeStreaming:
         assert len(final.data["new_messages"]) == 1
         assert final.data["new_messages"][0]["role"] == "assistant"
         assert final.data["new_messages"][0]["content"] == "Привет, мир!"
+        assert final.data["session_id"] == "sess-1"
+        assert final.data["total_cost_usd"] == 0.2
+        assert final.data["usage"] == {"input_tokens": 10, "output_tokens": 5}
+        assert final.data["structured_output"] == {"answer": "Привет, мир!"}
 
     @pytest.mark.asyncio
     async def test_tool_events_converted(self) -> None:

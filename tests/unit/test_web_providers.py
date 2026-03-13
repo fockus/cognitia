@@ -28,7 +28,6 @@ from cognitia.tools.web_providers.jina import JinaReaderFetchProvider
 from cognitia.tools.web_providers.searxng import SearXNGSearchProvider
 from cognitia.tools.web_providers.tavily import TavilySearchProvider
 
-
 # ---------------------------------------------------------------------------
 # Protocol compliance
 # ---------------------------------------------------------------------------
@@ -373,7 +372,7 @@ class TestSearchFactory:
         assert provider is None
 
     def test_supported_providers_set(self) -> None:
-        assert SUPPORTED_PROVIDERS == {"duckduckgo", "tavily", "searxng", "brave"}
+        assert {"duckduckgo", "tavily", "searxng", "brave"} == SUPPORTED_PROVIDERS
 
 
 # ---------------------------------------------------------------------------
@@ -507,7 +506,7 @@ class TestFetchFactory:
         assert create_fetch_provider("unknown") is None
 
     def test_supported_fetch_providers_set(self) -> None:
-        assert SUPPORTED_FETCH_PROVIDERS == {"default", "jina", "crawl4ai"}
+        assert {"default", "jina", "crawl4ai"} == SUPPORTED_FETCH_PROVIDERS
 
 
 # ---------------------------------------------------------------------------

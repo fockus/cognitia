@@ -138,7 +138,7 @@ class TestRuntimeErrorData:
         expected = {
             "runtime_crash", "bad_model_output", "loop_limit",
             "budget_exceeded", "mcp_timeout", "tool_error",
-            "dependency_missing",
+            "dependency_missing", "capability_unsupported",
         }
         assert expected == RUNTIME_ERROR_KINDS
 
@@ -206,6 +206,19 @@ class TestRuntimeEvent:
         assert ev.data["new_messages"] == []
         assert ev.data["metrics"] == {}
 
+    def test_final_with_metadata(self) -> None:
+        ev = RuntimeEvent.final(
+            "ok",
+            session_id="sess-1",
+            total_cost_usd=0.25,
+            usage={"input_tokens": 10, "output_tokens": 5},
+            structured_output={"answer": 42},
+        )
+        assert ev.data["session_id"] == "sess-1"
+        assert ev.data["total_cost_usd"] == 0.25
+        assert ev.data["usage"] == {"input_tokens": 10, "output_tokens": 5}
+        assert ev.data["structured_output"] == {"answer": 42}
+
     def test_error(self) -> None:
         err = RuntimeErrorData(kind="loop_limit", message="limit")
         ev = RuntimeEvent.error(err)
@@ -239,6 +252,10 @@ class TestRuntimeConfig:
         assert cfg.max_iterations == 6
         assert cfg.max_tool_calls == 8
         assert cfg.max_model_retries == 2
+        assert cfg.feature_mode == "portable"
+        assert cfg.required_capabilities is None
+        assert cfg.allow_native_features is False
+        assert cfg.native_config == {}
 
     def test_thin_config(self) -> None:
         cfg = RuntimeConfig(
@@ -271,6 +288,10 @@ class TestRuntimeConfig:
         """Можно задать модель напрямую."""
         cfg = RuntimeConfig(model="claude-opus-4-20250514")
         assert cfg.model == "claude-opus-4-20250514"
+
+    def test_invalid_feature_mode(self) -> None:
+        with pytest.raises(ValueError, match="feature_mode"):
+            RuntimeConfig(feature_mode="invalid")  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

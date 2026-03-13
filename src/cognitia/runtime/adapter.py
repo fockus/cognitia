@@ -13,6 +13,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,10 +23,24 @@ from claude_agent_sdk import (
     ClaudeSDKClient,
     Message,
     ResultMessage,
+    SystemMessage,
     TextBlock,
+    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
 )
+from claude_agent_sdk.types import StreamEvent as SdkStreamEvent
+
+# Типы задач — могут отсутствовать в старых версиях SDK (< 0.2)
+try:
+    from claude_agent_sdk import (
+        TaskNotificationMessage,
+        TaskProgressMessage,
+        TaskStartedMessage,
+    )
+    _HAS_TASK_MESSAGES = True
+except ImportError:
+    _HAS_TASK_MESSAGES = False
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +49,63 @@ logger = logging.getLogger(__name__)
 class StreamEvent:
     """Унифицированное событие потока для CLI/Telegram."""
 
-    type: str  # 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'done' | 'error'
+    type: str  # 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'status' | 'done' | 'error'
     text: str = ""
     tool_name: str = ""
     tool_input: dict[str, Any] | None = None
     tool_result: str = ""
     is_final: bool = False
+    # Метрики из ResultMessage (заполняются в done event)
+    session_id: str | None = None
+    total_cost_usd: float | None = None
+    usage: dict[str, Any] | None = None
+    structured_output: Any = None
+
+
+def _extract_partial_text_delta(message: SdkStreamEvent) -> str | None:
+    """Извлечь text delta из raw SDK StreamEvent."""
+    raw_event = getattr(message, "event", None)
+    if not isinstance(raw_event, dict):
+        return None
+    if raw_event.get("type") != "content_block_delta":
+        return None
+    delta = raw_event.get("delta")
+    if not isinstance(delta, dict):
+        return None
+    if delta.get("type") != "text_delta":
+        return None
+    text = delta.get("text")
+    return text if isinstance(text, str) and text else None
+
+
+def _format_system_message(message: SystemMessage) -> str | None:
+    """Преобразовать SDK SystemMessage в status text."""
+    if _HAS_TASK_MESSAGES:
+        if isinstance(message, TaskStartedMessage):
+            return f"Task started: {message.description}"
+
+        if isinstance(message, TaskProgressMessage):
+            if message.last_tool_name:
+                return f"Task progress: {message.description} ({message.last_tool_name})"
+            return f"Task progress: {message.description}"
+
+        if isinstance(message, TaskNotificationMessage):
+            return f"Task {message.status}: {message.summary}"
+
+    # Fallback для SDK без TaskMessage типов — извлекаем через getattr
+    description = getattr(message, "description", None)
+    if isinstance(description, str) and description:
+        return description
+
+    data = getattr(message, "data", None)
+    if isinstance(data, dict):
+        for key in ("message", "summary", "description"):
+            value = data.get(key)
+            if isinstance(value, str) and value:
+                return value
+
+    subtype = getattr(message, "subtype", None)
+    return subtype if isinstance(subtype, str) and subtype else None
 
 
 class RuntimeAdapter:
@@ -90,10 +156,8 @@ class RuntimeAdapter:
                 elapsed, self.CONNECT_TIMEOUT_SECONDS,
             )
             # Убиваем зависший subprocess
-            try:
+            with suppress(Exception):
                 await self._client.disconnect()
-            except Exception:
-                pass
             self._client = None
             raise TimeoutError(
                 f"Claude SDK subprocess не инициализировался за {self.CONNECT_TIMEOUT_SECONDS}s"
@@ -106,10 +170,8 @@ class RuntimeAdapter:
         """Переподключиться при падении subprocess."""
         logger.warning("Переподключение Claude SDK subprocess...")
         if self._client:
-            try:
+            with suppress(Exception):
                 await self._client.disconnect()
-            except Exception:
-                pass
             self._client = None
 
         t0 = time.monotonic()
@@ -122,10 +184,8 @@ class RuntimeAdapter:
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - t0
             logger.error("Таймаут reconnect (%.1fs)", elapsed)
-            try:
+            with suppress(Exception):
                 await self._client.disconnect()
-            except Exception:
-                pass
             self._client = None
             raise TimeoutError("Claude SDK reconnect timeout") from None
 
@@ -141,6 +201,37 @@ class RuntimeAdapter:
     @property
     def is_connected(self) -> bool:
         return self._client is not None
+
+    def _require_client(self) -> ClaudeSDKClient:
+        """Проверить подключение и вернуть клиент."""
+        if not self._client:
+            raise RuntimeError("SDK клиент не подключён")
+        return self._client
+
+    async def set_model(self, model: str) -> None:
+        """Сменить модель в runtime (динамически)."""
+        client = self._require_client()
+        await client.set_model(model)
+
+    async def interrupt(self) -> None:
+        """Прервать текущий запрос."""
+        client = self._require_client()
+        await client.interrupt()
+
+    async def set_permission_mode(self, mode: str) -> None:
+        """Сменить permission mode в runtime."""
+        client = self._require_client()
+        await client.set_permission_mode(mode)
+
+    async def get_mcp_status(self) -> dict[str, Any]:
+        """Получить статус MCP серверов."""
+        client = self._require_client()
+        return await client.get_mcp_status()
+
+    async def rewind_files(self, user_message_id: str) -> None:
+        """Откатить файлы к состоянию на момент user message."""
+        client = self._require_client()
+        await client.rewind_files(user_message_id)
 
     async def stream_reply(self, user_text: str) -> AsyncIterator[StreamEvent]:
         """Отправить сообщение и стримить ответ.
@@ -186,12 +277,37 @@ class RuntimeAdapter:
         logger.info("stream_reply: ожидание receive_response()")
         full_text = ""
         msg_count = 0
+        result_meta: dict[str, Any] = {}
+        saw_partial_text = False
         try:
             async for message in self._client.receive_response():
                 msg_count += 1
                 msg_type = type(message).__name__
                 logger.info("stream_reply: msg #%d type=%s", msg_count, msg_type)
-                async for event in self._process_message(message):
+
+                # Извлекаем метрики из ResultMessage
+                if isinstance(message, ResultMessage):
+                    result_meta = {
+                        "session_id": getattr(message, "session_id", None),
+                        "total_cost_usd": getattr(message, "total_cost_usd", None),
+                        "usage": getattr(message, "usage", None),
+                        "structured_output": getattr(message, "structured_output", None),
+                    }
+
+                if self._options.include_partial_messages and isinstance(
+                    message, SdkStreamEvent,
+                ):
+                    partial_text = _extract_partial_text_delta(message)
+                    if partial_text:
+                        saw_partial_text = True
+                        full_text += partial_text
+                        yield StreamEvent(type="text_delta", text=partial_text)
+                    continue
+
+                async for event in self._process_message(
+                    message,
+                    suppress_text=saw_partial_text,
+                ):
                     if event.type == "text_delta":
                         full_text += event.text
                     yield event
@@ -202,18 +318,24 @@ class RuntimeAdapter:
                 text=f"SDK subprocess упал при чтении: {exc}",
             )
             # Пробуем reconnect для будущих запросов
-            try:
+            with suppress(Exception):
                 await self._reconnect()
-            except Exception:
-                pass
             return
         except Exception as exc:
             logger.error("Ошибка чтения ответа SDK: %s", exc)
             yield StreamEvent(type="error", text=f"Ошибка SDK: {exc}")
             return
 
-        # Финальное событие
-        yield StreamEvent(type="done", text=full_text, is_final=True)
+        # Финальное событие с метриками из ResultMessage
+        yield StreamEvent(
+            type="done",
+            text=full_text,
+            is_final=True,
+            session_id=result_meta.get("session_id"),
+            total_cost_usd=result_meta.get("total_cost_usd"),
+            usage=result_meta.get("usage"),
+            structured_output=result_meta.get("structured_output"),
+        )
 
     @staticmethod
     def _on_stderr(line: str) -> None:
@@ -228,12 +350,24 @@ class RuntimeAdapter:
         else:
             logger.info("claude-cli stderr: %s", stripped)
 
-    async def _process_message(self, message: Message) -> AsyncIterator[StreamEvent]:
+    async def _process_message(
+        self,
+        message: Message,
+        *,
+        suppress_text: bool = False,
+    ) -> AsyncIterator[StreamEvent]:
         """Преобразовать SDK Message в поток StreamEvent."""
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):
-                    yield StreamEvent(type="text_delta", text=block.text)
+                    if not suppress_text:
+                        yield StreamEvent(type="text_delta", text=block.text)
+                elif isinstance(block, ThinkingBlock):
+                    # ThinkingBlock — внутреннее рассуждение модели.
+                    # Не стримим пользователю, но логируем для observability.
+                    logger.debug(
+                        "ThinkingBlock (len=%d)", len(block.thinking),
+                    )
                 elif isinstance(block, ToolUseBlock):
                     yield StreamEvent(
                         type="tool_use_start",
@@ -246,6 +380,10 @@ class RuntimeAdapter:
                         type="tool_use_result",
                         tool_result=result_text,
                     )
+        elif isinstance(message, SystemMessage):
+            status_text = _format_system_message(message)
+            if status_text:
+                yield StreamEvent(type="status", text=status_text)
         elif isinstance(message, ResultMessage):
             # ResultMessage — финальный итог turn'а (cost, duration и т.д.).
             # Текст из content не дублируем — он уже был в AssistantMessage.

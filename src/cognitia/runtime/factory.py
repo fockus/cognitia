@@ -10,6 +10,11 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from cognitia.runtime.base import AgentRuntime
+from cognitia.runtime.capabilities import (
+    CapabilityRequirements,
+    RuntimeCapabilities,
+    get_runtime_capabilities,
+)
 from cognitia.runtime.types import (
     VALID_RUNTIME_NAMES,
     RuntimeConfig,
@@ -56,6 +61,44 @@ class RuntimeFactory:
         # 4. Default
         return "claude_sdk"
 
+    def get_capabilities(
+        self,
+        config: RuntimeConfig | None = None,
+        runtime_override: str | None = None,
+    ) -> RuntimeCapabilities:
+        """Получить capability descriptor без запуска runtime."""
+        name = self.resolve_runtime_name(config, runtime_override)
+        return get_runtime_capabilities(name)
+
+    def validate_capabilities(
+        self,
+        config: RuntimeConfig | None = None,
+        runtime_override: str | None = None,
+        required_capabilities: CapabilityRequirements | None = None,
+    ) -> RuntimeErrorData | None:
+        """Проверить, удовлетворяет ли выбранный runtime требуемым capability."""
+        caps = self.get_capabilities(config=config, runtime_override=runtime_override)
+        requirements = required_capabilities
+        if requirements is None and config is not None:
+            requirements = config.required_capabilities
+
+        missing = caps.missing(requirements)
+        if not missing:
+            return None
+
+        return RuntimeErrorData(
+            kind="capability_unsupported",
+            message=(
+                f"Runtime '{caps.runtime_name}' не поддерживает требуемые capabilities: "
+                f"{', '.join(missing)}"
+            ),
+            recoverable=False,
+            details={
+                "runtime_name": caps.runtime_name,
+                "missing": list(missing),
+            },
+        )
+
     def create(
         self,
         config: RuntimeConfig | None = None,
@@ -77,6 +120,16 @@ class RuntimeFactory:
         """
         name = self.resolve_runtime_name(config, runtime_override)
         effective_config = config or RuntimeConfig(runtime_name=name)
+
+        # RuntimeConfig.__post_init__ валидирует capabilities для config.runtime_name.
+        # Но runtime_override может переключить на другой runtime → нужна проверка.
+        if runtime_override and name != getattr(config, "runtime_name", name):
+            cap_error = self.validate_capabilities(
+                config=effective_config,
+                runtime_override=runtime_override,
+            )
+            if cap_error is not None:
+                return _ErrorRuntime(cap_error)
 
         if name == "claude_sdk":
             return self._create_claude_code(effective_config, **kwargs)

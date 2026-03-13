@@ -1,0 +1,671 @@
+"""Unit: Agent class — query() + stream() + context manager."""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+from conftest import FakeStreamEvent
+
+from cognitia.agent.agent import Agent
+from cognitia.agent.config import AgentConfig
+from cognitia.agent.middleware import Middleware
+from cognitia.agent.result import Result
+from cognitia.agent.tool import tool
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_config(**overrides: Any) -> AgentConfig:
+    defaults = {"system_prompt": "test prompt"}
+    defaults.update(overrides)
+    return AgentConfig(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# Agent.query()
+# ---------------------------------------------------------------------------
+
+
+class TestAgentQueryBasic:
+    """Agent.query() — one-shot запросы."""
+
+    @pytest.mark.asyncio
+    async def test_query_returns_result(self) -> None:
+        """query() → Result с текстом."""
+        agent = Agent(_make_config())
+
+        async def fake_stream(prompt):
+            yield FakeStreamEvent("text_delta", text="Hello ")
+            yield FakeStreamEvent("text_delta", text="World")
+            yield FakeStreamEvent(
+                "done",
+                text="Hello World",
+                is_final=True,
+                session_id="s1",
+                total_cost_usd=0.01,
+                usage={"input_tokens": 10, "output_tokens": 5},
+            )
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            result = await agent.query("Hi")
+
+        assert result.ok is True
+        assert result.text == "Hello World"
+        assert result.session_id == "s1"
+        assert result.total_cost_usd == 0.01
+
+    @pytest.mark.asyncio
+    async def test_query_with_structured_output(self) -> None:
+        """output_format → structured_output в Result."""
+        config = _make_config(output_format={"type": "json_schema", "schema": {}})
+        agent = Agent(config)
+
+        async def fake_stream(prompt):
+            yield FakeStreamEvent(
+                "done",
+                text="",
+                is_final=True,
+                structured_output={"score": 85},
+            )
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            result = await agent.query("rate this")
+
+        assert result.structured_output == {"score": 85}
+
+    @pytest.mark.asyncio
+    async def test_query_error_returns_result_not_ok(self) -> None:
+        """Runtime error → Result(ok=False, error=...)."""
+        agent = Agent(_make_config())
+
+        async def fake_stream(prompt):
+            yield FakeStreamEvent("error", text="SDK crashed")
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            result = await agent.query("Hi")
+
+        assert result.ok is False
+        assert "SDK crashed" in (result.error or "")
+
+
+class TestAgentQueryWithMiddleware:
+    """Agent.query() с middleware chain."""
+
+    @pytest.mark.asyncio
+    async def test_middleware_before_query_applied(self) -> None:
+        """before_query модифицирует prompt."""
+        call_log: list[str] = []
+
+        class PrefixMiddleware(Middleware):
+            async def before_query(self, prompt: str, config: AgentConfig) -> str:
+                call_log.append("before")
+                return f"[PREFIX] {prompt}"
+
+        config = _make_config(middleware=(PrefixMiddleware(),))
+        agent = Agent(config)
+
+        received_prompts: list[str] = []
+
+        async def fake_stream(prompt):
+            received_prompts.append(prompt)
+            yield FakeStreamEvent("done", text="ok", is_final=True)
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            await agent.query("hello")
+
+        assert received_prompts == ["[PREFIX] hello"]
+        assert call_log == ["before"]
+
+    @pytest.mark.asyncio
+    async def test_middleware_after_result_applied(self) -> None:
+        """after_result обогащает Result."""
+
+        class TagMiddleware(Middleware):
+            async def after_result(self, result: Result) -> Result:
+                from dataclasses import replace
+
+                return replace(result, text=result.text + " [tagged]")
+
+        config = _make_config(middleware=(TagMiddleware(),))
+        agent = Agent(config)
+
+        async def fake_stream(prompt):
+            yield FakeStreamEvent("done", text="answer", is_final=True)
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            result = await agent.query("q")
+
+        assert result.text == "answer [tagged]"
+
+
+class TestAgentQueryWithTools:
+    """Agent.query() с @tool."""
+
+    @pytest.mark.asyncio
+    async def test_tools_from_config_available(self) -> None:
+        """Tools из config доступны при выполнении."""
+
+        @tool(name="calc", description="Calculator")
+        async def calc(expr: str) -> str:
+            return "42"
+
+        config = _make_config(tools=(calc.__tool_definition__,))
+        agent = Agent(config)
+        assert len(agent.config.tools) == 1
+        assert agent.config.tools[0].name == "calc"
+
+
+class TestAgentRuntimeCapabilities:
+    """Agent exposes runtime capability descriptor."""
+
+    def test_runtime_capabilities_for_default_claude(self) -> None:
+        agent = Agent(_make_config())
+        caps = agent.runtime_capabilities
+
+        assert caps.runtime_name == "claude_sdk"
+        assert caps.tier == "full"
+
+    def test_runtime_capabilities_for_thin(self) -> None:
+        agent = Agent(_make_config(runtime="thin"))
+        caps = agent.runtime_capabilities
+
+        assert caps.runtime_name == "thin"
+        assert caps.tier == "light"
+
+
+class TestAgentClaudeSdkWiring:
+    """Claude one-shot path пробрасывает native SDK options."""
+
+    @pytest.mark.asyncio
+    async def test_execute_claude_sdk_passes_hooks_and_native_options(self) -> None:
+        from cognitia.hooks.registry import HookRegistry
+        from cognitia.runtime.adapter import StreamEvent
+        from cognitia.skills.types import McpServerSpec
+
+        hooks = HookRegistry()
+
+        async def noop(**kwargs: Any) -> dict[str, Any]:
+            return {"continue_": True}
+
+        hooks.on_pre_tool_use(noop)
+
+        config = _make_config(
+            hooks=hooks,
+            permission_mode="plan",
+            max_turns=5,
+            max_budget_usd=2.5,
+            fallback_model="haiku",
+            betas=("context-1m-2025-08-07",),
+            env={"MY_VAR": "value"},
+            setting_sources=("project",),
+            mcp_servers={"iss": McpServerSpec(name="iss", url="http://iss.test")},
+            native_config={"include_partial_messages": True},
+        )
+        agent = Agent(config)
+        captured: dict[str, Any] = {}
+
+        async def fake_stream_one_shot_query(prompt: str, **kwargs: Any):
+            captured["prompt"] = prompt
+            captured.update(kwargs)
+            yield StreamEvent(type="text_delta", text="ok")
+            yield StreamEvent(type="done", text="ok", is_final=True, session_id="s1")
+
+        with patch(
+            "cognitia.runtime.sdk_query.stream_one_shot_query",
+            side_effect=fake_stream_one_shot_query,
+        ):
+            events = []
+            async for event in agent._execute_claude_sdk("hello"):
+                events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "done"]
+        assert captured["permission_mode"] == "plan"
+        assert captured["max_turns"] == 5
+        assert captured["max_budget_usd"] == 2.5
+        assert captured["fallback_model"] == "haiku"
+        assert captured["betas"] == ["context-1m-2025-08-07"]
+        assert captured["env"] == {"MY_VAR": "value"}
+        assert captured["setting_sources"] == ["project"]
+        assert captured["include_partial_messages"] is True
+        assert captured["hooks"] is not None
+        assert "iss" in captured["mcp_servers"]
+
+    @pytest.mark.asyncio
+    async def test_execute_claude_sdk_true_streaming(self) -> None:
+        from cognitia.runtime.adapter import StreamEvent
+
+        agent = Agent(_make_config())
+
+        async def fake_stream_query(prompt: str, **kwargs: Any):
+            yield StreamEvent(type="text_delta", text="Hello ")
+            yield StreamEvent(type="text_delta", text="World")
+            yield StreamEvent(type="done", text="Hello World", is_final=True)
+
+        with patch(
+            "cognitia.runtime.sdk_query.stream_one_shot_query",
+            side_effect=fake_stream_query,
+        ):
+            events = []
+            async for event in agent._execute_claude_sdk("hello"):
+                events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "text_delta", "done"]
+
+
+class TestAgentRuntimeFactoryWiring:
+    """Non-claude runtime path пробрасывает local tool executors."""
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_runtime_passes_tool_executors(self) -> None:
+        @tool(name="calc", description="Calculator")
+        async def calc(expr: str) -> str:
+            return "42"
+
+        agent = Agent(
+            _make_config(
+                runtime="deepagents",
+                tools=(calc.__tool_definition__,),
+            )
+        )
+
+        class FakeRuntime:
+            async def run(self, **kwargs: Any):
+                from cognitia.runtime.types import RuntimeEvent
+
+                yield RuntimeEvent.final("ok")
+
+            async def cleanup(self) -> None:
+                return None
+
+        fake_factory = MagicMock()
+        fake_factory.create.return_value = FakeRuntime()
+
+        with patch("cognitia.runtime.factory.RuntimeFactory", return_value=fake_factory):
+            events = []
+            async for event in agent._execute_agent_runtime("hello", "deepagents"):
+                events.append(event)
+
+        assert events[-1].type == "done"
+        create_kwargs = fake_factory.create.call_args.kwargs
+        assert "tool_executors" in create_kwargs
+        assert create_kwargs["tool_executors"]["calc"] is calc.__tool_definition__.handler
+
+
+# ---------------------------------------------------------------------------
+# Agent.stream()
+# ---------------------------------------------------------------------------
+
+
+class TestAgentStream:
+    """Agent.stream() — streaming events."""
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_events(self) -> None:
+        agent = Agent(_make_config())
+
+        async def fake_stream(prompt):
+            yield FakeStreamEvent("text_delta", text="chunk1")
+            yield FakeStreamEvent("text_delta", text="chunk2")
+            yield FakeStreamEvent("done", text="chunk1chunk2", is_final=True)
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            events = []
+            async for event in agent.stream("Hi"):
+                events.append(event)
+
+        assert len(events) == 3
+        assert events[0].type == "text_delta"
+        assert events[1].type == "text_delta"
+        assert events[2].type == "done"
+
+    @pytest.mark.asyncio
+    async def test_stream_text_deltas(self) -> None:
+        agent = Agent(_make_config())
+        full = ""
+
+        async def fake_stream(prompt):
+            yield FakeStreamEvent("text_delta", text="Hello ")
+            yield FakeStreamEvent("text_delta", text="World")
+            yield FakeStreamEvent("done", text="Hello World", is_final=True)
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            async for event in agent.stream("Hi"):
+                if event.type == "text_delta":
+                    full += event.text
+
+        assert full == "Hello World"
+
+
+# ---------------------------------------------------------------------------
+# Agent cleanup + context manager
+# ---------------------------------------------------------------------------
+
+
+class TestAgentLifecycle:
+    """Agent cleanup и context manager."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup(self) -> None:
+        agent = Agent(_make_config())
+        # Cleanup на свежем агенте — не должен ломаться
+        await agent.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_context_manager(self) -> None:
+        """async with Agent → auto cleanup."""
+        async with Agent(_make_config()) as agent:
+            assert isinstance(agent, Agent)
+        # После выхода — cleanup вызван (не ломается)
+
+    @pytest.mark.asyncio
+    async def test_conversation_factory(self) -> None:
+        """agent.conversation() создаёт Conversation."""
+        agent = Agent(_make_config())
+        conv = agent.conversation()
+        assert conv is not None
+        assert conv._agent is agent
+
+
+# ---------------------------------------------------------------------------
+# _RuntimeEventAdapter
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# collect_stream_result / apply_before_query helpers
+# ---------------------------------------------------------------------------
+
+
+class TestCollectStreamResult:
+    """collect_stream_result — сбор Result-полей из потока событий."""
+
+    @pytest.mark.asyncio
+    async def test_collects_text_deltas(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+
+        async def stream():
+            yield FakeStreamEvent("text_delta", text="Hello ")
+            yield FakeStreamEvent("text_delta", text="World")
+            yield FakeStreamEvent("done", text="", is_final=True)
+
+        result = await collect_stream_result(stream())
+        assert result["text"] == "Hello World"
+
+    @pytest.mark.asyncio
+    async def test_done_text_overrides_accumulated(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+
+        async def stream():
+            yield FakeStreamEvent("text_delta", text="partial")
+            yield FakeStreamEvent("done", text="Final answer", is_final=True)
+
+        result = await collect_stream_result(stream())
+        assert result["text"] == "Final answer"
+
+    @pytest.mark.asyncio
+    async def test_done_empty_text_keeps_accumulated(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+
+        async def stream():
+            yield FakeStreamEvent("text_delta", text="accumulated")
+            yield FakeStreamEvent("done", text="", is_final=True)
+
+        result = await collect_stream_result(stream())
+        assert result["text"] == "accumulated"
+
+    @pytest.mark.asyncio
+    async def test_collects_metrics(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+
+        async def stream():
+            yield FakeStreamEvent(
+                "done",
+                text="ok",
+                is_final=True,
+                session_id="s1",
+                total_cost_usd=0.05,
+                usage={"input_tokens": 100},
+                structured_output={"key": "val"},
+            )
+
+        result = await collect_stream_result(stream())
+        assert result["session_id"] == "s1"
+        assert result["total_cost_usd"] == 0.05
+        assert result["usage"] == {"input_tokens": 100}
+        assert result["structured_output"] == {"key": "val"}
+        assert result["error"] is None
+
+    @pytest.mark.asyncio
+    async def test_error_event(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+
+        async def stream():
+            yield FakeStreamEvent("error", text="boom")
+
+        result = await collect_stream_result(stream())
+        assert result["error"] == "boom"
+        assert result["text"] == ""
+
+    @pytest.mark.asyncio
+    async def test_error_empty_text_default(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+
+        async def stream():
+            yield FakeStreamEvent("error", text="")
+
+        result = await collect_stream_result(stream())
+        assert result["error"] == "Unknown error"
+
+    @pytest.mark.asyncio
+    async def test_empty_stream(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+
+        async def stream():
+            return
+            yield
+
+        result = await collect_stream_result(stream())
+        assert result["text"] == ""
+        assert result["error"] is None
+
+
+class TestApplyBeforeQuery:
+    """apply_before_query — middleware chain."""
+
+    @pytest.mark.asyncio
+    async def test_empty_middleware(self) -> None:
+        from cognitia.agent.agent import apply_before_query
+
+        result = await apply_before_query("hello", (), None)
+        assert result == "hello"
+
+    @pytest.mark.asyncio
+    async def test_single_middleware(self) -> None:
+        from cognitia.agent.agent import apply_before_query
+
+        class Prefix(Middleware):
+            async def before_query(self, prompt: str, config: Any) -> str:
+                return f"[P] {prompt}"
+
+        result = await apply_before_query("hello", (Prefix(),), None)
+        assert result == "[P] hello"
+
+    @pytest.mark.asyncio
+    async def test_chain_order(self) -> None:
+        from cognitia.agent.agent import apply_before_query
+
+        class Add1(Middleware):
+            async def before_query(self, prompt: str, config: Any) -> str:
+                return prompt + "+1"
+
+        class Add2(Middleware):
+            async def before_query(self, prompt: str, config: Any) -> str:
+                return prompt + "+2"
+
+        result = await apply_before_query("base", (Add1(), Add2()), None)
+        assert result == "base+1+2"
+
+
+class TestAgentCleanupWithRuntime:
+    """Agent.cleanup() с назначенным runtime."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_calls_runtime_cleanup(self) -> None:
+        from unittest.mock import AsyncMock
+
+        agent = Agent(_make_config())
+        mock_runtime = AsyncMock()
+        mock_runtime.cleanup = AsyncMock()
+        agent._runtime = mock_runtime
+
+        await agent.cleanup()
+
+        mock_runtime.cleanup.assert_awaited_once()
+        assert agent._runtime is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_runtime_without_cleanup_method(self) -> None:
+        """Runtime без метода cleanup — не ломается."""
+        agent = Agent(_make_config())
+        agent._runtime = object()
+
+        await agent.cleanup()
+        assert agent._runtime is None
+
+
+# ---------------------------------------------------------------------------
+# _RuntimeEventAdapter
+# ---------------------------------------------------------------------------
+
+
+class TestRuntimeEventAdapter:
+    """_RuntimeEventAdapter — маппинг RuntimeEvent → StreamEvent-like."""
+
+    def _make_event(self, etype: str, data: dict[str, Any] | None = None) -> Any:
+        from cognitia.runtime.types import RuntimeEvent
+
+        return RuntimeEvent(type=etype, data=data or {})
+
+    def test_assistant_delta_maps_to_text_delta(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event("assistant_delta", {"text": "Hello"})
+        )
+        assert adapted.type == "text_delta"
+        assert adapted.text == "Hello"
+        assert adapted.is_final is False
+
+    def test_final_maps_to_done(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event(
+                "final",
+                {
+                    "text": "Result",
+                    "session_id": "sess-1",
+                    "total_cost_usd": 0.5,
+                    "usage": {"input_tokens": 10},
+                    "structured_output": {"answer": 42},
+                },
+            )
+        )
+        assert adapted.type == "done"
+        assert adapted.text == "Result"
+        assert adapted.is_final is True
+        assert adapted.session_id == "sess-1"
+        assert adapted.total_cost_usd == 0.5
+        assert adapted.usage == {"input_tokens": 10}
+        assert adapted.structured_output == {"answer": 42}
+
+    def test_error_maps_to_error(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event("error", {"message": "Something broke"})
+        )
+        assert adapted.type == "error"
+        assert adapted.text == "Something broke"
+
+    def test_error_default_message(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(self._make_event("error", {}))
+        assert adapted.text == "Unknown error"
+
+    def test_tool_call_started(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event(
+                "tool_call_started", {"name": "calc", "args": {"x": 1}}
+            )
+        )
+        assert adapted.type == "tool_use_start"
+        assert adapted.tool_name == "calc"
+        assert adapted.tool_input == {"x": 1}
+        assert adapted.text == ""
+
+    def test_tool_call_finished(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event(
+                "tool_call_finished", {"result_summary": "42"}
+            )
+        )
+        assert adapted.type == "tool_use_result"
+        assert adapted.tool_result == "42"
+        assert adapted.text == ""
+
+    def test_unknown_event_passthrough(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event("status", {"text": "thinking..."})
+        )
+        assert adapted.type == "status"
+        assert adapted.text == "thinking..."
+        assert adapted.is_final is False
+
+    def test_defaults_always_set(self) -> None:
+        """Все StreamEvent-like атрибуты всегда присутствуют."""
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(self._make_event("assistant_delta", {"text": "x"}))
+        assert adapted.session_id is None
+        assert adapted.total_cost_usd is None
+        assert adapted.usage is None
+        assert adapted.structured_output is None
+        assert adapted.tool_name == ""
+        assert adapted.tool_input is None
+        assert adapted.tool_result == ""
+
+
+# ---------------------------------------------------------------------------
+# _ErrorEvent
+# ---------------------------------------------------------------------------
+
+
+class TestErrorEvent:
+    """_ErrorEvent — simple error event."""
+
+    def test_error_event_attributes(self) -> None:
+        from cognitia.agent.agent import _ErrorEvent
+
+        evt = _ErrorEvent("connection lost")
+        assert evt.type == "error"
+        assert evt.text == "connection lost"
+        assert evt.is_final is False
+        assert evt.session_id is None
+        assert evt.total_cost_usd is None
+        assert evt.usage is None
+        assert evt.structured_output is None
+        assert evt.tool_name == ""
+        assert evt.tool_input is None
+        assert evt.tool_result == ""

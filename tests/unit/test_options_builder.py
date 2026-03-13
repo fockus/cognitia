@@ -1,5 +1,8 @@
 """Тесты для ClaudeOptionsBuilder и _spec_to_sdk_config — фабрика опций SDK."""
 
+import pytest
+
+pytestmark = pytest.mark.requires_claude_sdk
 
 from cognitia.runtime.options_builder import (
     ClaudeOptionsBuilder,
@@ -138,11 +141,21 @@ class TestClaudeOptionsBuilder:
         )
         assert opts.model == "opus"
 
-    def test_build_permission_mode(self) -> None:
-        """permission_mode = bypassPermissions."""
+    def test_build_permission_mode_default(self) -> None:
+        """По умолчанию permission_mode = bypassPermissions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(role_id="coach", system_prompt="test")
         assert opts.permission_mode == "bypassPermissions"
+
+    def test_build_permission_mode_override(self) -> None:
+        """Можно явно задать permission_mode."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach",
+            system_prompt="test",
+            permission_mode="plan",
+        )
+        assert opts.permission_mode == "plan"
 
     def test_build_with_cwd(self) -> None:
         """cwd передаётся в опции."""
@@ -175,3 +188,190 @@ class TestClaudeOptionsBuilder:
         builder = ClaudeOptionsBuilder(override_model="custom-model-v2")
         opts = builder.build(role_id="coach", system_prompt="test")
         assert opts.model == "custom-model-v2"
+
+    def test_build_with_max_thinking_tokens(self) -> None:
+        """max_thinking_tokens передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            max_thinking_tokens=16000,
+        )
+        assert opts.max_thinking_tokens == 16000
+
+    def test_build_with_sandbox(self) -> None:
+        """sandbox настройки передаются в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        sandbox = {"enabled": True, "autoAllowBashIfSandboxed": True}
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            sandbox=sandbox,
+        )
+        assert opts.sandbox == sandbox
+
+    def test_build_with_env(self) -> None:
+        """env переменные передаются в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            env={"MY_VAR": "value"},
+        )
+        assert opts.env == {"MY_VAR": "value"}
+
+    def test_build_default_env_empty(self) -> None:
+        """По умолчанию env — пустой dict."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(role_id="coach", system_prompt="test")
+        assert opts.env == {}
+
+    def test_build_with_agents(self) -> None:
+        """agents определения передаются в ClaudeAgentOptions."""
+        from claude_agent_sdk import AgentDefinition
+
+        builder = ClaudeOptionsBuilder()
+        agents = {
+            "researcher": AgentDefinition(
+                description="Research agent",
+                prompt="You are a researcher",
+            ),
+        }
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            agents=agents,
+        )
+        assert opts.agents is not None
+        assert "researcher" in opts.agents
+
+    def test_build_with_output_format(self) -> None:
+        """output_format (structured output) передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        schema = {
+            "type": "json_schema",
+            "schema": {
+                "type": "object",
+                "properties": {"answer": {"type": "string"}},
+            },
+        }
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            output_format=schema,
+        )
+        assert opts.output_format == schema
+
+    def test_build_default_output_format_none(self) -> None:
+        """По умолчанию output_format = None."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(role_id="coach", system_prompt="test")
+        assert opts.output_format is None
+
+    def test_build_with_continue_conversation(self) -> None:
+        """continue_conversation передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            continue_conversation=True,
+        )
+        assert opts.continue_conversation is True
+
+    def test_build_default_continue_conversation_false(self) -> None:
+        """По умолчанию continue_conversation = False."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(role_id="coach", system_prompt="test")
+        assert opts.continue_conversation is False
+
+    def test_build_with_resume(self) -> None:
+        """resume (session_id) передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            resume="session-abc-123",
+        )
+        assert opts.resume == "session-abc-123"
+
+    def test_build_with_fork_session(self) -> None:
+        """fork_session передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            fork_session=True,
+        )
+        assert opts.fork_session is True
+
+    def test_build_with_betas(self) -> None:
+        """betas (1M context) передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            betas=["context-1m-2025-08-07"],
+        )
+        assert opts.betas == ["context-1m-2025-08-07"]
+
+    def test_build_default_betas_empty(self) -> None:
+        """По умолчанию betas = []."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(role_id="coach", system_prompt="test")
+        assert opts.betas == []
+
+    def test_build_with_plugins(self) -> None:
+        """plugins передаются в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        plugins = [{"type": "local", "path": "/path/to/plugin"}]
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            plugins=plugins,
+        )
+        assert opts.plugins == plugins
+
+    def test_build_with_include_partial_messages(self) -> None:
+        """include_partial_messages передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            include_partial_messages=True,
+        )
+        assert opts.include_partial_messages is True
+
+    def test_build_with_enable_file_checkpointing(self) -> None:
+        """enable_file_checkpointing передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            enable_file_checkpointing=True,
+        )
+        assert opts.enable_file_checkpointing is True
+
+    def test_build_with_max_budget_usd(self) -> None:
+        """max_budget_usd передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            max_budget_usd=5.0,
+        )
+        assert opts.max_budget_usd == 5.0
+
+    def test_build_with_fallback_model(self) -> None:
+        """fallback_model передаётся в ClaudeAgentOptions."""
+        builder = ClaudeOptionsBuilder()
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            fallback_model="haiku",
+        )
+        assert opts.fallback_model == "haiku"
+
+    def test_build_with_hooks(self) -> None:
+        """hooks передаются в ClaudeAgentOptions."""
+        from claude_agent_sdk import HookMatcher
+
+        builder = ClaudeOptionsBuilder()
+
+        async def my_hook(input_data, tool_use_id, context):
+            return {"continue_": True}
+
+        hooks = {
+            "PreToolUse": [HookMatcher(matcher="Bash", hooks=[my_hook])],
+        }
+        opts = builder.build(
+            role_id="coach", system_prompt="test",
+            hooks=hooks,
+        )
+        assert opts.hooks is not None
+        assert "PreToolUse" in opts.hooks

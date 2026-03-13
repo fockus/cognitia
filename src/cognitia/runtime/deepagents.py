@@ -1,9 +1,10 @@
-"""DeepAgentsRuntime — LangChain Deep Agents runtime под AgentRuntime v1 контракт.
+"""DeepAgentsRuntime — Deep Agents runtime под AgentRuntime v1 контракт.
 
 Особенности:
-- Optional dependency: langchain-core, langchain-anthropic
-- НЕ использует built-in tools DeepAgents (file/todo/execute/task)
-- Только наши tools (после ToolPolicy): active_tools → LangChain BaseTool wrappers
+- Optional dependency baseline: deepagents + langchain-core
+- Provider packages подгружаются отдельно: anthropic/openai/google
+- portable mode фильтрует native built-in tools, hybrid/native_first — сохраняют
+- наши tools конвертируются в LangChain BaseTool wrappers
 - История не хранится внутри LangGraph: messages приходят извне
 - Стриминг нормализуется в RuntimeEvent
 """
@@ -14,6 +15,10 @@ import json
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from cognitia.runtime.deepagents_models import (
+    DeepAgentsModelError,
+    build_deepagents_chat_model,
+)
 from cognitia.runtime.types import (
     Message,
     RuntimeConfig,
@@ -47,7 +52,7 @@ _DEEPAGENTS_BUILTIN_TOOLS = frozenset(
 def _check_langchain_available() -> RuntimeErrorData | None:
     """Проверить наличие langchain deps. None = всё ок."""
     try:
-        import langchain_anthropic  # noqa: F401
+        import deepagents  # noqa: F401
         import langchain_core  # noqa: F401
 
         return None
@@ -55,7 +60,7 @@ def _check_langchain_available() -> RuntimeErrorData | None:
         return RuntimeErrorData(
             kind="dependency_missing",
             message=(
-                "langchain-core и/или langchain-anthropic не установлены. "
+                "deepagents и/или langchain-core не установлены. "
                 "Установите: pip install cognitia[deepagents]"
             ),
             recoverable=False,
@@ -74,6 +79,12 @@ def create_langchain_tool(spec: ToolSpec, executor: Callable | None = None) -> A
         langchain_core.tools.StructuredTool
     """
     from langchain_core.tools import StructuredTool
+
+    schema = dict(spec.parameters or {})
+    schema.setdefault("title", f"{spec.name}Input")
+    schema.setdefault("type", "object")
+    schema.setdefault("properties", {})
+    schema.setdefault("additionalProperties", True)
 
     async def _noop(**kwargs: Any) -> str:
         return json.dumps({"error": f"Tool {spec.name} не имеет executor"})
@@ -100,15 +111,16 @@ def create_langchain_tool(spec: ToolSpec, executor: Callable | None = None) -> A
         coroutine=_call_executor,
         name=spec.name,
         description=spec.description,
-        args_schema=None,  # используем raw dict
+        args_schema=schema,
+        infer_schema=False,
     )
 
 
 class DeepAgentsRuntime:
     """AgentRuntime обёртка над LangChain для Deep Agents.
 
-    НЕ использует built-in tools DeepAgents.
-    Только наши tools из active_tools (после ToolPolicy).
+    В portable mode suppress'ит native built-ins.
+    В hybrid/native_first сохраняет их в active_tools.
     """
 
     def __init__(
@@ -136,7 +148,7 @@ class DeepAgentsRuntime:
     ) -> AsyncIterator[RuntimeEvent]:
         """Выполнить turn через LangChain.
 
-        Фильтрует built-in tools, конвертирует в LangChain формат,
+        Выбирает active_tools по feature_mode, конвертирует в LangChain формат,
         вызывает модель, нормализует стрим в RuntimeEvent.
         """
         # Проверяем deps
@@ -147,8 +159,11 @@ class DeepAgentsRuntime:
 
         effective_config = config or self._config
 
-        # Фильтруем built-in tools — ТОЛЬКО наши
-        safe_tools = [t for t in active_tools if t.name not in _DEEPAGENTS_BUILTIN_TOOLS]
+        selected_tools = self.select_active_tools(
+            active_tools,
+            feature_mode=effective_config.feature_mode,
+            allow_native_features=effective_config.allow_native_features,
+        )
 
         full_text = ""
         tool_calls: list[dict[str, Any]] = []
@@ -157,7 +172,7 @@ class DeepAgentsRuntime:
             async for event in self._stream_langchain(
                 messages=messages,
                 system_prompt=system_prompt,
-                tools=safe_tools,
+                tools=selected_tools,
                 model=effective_config.model,
                 base_url=effective_config.base_url,
             ):
@@ -168,6 +183,9 @@ class DeepAgentsRuntime:
                 elif event.type == "tool_call_finished":
                     tool_calls.append(event.data)
 
+        except DeepAgentsModelError as e:
+            yield RuntimeEvent.error(e.error)
+            return
         except Exception as e:
             yield RuntimeEvent.error(
                 RuntimeErrorData(
@@ -209,13 +227,8 @@ class DeepAgentsRuntime:
         return lc_messages
 
     def _build_llm(self, model: str, base_url: str | None = None) -> Any:
-        """Создать ChatAnthropic с поддержкой base_url."""
-        from langchain_anthropic import ChatAnthropic
-
-        llm_kwargs: dict[str, Any] = {"model": model}
-        if base_url:
-            llm_kwargs["base_url"] = base_url
-        return ChatAnthropic(**llm_kwargs)
+        """Создать provider-specific chat model через отдельный resolver."""
+        return build_deepagents_chat_model(model, base_url=base_url)
 
     async def _stream_langchain(
         self,
@@ -292,3 +305,15 @@ class DeepAgentsRuntime:
     def filter_builtin_tools(tools: list[ToolSpec]) -> list[ToolSpec]:
         """Отфильтровать built-in tools DeepAgents. Public для тестирования."""
         return [t for t in tools if t.name not in _DEEPAGENTS_BUILTIN_TOOLS]
+
+    @staticmethod
+    def select_active_tools(
+        tools: list[ToolSpec],
+        *,
+        feature_mode: str,
+        allow_native_features: bool = False,
+    ) -> list[ToolSpec]:
+        """Выбрать активные tools для DeepAgents по runtime policy."""
+        if allow_native_features or feature_mode in {"hybrid", "native_first"}:
+            return list(tools)
+        return DeepAgentsRuntime.filter_builtin_tools(tools)

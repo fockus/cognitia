@@ -1,4 +1,4 @@
-"""Тесты для DeepAgentsRuntime — LangChain Deep Agents runtime.
+"""Тесты для DeepAgentsRuntime — Deep Agents runtime.
 
 Покрытые кейсы:
 - Built-in tools filtering (frozenset, filter_builtin_tools)
@@ -8,7 +8,7 @@
 - run(): new_messages содержит assistant text
 - run(): multiple tool_call_finished → metrics.tool_calls_count
 - _build_lc_messages: user/assistant/system → LangChain messages
-- _build_llm: с и без base_url
+- _build_llm: wrapper вокруг provider-aware builder
 - _stream_langchain: event parsing (on_chat_model_stream, on_tool_start, on_tool_end)
 - _stream_langchain: tool correlation (run_id → correlation_id)
 - create_langchain_tool: с executor, без executor (noop), dict-based executor
@@ -29,14 +29,13 @@ from cognitia.runtime.deepagents import (
 )
 from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent, ToolSpec
 
-
 # ---------------------------------------------------------------------------
 # Built-in tools filtering
 # ---------------------------------------------------------------------------
 
 
 class TestBuiltinToolsFiltering:
-    """DeepAgentsRuntime НЕ добавляет built-in tools."""
+    """DeepAgentsRuntime built-ins policy."""
 
     def test_builtin_tools_list_complete(self) -> None:
         """Все опасные built-in tools DeepAgents перечислены."""
@@ -83,6 +82,40 @@ class TestBuiltinToolsFiltering:
         filtered = DeepAgentsRuntime.filter_builtin_tools(tools)
         assert filtered == []
 
+    def test_select_active_tools_hybrid_keeps_builtins(self) -> None:
+        tools = [
+            ToolSpec(name="Bash", description="shell", parameters={}),
+            ToolSpec(name="mcp__iss__get_bonds", description="bonds", parameters={}),
+        ]
+        selected = DeepAgentsRuntime.select_active_tools(
+            tools,
+            feature_mode="hybrid",
+        )
+        assert [t.name for t in selected] == ["Bash", "mcp__iss__get_bonds"]
+
+    def test_select_active_tools_native_first_keeps_builtins(self) -> None:
+        tools = [
+            ToolSpec(name="Task", description="subagent", parameters={}),
+            ToolSpec(name="TodoWrite", description="todo", parameters={}),
+        ]
+        selected = DeepAgentsRuntime.select_active_tools(
+            tools,
+            feature_mode="native_first",
+        )
+        assert [t.name for t in selected] == ["Task", "TodoWrite"]
+
+    def test_select_active_tools_allow_native_features_overrides_portable(self) -> None:
+        tools = [
+            ToolSpec(name="Read", description="read", parameters={}),
+            ToolSpec(name="mcp__iss__get_bonds", description="bonds", parameters={}),
+        ]
+        selected = DeepAgentsRuntime.select_active_tools(
+            tools,
+            feature_mode="portable",
+            allow_native_features=True,
+        )
+        assert [t.name for t in selected] == ["Read", "mcp__iss__get_bonds"]
+
 
 # ---------------------------------------------------------------------------
 # Dependency check
@@ -104,7 +137,7 @@ class TestDependencyCheck:
         """Оба модуля отсутствуют — ошибка."""
         with patch.dict(
             "sys.modules",
-            {"langchain_core": None, "langchain_anthropic": None},
+            {"langchain_core": None, "deepagents": None},
         ):
             error = _check_langchain_available()
             if error is not None:
@@ -247,6 +280,30 @@ class TestDeepAgentsRuntimeRun:
             assert call_kwargs.kwargs.get("base_url") == "https://proxy.example.com"
 
     @pytest.mark.asyncio
+    async def test_run_missing_provider_package_yields_typed_error(self) -> None:
+        """Отсутствующий provider package → dependency_missing, а не runtime_crash."""
+        runtime = DeepAgentsRuntime(
+            config=RuntimeConfig(runtime_name="deepagents", model="openai:gpt-4o"),
+        )
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.dict("sys.modules", {"langchain_openai": None}),
+        ):
+            events = []
+            async for ev in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[],
+            ):
+                events.append(ev)
+
+        assert len(events) == 1
+        assert events[0].type == "error"
+        assert events[0].data["kind"] == "dependency_missing"
+        assert "langchain-openai" in events[0].data["message"]
+
+    @pytest.mark.asyncio
     async def test_run_tool_events_in_stream(self) -> None:
         """Tool events (started/finished) пробрасываются + metrics."""
         runtime = DeepAgentsRuntime()
@@ -278,7 +335,7 @@ class TestDeepAgentsRuntimeRun:
 
     @pytest.mark.asyncio
     async def test_run_filters_builtins_from_active_tools(self) -> None:
-        """run() фильтрует built-in tools перед передачей в _stream_langchain."""
+        """run() в portable mode фильтрует built-in tools перед _stream_langchain."""
         runtime = DeepAgentsRuntime()
 
         captured_tools: list[ToolSpec] = []
@@ -308,6 +365,37 @@ class TestDeepAgentsRuntimeRun:
         assert "Bash" not in names
         assert "Read" not in names
         assert "mcp__iss__search" in names
+
+    @pytest.mark.asyncio
+    async def test_run_keeps_builtins_in_hybrid_mode(self) -> None:
+        """run() в hybrid mode не suppress'ит built-ins."""
+        cfg = RuntimeConfig(runtime_name="deepagents", feature_mode="hybrid")
+        runtime = DeepAgentsRuntime(config=cfg)
+
+        captured_tools: list[ToolSpec] = []
+
+        async def _capturing_stream(**kwargs):
+            captured_tools.extend(kwargs.get("tools", []))
+            yield RuntimeEvent.assistant_delta("ok")
+
+        tools = [
+            ToolSpec(name="Bash", description="shell", parameters={}),
+            ToolSpec(name="Task", description="subagent", parameters={}),
+            ToolSpec(name="mcp__iss__search", description="s", parameters={}),
+        ]
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_capturing_stream),
+        ):
+            async for _ in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=tools,
+            ):
+                pass
+
+        assert [t.name for t in captured_tools] == ["Bash", "Task", "mcp__iss__search"]
 
     @pytest.mark.asyncio
     async def test_run_new_messages_in_final(self) -> None:
@@ -504,29 +592,21 @@ class TestBuildLcMessages:
 
 
 class TestBuildLlm:
-    """_build_llm — создание ChatAnthropic."""
+    """_build_llm — wrapper вокруг provider-aware builder."""
 
-    def test_build_llm_basic(self) -> None:
-        """Без base_url — ChatAnthropic(model=...)."""
+    def test_build_llm_delegates_to_provider_builder(self) -> None:
+        """_build_llm делегирует в отдельный provider resolver."""
         runtime = DeepAgentsRuntime()
-        try:
-            from langchain_anthropic import ChatAnthropic
-        except ImportError:
-            pytest.skip("langchain_anthropic не установлен")
+        sentinel = object()
 
-        llm = runtime._build_llm("claude-sonnet-4-20250514")
-        assert isinstance(llm, ChatAnthropic)
+        with patch(
+            "cognitia.runtime.deepagents.build_deepagents_chat_model",
+            return_value=sentinel,
+        ) as mock_build:
+            llm = runtime._build_llm("openai:gpt-4o", base_url="https://proxy.test")
 
-    def test_build_llm_with_base_url(self) -> None:
-        """С base_url — ChatAnthropic(model=..., base_url=...)."""
-        runtime = DeepAgentsRuntime()
-        try:
-            from langchain_anthropic import ChatAnthropic
-        except ImportError:
-            pytest.skip("langchain_anthropic не установлен")
-
-        llm = runtime._build_llm("test-model", base_url="https://proxy.test")
-        assert isinstance(llm, ChatAnthropic)
+        assert llm is sentinel
+        mock_build.assert_called_once_with("openai:gpt-4o", base_url="https://proxy.test")
 
 
 # ---------------------------------------------------------------------------

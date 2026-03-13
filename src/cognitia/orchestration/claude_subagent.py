@@ -31,6 +31,8 @@ class ClaudeSubagentOrchestrator(ThinSubagentOrchestrator):
                 "ClaudeSubagentOrchestrator требует adapter_factory (RuntimeAdapter per worker).",
             )
         return _ClaudeWorkerRuntime(spec=spec, adapter_factory=self._adapter_factory)
+
+
 class _ClaudeWorkerRuntime:
     """Запуск subagent через RuntimeAdapter.stream_reply()."""
 
@@ -41,7 +43,9 @@ class _ClaudeWorkerRuntime:
         adapter_factory: Callable[[SubagentSpec], Any],
     ) -> None:
         self._spec = spec
-        self._adapter_factory = adapter_factory    async def run(self, task: str) -> str:
+        self._adapter_factory = adapter_factory
+
+    async def run(self, task: str) -> str:
         """Выполнить задачу через Claude SDK stream."""
         adapter = self._adapter_factory(self._spec)
         if hasattr(adapter, "connect"):

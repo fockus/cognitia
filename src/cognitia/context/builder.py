@@ -321,7 +321,7 @@ def _is_error_message(content: str) -> bool:
     if not content:
         return True
     # Быстрая проверка по первым символам
-    if content.startswith('{"error"') or content.startswith("⚠️"):
+    if content.startswith(('{"error"', "⚠️")):
         return True
     # Проверка по маркерам (в первых 200 символах для скорости)
     prefix = content[:200]
