@@ -109,9 +109,9 @@ e2b = [
 docker = [
     "docker>=7.0",
 ]
-# All runtimes + postgres + web (for development)
+# All runtimes + all storage + web (for development)
 all = [
-    "cognitia[claude,thin,postgres,web,web-duckduckgo]",
+    "cognitia[claude,thin,deepagents,postgres,sqlite,web,web-duckduckgo]",
 ]
 dev = [
     "pytest>=8.0",
@@ -123,6 +123,16 @@ dev = [
 docs = [
     "mkdocs-material>=9.5",
     "mkdocs-minify-plugin>=0.8",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "pyproject.toml",
 ]
 
 [tool.hatch.build.targets.wheel]
