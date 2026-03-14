@@ -26,7 +26,14 @@ Unlike monolithic agent frameworks, cognitia follows **Clean Architecture**: you
 pip install cognitia                # core (protocols, types, in-memory providers)
 pip install cognitia[thin]          # + lightweight built-in runtime (Anthropic API)
 pip install cognitia[claude]        # + Claude Agent SDK runtime (subprocess + MCP)
-pip install cognitia[deepagents]    # + LangChain Deep Agents runtime
+pip install cognitia[deepagents]    # + DeepAgents runtime baseline (native graph + Anthropic path)
+```
+
+For DeepAgents provider overrides install the provider bridge explicitly:
+
+```bash
+pip install cognitia[deepagents] langchain-openai openai
+pip install cognitia[deepagents] langchain-google-genai
 ```
 
 ## Quick Start
@@ -172,7 +179,7 @@ agent = Agent(AgentConfig(system_prompt="...", runtime="thin"))
 # Claude Agent SDK (subprocess with full MCP support)
 agent = Agent(AgentConfig(system_prompt="...", runtime="claude_sdk"))
 
-# LangChain Deep Agents
+# DeepAgents graph runtime
 agent = Agent(AgentConfig(system_prompt="...", runtime="deepagents"))
 ```
 
@@ -185,7 +192,30 @@ export COGNITIA_RUNTIME=thin
 | ------- | -------- | ----------- | --- | ------- |
 | `thin` | Fast prototyping, direct API, alternative LLMs | Any (via `base_url`) | Built-in client | `cognitia[thin]` |
 | `claude_sdk` | Full Claude ecosystem, native MCP, subagents | Claude only | Native | `cognitia[claude]` |
-| `deepagents` | LangChain ecosystem, LangGraph workflows | Any (LangChain) | Via LangChain | `cognitia[deepagents]` |
+| `deepagents` | DeepAgents graph runtime, LangGraph workflows | Anthropic baseline; OpenAI/Google via provider package | Not a portable guarantee | `cognitia[deepagents]` |
+
+### Portable Matrix
+
+- `claude_sdk` and `deepagents` share an offline-tested portable baseline for `query()`, `stream()`, and `conversation()` when `feature_mode="portable"`.
+- `deepagents` keeps native power through `feature_mode="hybrid"` and `feature_mode="native_first"`; native notices and resume metadata surface through `native_metadata`.
+- `thin` is the lightweight tier. It is intentionally not treated as a full-runtime parity target.
+- DeepAgents provider notes:
+  - `cognitia[deepagents]` installs the baseline runtime and Anthropic-ready path.
+  - OpenAI and Google paths require `langchain-openai` / `openai` or `langchain-google-genai`.
+  - Native built-ins require an explicit `native_config["backend"]`; without it Cognitia now fails fast instead of silently falling back to DeepAgents `StateBackend`.
+  - Tool-heavy Gemini built-ins remain a provider-specific limitation today; use `feature_mode="portable"` when you need the strongest parity guarantees.
+
+### DeepAgents Portable Quick Start
+
+```python
+agent = Agent(AgentConfig(
+    system_prompt="You are a helpful assistant.",
+    runtime="deepagents",
+    feature_mode="portable",
+))
+result = await agent.query("What is 2+2?")
+print(result.text)
+```
 
 ### Capability negotiation
 

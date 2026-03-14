@@ -42,7 +42,7 @@ agent = Agent(AgentConfig(system_prompt="...", runtime="thin"))
 # Production: full Claude ecosystem
 agent = Agent(AgentConfig(system_prompt="...", runtime="claude_sdk"))
 
-# Experiments: LangChain integration
+# Experiments: DeepAgents graph runtime
 agent = Agent(AgentConfig(system_prompt="...", runtime="deepagents"))
 ```
 

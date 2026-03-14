@@ -160,6 +160,37 @@ class TestRuntimeEvent:
         assert ev.type == "status"
         assert ev.data["text"] == "Ищу вклады…"
 
+    def test_approval_required(self) -> None:
+        ev = RuntimeEvent.approval_required(
+            action_name="edit_file",
+            args={"path": "app.py"},
+            allowed_decisions=["approve", "reject"],
+            interrupt_id="interrupt-1",
+            description="Review edit",
+        )
+        assert ev.type == "approval_required"
+        assert ev.data["action_name"] == "edit_file"
+        assert ev.data["allowed_decisions"] == ["approve", "reject"]
+        assert ev.data["interrupt_id"] == "interrupt-1"
+
+    def test_user_input_requested(self) -> None:
+        ev = RuntimeEvent.user_input_requested(
+            prompt="Need answer",
+            interrupt_id="interrupt-2",
+        )
+        assert ev.type == "user_input_requested"
+        assert ev.data["prompt"] == "Need answer"
+        assert ev.data["interrupt_id"] == "interrupt-2"
+
+    def test_native_notice(self) -> None:
+        ev = RuntimeEvent.native_notice(
+            "Native thread is active",
+            metadata={"thread_id": "t1"},
+        )
+        assert ev.type == "native_notice"
+        assert ev.data["text"] == "Native thread is active"
+        assert ev.data["metadata"] == {"thread_id": "t1"}
+
     def test_tool_call_started(self) -> None:
         ev = RuntimeEvent.tool_call_started(
             name="mcp__iss__get_bonds",
@@ -213,11 +244,13 @@ class TestRuntimeEvent:
             total_cost_usd=0.25,
             usage={"input_tokens": 10, "output_tokens": 5},
             structured_output={"answer": 42},
+            native_metadata={"thread_id": "t1"},
         )
         assert ev.data["session_id"] == "sess-1"
         assert ev.data["total_cost_usd"] == 0.25
         assert ev.data["usage"] == {"input_tokens": 10, "output_tokens": 5}
         assert ev.data["structured_output"] == {"answer": 42}
+        assert ev.data["native_metadata"] == {"thread_id": "t1"}
 
     def test_error(self) -> None:
         err = RuntimeErrorData(kind="loop_limit", message="limit")
@@ -234,7 +267,8 @@ class TestRuntimeEvent:
     def test_all_event_types(self) -> None:
         expected = {
             "assistant_delta", "status", "tool_call_started",
-            "tool_call_finished", "final", "error",
+            "tool_call_finished", "approval_required",
+            "user_input_requested", "native_notice", "final", "error",
         }
         assert expected == RUNTIME_EVENT_TYPES
 

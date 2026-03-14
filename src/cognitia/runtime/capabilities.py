@@ -128,6 +128,10 @@ _CAPABILITIES_BY_RUNTIME: dict[str, RuntimeCapabilities] = {
     "deepagents": RuntimeCapabilities(
         runtime_name="deepagents",
         tier="full",
+        supports_resume=True,
+        supports_native_subagents=True,
+        supports_builtin_todo=True,
+        supports_provider_override=True,
     ),
     "thin": RuntimeCapabilities(
         runtime_name="thin",

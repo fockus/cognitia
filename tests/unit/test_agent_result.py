@@ -15,6 +15,7 @@ class TestResultDefaults:
         assert r.total_cost_usd is None
         assert r.usage is None
         assert r.structured_output is None
+        assert r.native_metadata is None
         assert r.error is None
 
     def test_ok_when_no_error(self) -> None:
@@ -61,6 +62,16 @@ class TestResultStructuredOutput:
         assert r.text == "Score: 85"
         assert r.structured_output == {"score": 85}
         assert r.ok is True
+
+    def test_native_metadata(self) -> None:
+        r = Result(
+            text="ok",
+            native_metadata={"thread_id": "thread-1", "history_source": "native_thread"},
+        )
+        assert r.native_metadata == {
+            "thread_id": "thread-1",
+            "history_source": "native_thread",
+        }
 
 
 class TestResultError:

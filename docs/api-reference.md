@@ -353,7 +353,7 @@ caps.enabled_flags()   # frozenset({"mcp", "resume", "interrupt"})
 | Runtime | Tier | MCP | Resume | Interrupt | Provider Override |
 |---------|------|-----|--------|-----------|-------------------|
 | `claude_sdk` | `full` | Yes | Yes | Yes | No |
-| `deepagents` | `full` | No | No | No | No |
+| `deepagents` | `full` | No | Yes | No | Yes |
 | `thin` | `light` | Yes | No | No | Yes |
 
 ### CapabilityRequirements

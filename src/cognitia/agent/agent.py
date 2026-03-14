@@ -301,6 +301,7 @@ async def collect_stream_result(stream: AsyncIterator[Any]) -> dict[str, Any]:
     total_cost_usd = None
     usage = None
     structured_output = None
+    native_metadata = None
     error = None
 
     async for event in stream:
@@ -313,6 +314,7 @@ async def collect_stream_result(stream: AsyncIterator[Any]) -> dict[str, Any]:
             total_cost_usd = getattr(event, "total_cost_usd", None)
             usage = getattr(event, "usage", None)
             structured_output = getattr(event, "structured_output", None)
+            native_metadata = getattr(event, "native_metadata", None)
         elif etype == "error":
             error = event.text or "Unknown error"
 
@@ -322,6 +324,7 @@ async def collect_stream_result(stream: AsyncIterator[Any]) -> dict[str, Any]:
         "total_cost_usd": total_cost_usd,
         "usage": usage,
         "structured_output": structured_output,
+        "native_metadata": native_metadata,
         "error": error,
     }
 
@@ -354,6 +357,20 @@ class _RuntimeEventAdapter:
             self.type = "tool_use_result"
             self.text = ""
             self.tool_result = data.get("result_summary", "")
+        elif etype == "approval_required":
+            self.type = "approval_required"
+            self.text = data.get("description") or data.get("action_name", "")
+            self.tool_name = data.get("action_name", "")
+            self.tool_input = data.get("args")
+            self.allowed_decisions = data.get("allowed_decisions")
+            self.interrupt_id = data.get("interrupt_id")
+        elif etype == "user_input_requested":
+            self.type = "user_input_requested"
+            self.text = data.get("prompt", "")
+            self.interrupt_id = data.get("interrupt_id")
+        elif etype == "native_notice":
+            self.type = "native_notice"
+            self.text = data.get("text", "")
         else:
             self.type = etype
             self.text = data.get("text", "")
@@ -367,11 +384,16 @@ class _RuntimeEventAdapter:
             self.tool_input = None
         if not hasattr(self, "tool_result"):
             self.tool_result = ""
+        if not hasattr(self, "allowed_decisions"):
+            self.allowed_decisions = None
+        if not hasattr(self, "interrupt_id"):
+            self.interrupt_id = None
 
         self.session_id = data.get("session_id")
         self.total_cost_usd = data.get("total_cost_usd")
         self.usage = data.get("usage")
         self.structured_output = data.get("structured_output")
+        self.native_metadata = data.get("native_metadata") or data.get("metadata")
 
 
 class _ErrorEvent:
@@ -385,6 +407,9 @@ class _ErrorEvent:
         self.total_cost_usd = None
         self.usage = None
         self.structured_output = None
+        self.native_metadata = None
         self.tool_name = ""
         self.tool_input = None
         self.tool_result = ""
+        self.allowed_decisions = None
+        self.interrupt_id = None

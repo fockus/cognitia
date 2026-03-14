@@ -430,6 +430,7 @@ class TestCollectStreamResult:
                 total_cost_usd=0.05,
                 usage={"input_tokens": 100},
                 structured_output={"key": "val"},
+                native_metadata={"thread_id": "thread-1"},
             )
 
         result = await collect_stream_result(stream())
@@ -437,6 +438,7 @@ class TestCollectStreamResult:
         assert result["total_cost_usd"] == 0.05
         assert result["usage"] == {"input_tokens": 100}
         assert result["structured_output"] == {"key": "val"}
+        assert result["native_metadata"] == {"thread_id": "thread-1"}
         assert result["error"] is None
 
     @pytest.mark.asyncio
@@ -572,6 +574,7 @@ class TestRuntimeEventAdapter:
                     "total_cost_usd": 0.5,
                     "usage": {"input_tokens": 10},
                     "structured_output": {"answer": 42},
+                    "native_metadata": {"thread_id": "thread-1"},
                 },
             )
         )
@@ -582,6 +585,7 @@ class TestRuntimeEventAdapter:
         assert adapted.total_cost_usd == 0.5
         assert adapted.usage == {"input_tokens": 10}
         assert adapted.structured_output == {"answer": 42}
+        assert adapted.native_metadata == {"thread_id": "thread-1"}
 
     def test_error_maps_to_error(self) -> None:
         from cognitia.agent.agent import _RuntimeEventAdapter
@@ -633,6 +637,57 @@ class TestRuntimeEventAdapter:
         assert adapted.text == "thinking..."
         assert adapted.is_final is False
 
+    def test_approval_required_passthrough(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event(
+                "approval_required",
+                {
+                    "action_name": "edit_file",
+                    "args": {"path": "app.py"},
+                    "allowed_decisions": ["approve", "reject"],
+                    "interrupt_id": "interrupt-1",
+                    "description": "Review edit",
+                },
+            )
+        )
+
+        assert adapted.type == "approval_required"
+        assert adapted.tool_name == "edit_file"
+        assert adapted.tool_input == {"path": "app.py"}
+        assert adapted.allowed_decisions == ["approve", "reject"]
+        assert adapted.interrupt_id == "interrupt-1"
+        assert adapted.text == "Review edit"
+
+    def test_user_input_requested_passthrough(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event(
+                "user_input_requested",
+                {"prompt": "Need answer", "interrupt_id": "interrupt-2"},
+            )
+        )
+
+        assert adapted.type == "user_input_requested"
+        assert adapted.text == "Need answer"
+        assert adapted.interrupt_id == "interrupt-2"
+
+    def test_native_notice_passthrough(self) -> None:
+        from cognitia.agent.agent import _RuntimeEventAdapter
+
+        adapted = _RuntimeEventAdapter(
+            self._make_event(
+                "native_notice",
+                {"text": "Native thread active", "metadata": {"thread_id": "t1"}},
+            )
+        )
+
+        assert adapted.type == "native_notice"
+        assert adapted.text == "Native thread active"
+        assert adapted.native_metadata == {"thread_id": "t1"}
+
     def test_defaults_always_set(self) -> None:
         """Все StreamEvent-like атрибуты всегда присутствуют."""
         from cognitia.agent.agent import _RuntimeEventAdapter
@@ -642,9 +697,12 @@ class TestRuntimeEventAdapter:
         assert adapted.total_cost_usd is None
         assert adapted.usage is None
         assert adapted.structured_output is None
+        assert adapted.native_metadata is None
         assert adapted.tool_name == ""
         assert adapted.tool_input is None
         assert adapted.tool_result == ""
+        assert adapted.allowed_decisions is None
+        assert adapted.interrupt_id is None
 
 
 # ---------------------------------------------------------------------------
@@ -666,6 +724,9 @@ class TestErrorEvent:
         assert evt.total_cost_usd is None
         assert evt.usage is None
         assert evt.structured_output is None
+        assert evt.native_metadata is None
         assert evt.tool_name == ""
         assert evt.tool_input is None
         assert evt.tool_result == ""
+        assert evt.allowed_decisions is None
+        assert evt.interrupt_id is None

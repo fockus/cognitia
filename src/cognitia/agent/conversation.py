@@ -135,6 +135,11 @@ class Conversation:
         from cognitia.runtime.factory import RuntimeFactory
 
         config = self._agent._build_runtime_config(runtime_name)
+        if runtime_name == "deepagents":
+            config.native_config = {
+                **config.native_config,
+                "thread_id": self._session_id,
+            }
         factory = RuntimeFactory()
         runtime = factory.create(
             config=config,

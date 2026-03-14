@@ -22,11 +22,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cognitia.runtime.deepagents import (
-    _DEEPAGENTS_BUILTIN_TOOLS,
     DeepAgentsRuntime,
     _check_langchain_available,
     create_langchain_tool,
 )
+from cognitia.runtime.deepagents_builtins import DEEPAGENTS_NATIVE_BUILTIN_TOOLS
 from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent, ToolSpec
 
 # ---------------------------------------------------------------------------
@@ -40,26 +40,30 @@ class TestBuiltinToolsFiltering:
     def test_builtin_tools_list_complete(self) -> None:
         """Все опасные built-in tools DeepAgents перечислены."""
         expected = {
-            "Read", "Write", "Edit", "MultiEdit",
-            "Bash", "Glob", "Grep", "LS",
-            "TodoRead", "TodoWrite",
-            "WebFetch", "WebSearch",
-            "Task", "AskQuestion",
+            "write_todos",
+            "ls",
+            "read_file",
+            "write_file",
+            "edit_file",
+            "glob",
+            "grep",
+            "execute",
+            "task",
         }
-        assert expected == _DEEPAGENTS_BUILTIN_TOOLS
+        assert expected == DEEPAGENTS_NATIVE_BUILTIN_TOOLS
 
     def test_filter_removes_builtins(self) -> None:
         """filter_builtin_tools убирает built-in tools."""
         tools = [
             ToolSpec(name="Bash", description="shell", parameters={}),
-            ToolSpec(name="Read", description="read file", parameters={}),
+            ToolSpec(name="read_file", description="read file", parameters={}),
             ToolSpec(name="mcp__iss__get_bonds", description="bonds", parameters={}),
             ToolSpec(name="calculate_goal_plan", description="calc", parameters={}, is_local=True),
         ]
         filtered = DeepAgentsRuntime.filter_builtin_tools(tools)
         names = [t.name for t in filtered]
         assert "Bash" not in names
-        assert "Read" not in names
+        assert "read_file" not in names
         assert "mcp__iss__get_bonds" in names
         assert "calculate_goal_plan" in names
 
@@ -78,35 +82,35 @@ class TestBuiltinToolsFiltering:
 
     def test_all_builtins_removed(self) -> None:
         """Каждый builtin из frozenset действительно фильтруется."""
-        tools = [ToolSpec(name=name, description="x", parameters={}) for name in _DEEPAGENTS_BUILTIN_TOOLS]
+        tools = [ToolSpec(name=name, description="x", parameters={}) for name in DEEPAGENTS_NATIVE_BUILTIN_TOOLS]
         filtered = DeepAgentsRuntime.filter_builtin_tools(tools)
         assert filtered == []
 
     def test_select_active_tools_hybrid_keeps_builtins(self) -> None:
         tools = [
-            ToolSpec(name="Bash", description="shell", parameters={}),
+            ToolSpec(name="execute", description="shell", parameters={}),
             ToolSpec(name="mcp__iss__get_bonds", description="bonds", parameters={}),
         ]
         selected = DeepAgentsRuntime.select_active_tools(
             tools,
             feature_mode="hybrid",
         )
-        assert [t.name for t in selected] == ["Bash", "mcp__iss__get_bonds"]
+        assert [t.name for t in selected] == ["execute", "mcp__iss__get_bonds"]
 
     def test_select_active_tools_native_first_keeps_builtins(self) -> None:
         tools = [
-            ToolSpec(name="Task", description="subagent", parameters={}),
+            ToolSpec(name="task", description="subagent", parameters={}),
             ToolSpec(name="TodoWrite", description="todo", parameters={}),
         ]
         selected = DeepAgentsRuntime.select_active_tools(
             tools,
             feature_mode="native_first",
         )
-        assert [t.name for t in selected] == ["Task", "TodoWrite"]
+        assert [t.name for t in selected] == ["task", "TodoWrite"]
 
     def test_select_active_tools_allow_native_features_overrides_portable(self) -> None:
         tools = [
-            ToolSpec(name="Read", description="read", parameters={}),
+            ToolSpec(name="read_file", description="read", parameters={}),
             ToolSpec(name="mcp__iss__get_bonds", description="bonds", parameters={}),
         ]
         selected = DeepAgentsRuntime.select_active_tools(
@@ -114,7 +118,7 @@ class TestBuiltinToolsFiltering:
             feature_mode="portable",
             allow_native_features=True,
         )
-        assert [t.name for t in selected] == ["Read", "mcp__iss__get_bonds"]
+        assert [t.name for t in selected] == ["read_file", "mcp__iss__get_bonds"]
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +284,64 @@ class TestDeepAgentsRuntimeRun:
             assert call_kwargs.kwargs.get("base_url") == "https://proxy.example.com"
 
     @pytest.mark.asyncio
+    async def test_run_hybrid_uses_native_stream(self) -> None:
+        """hybrid mode route'ится в native upstream path."""
+        runtime = DeepAgentsRuntime(
+            config=RuntimeConfig(
+                runtime_name="deepagents",
+                feature_mode="hybrid",
+                native_config={"backend": "sandbox"},
+            ),
+        )
+
+        async def _fake_native(**kwargs):
+            yield RuntimeEvent.assistant_delta("native")
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_native", side_effect=_fake_native) as mock_native,
+            patch.object(runtime, "_stream_langchain", side_effect=AssertionError("compat path не должен вызываться")),
+        ):
+            events = []
+            async for ev in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[],
+            ):
+                events.append(ev)
+
+        mock_native.assert_called_once()
+        assert events[-1].type == "final"
+        assert events[-1].data["text"] == "native"
+
+    @pytest.mark.asyncio
+    async def test_run_portable_uses_compat_stream(self) -> None:
+        """portable mode остаётся на compatibility path."""
+        runtime = DeepAgentsRuntime(
+            config=RuntimeConfig(runtime_name="deepagents", feature_mode="portable"),
+        )
+
+        async def _fake_compat(**kwargs):
+            yield RuntimeEvent.assistant_delta("compat")
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_compat) as mock_compat,
+            patch.object(runtime, "_stream_native", side_effect=AssertionError("native path не должен вызываться")),
+        ):
+            events = []
+            async for ev in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[],
+            ):
+                events.append(ev)
+
+        mock_compat.assert_called_once()
+        assert events[-1].type == "final"
+        assert events[-1].data["text"] == "compat"
+
+    @pytest.mark.asyncio
     async def test_run_missing_provider_package_yields_typed_error(self) -> None:
         """Отсутствующий provider package → dependency_missing, а не runtime_crash."""
         runtime = DeepAgentsRuntime(
@@ -347,29 +409,38 @@ class TestDeepAgentsRuntimeRun:
         tools = [
             ToolSpec(name="Bash", description="shell", parameters={}),
             ToolSpec(name="mcp__iss__search", description="s", parameters={}),
-            ToolSpec(name="Read", description="r", parameters={}),
+            ToolSpec(name="read_file", description="r", parameters={}),
         ]
 
         with (
             patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
             patch.object(runtime, "_stream_langchain", side_effect=_capturing_stream),
         ):
+            events = []
             async for _ in runtime.run(
                 messages=[Message(role="user", content="hi")],
                 system_prompt="test",
                 active_tools=tools,
             ):
-                pass
+                events.append(_)
 
         names = [t.name for t in captured_tools]
         assert "Bash" not in names
-        assert "Read" not in names
+        assert "read_file" not in names
         assert "mcp__iss__search" in names
+        assert events[0].type == "status"
+        assert "portable mode" in events[0].data["text"]
+        assert "execute" in events[0].data["text"]
+        assert "read_file" in events[0].data["text"]
 
     @pytest.mark.asyncio
     async def test_run_keeps_builtins_in_hybrid_mode(self) -> None:
-        """run() в hybrid mode не suppress'ит built-ins."""
-        cfg = RuntimeConfig(runtime_name="deepagents", feature_mode="hybrid")
+        """run() в hybrid mode маппит built-ins в native path и не дублирует их как custom tools."""
+        cfg = RuntimeConfig(
+            runtime_name="deepagents",
+            feature_mode="hybrid",
+            native_config={"backend": "sandbox"},
+        )
         runtime = DeepAgentsRuntime(config=cfg)
 
         captured_tools: list[ToolSpec] = []
@@ -380,22 +451,86 @@ class TestDeepAgentsRuntimeRun:
 
         tools = [
             ToolSpec(name="Bash", description="shell", parameters={}),
-            ToolSpec(name="Task", description="subagent", parameters={}),
+            ToolSpec(name="task", description="subagent", parameters={}),
             ToolSpec(name="mcp__iss__search", description="s", parameters={}),
+            ToolSpec(name="calc", description="calc", parameters={}, is_local=True),
         ]
 
         with (
             patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
-            patch.object(runtime, "_stream_langchain", side_effect=_capturing_stream),
+            patch.object(runtime, "_stream_native", side_effect=_capturing_stream),
         ):
+            events = []
             async for _ in runtime.run(
                 messages=[Message(role="user", content="hi")],
                 system_prompt="test",
                 active_tools=tools,
             ):
-                pass
+                events.append(_)
 
-        assert [t.name for t in captured_tools] == ["Bash", "Task", "mcp__iss__search"]
+        assert [t.name for t in captured_tools] == ["mcp__iss__search", "calc"]
+        assert events[0].type == "status"
+        assert "Bash->execute" in events[0].data["text"]
+        assert "task" in events[0].data["text"]
+
+    @pytest.mark.asyncio
+    async def test_run_native_first_prefers_upstream_builtin_over_local_collision(self) -> None:
+        """native_first не пробрасывает colliding local tool с именем native built-in."""
+        cfg = RuntimeConfig(
+            runtime_name="deepagents",
+            feature_mode="native_first",
+            native_config={"backend": "sandbox"},
+        )
+        runtime = DeepAgentsRuntime(config=cfg)
+
+        captured_tools: list[ToolSpec] = []
+
+        async def _capturing_stream(**kwargs):
+            captured_tools.extend(kwargs.get("tools", []))
+            yield RuntimeEvent.assistant_delta("ok")
+
+        tools = [
+            ToolSpec(name="execute", description="local shell", parameters={}, is_local=True),
+            ToolSpec(name="calc", description="calc", parameters={}, is_local=True),
+        ]
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_native", side_effect=_capturing_stream),
+        ):
+            events = []
+            async for event in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=tools,
+            ):
+                events.append(event)
+
+        assert [tool.name for tool in captured_tools] == ["calc"]
+        assert events[0].type == "status"
+        assert "native-first" in events[0].data["text"]
+        assert "execute" in events[0].data["text"]
+
+    @pytest.mark.asyncio
+    async def test_run_hybrid_with_native_builtins_requires_backend(self) -> None:
+        """Native built-ins без backend должны вернуть typed error вместо StateBackend fallback."""
+        runtime = DeepAgentsRuntime(
+            config=RuntimeConfig(runtime_name="deepagents", feature_mode="hybrid"),
+        )
+
+        events = []
+        with patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None):
+            async for event in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[ToolSpec(name="Bash", description="shell", parameters={})],
+            ):
+                events.append(event)
+
+        assert len(events) == 1
+        assert events[0].type == "error"
+        assert events[0].data["kind"] == "capability_unsupported"
+        assert "backend" in events[0].data["message"]
 
     @pytest.mark.asyncio
     async def test_run_new_messages_in_final(self) -> None:

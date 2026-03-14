@@ -1,24 +1,38 @@
-"""DeepAgentsRuntime — Deep Agents runtime под AgentRuntime v1 контракт.
-
-Особенности:
-- Optional dependency baseline: deepagents + langchain-core
-- Provider packages подгружаются отдельно: anthropic/openai/google
-- portable mode фильтрует native built-in tools, hybrid/native_first — сохраняют
-- наши tools конвертируются в LangChain BaseTool wrappers
-- История не хранится внутри LangGraph: messages приходят извне
-- Стриминг нормализуется в RuntimeEvent
-"""
+"""DeepAgents runtime под AgentRuntime v1 контракт."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from cognitia.runtime.deepagents_builtins import (
+    DEEPAGENTS_NATIVE_BUILTIN_TOOLS,
+    build_native_notice,
+    build_portable_notice,
+    filter_native_builtin_tools,
+    split_native_builtin_tools,
+)
+from cognitia.runtime.deepagents_hitl import validate_hitl_config
+from cognitia.runtime.deepagents_langchain import (
+    build_langchain_messages,
+    check_langchain_available,
+    stream_langchain_runtime_events,
+)
+from cognitia.runtime.deepagents_memory import (
+    build_native_invocation,
+    build_native_state_notice,
+    validate_native_state_config,
+)
 from cognitia.runtime.deepagents_models import (
     DeepAgentsModelError,
     build_deepagents_chat_model,
 )
+from cognitia.runtime.deepagents_native import (
+    build_deepagents_graph,
+    stream_deepagents_graph_events,
+    validate_native_backend_config,
+)
+from cognitia.runtime.deepagents_tools import create_langchain_tool
 from cognitia.runtime.types import (
     Message,
     RuntimeConfig,
@@ -28,92 +42,13 @@ from cognitia.runtime.types import (
     TurnMetrics,
 )
 
-# Built-in tools DeepAgents, которые ЯВНО НЕ ДОБАВЛЯЕМ
-_DEEPAGENTS_BUILTIN_TOOLS = frozenset(
-    {
-        "Read",
-        "Write",
-        "Edit",
-        "MultiEdit",
-        "Bash",
-        "Glob",
-        "Grep",
-        "LS",
-        "TodoRead",
-        "TodoWrite",
-        "WebFetch",
-        "WebSearch",
-        "Task",
-        "AskQuestion",
-    }
-)
+_DEEPAGENTS_BUILTIN_TOOLS = DEEPAGENTS_NATIVE_BUILTIN_TOOLS
+__all__ = ["DeepAgentsRuntime", "_check_langchain_available", "create_langchain_tool"]
 
 
 def _check_langchain_available() -> RuntimeErrorData | None:
     """Проверить наличие langchain deps. None = всё ок."""
-    try:
-        import deepagents  # noqa: F401
-        import langchain_core  # noqa: F401
-
-        return None
-    except ImportError:
-        return RuntimeErrorData(
-            kind="dependency_missing",
-            message=(
-                "deepagents и/или langchain-core не установлены. "
-                "Установите: pip install cognitia[deepagents]"
-            ),
-            recoverable=False,
-        )
-
-
-def create_langchain_tool(spec: ToolSpec, executor: Callable | None = None) -> Any:
-    """Обернуть ToolSpec в LangChain StructuredTool.
-
-    Args:
-        spec: Описание инструмента.
-        executor: Функция-исполнитель (для local tools).
-                  Если None — заглушка (для MCP tools обработка идёт отдельно).
-
-    Returns:
-        langchain_core.tools.StructuredTool
-    """
-    from langchain_core.tools import StructuredTool
-
-    schema = dict(spec.parameters or {})
-    schema.setdefault("title", f"{spec.name}Input")
-    schema.setdefault("type", "object")
-    schema.setdefault("properties", {})
-    schema.setdefault("additionalProperties", True)
-
-    async def _noop(**kwargs: Any) -> str:
-        return json.dumps({"error": f"Tool {spec.name} не имеет executor"})
-
-    async def _call_executor(**kwargs: Any) -> str:
-        if executor is None:
-            return await _noop(**kwargs)
-
-        try:
-            # Предпочтительный путь: executor(**kwargs)
-            result = executor(**kwargs)
-        except TypeError:
-            # Backward compat: часть local tools имеет сигнатуру executor(args: dict)
-            result = executor(kwargs)
-
-        if hasattr(result, "__await__"):
-            result = await result
-
-        if isinstance(result, str):
-            return result
-        return json.dumps(result, ensure_ascii=False, default=str)
-
-    return StructuredTool.from_function(
-        coroutine=_call_executor,
-        name=spec.name,
-        description=spec.description,
-        args_schema=schema,
-        infer_schema=False,
-    )
+    return check_langchain_available()
 
 
 class DeepAgentsRuntime:
@@ -146,12 +81,11 @@ class DeepAgentsRuntime:
         config: RuntimeConfig | None = None,
         mode_hint: str | None = None,
     ) -> AsyncIterator[RuntimeEvent]:
-        """Выполнить turn через LangChain.
+        """Выполнить turn через DeepAgents-compatible path.
 
         Выбирает active_tools по feature_mode, конвертирует в LangChain формат,
         вызывает модель, нормализует стрим в RuntimeEvent.
         """
-        # Проверяем deps
         dep_error = _check_langchain_available()
         if dep_error:
             yield RuntimeEvent.error(dep_error)
@@ -159,6 +93,7 @@ class DeepAgentsRuntime:
 
         effective_config = config or self._config
 
+        requested_tools = list(active_tools)
         selected_tools = self.select_active_tools(
             active_tools,
             feature_mode=effective_config.feature_mode,
@@ -169,14 +104,68 @@ class DeepAgentsRuntime:
         tool_calls: list[dict[str, Any]] = []
 
         try:
-            async for event in self._stream_langchain(
+            stream = self._stream_langchain
+            final_session_id = None
+            final_native_metadata = None
+            if self._should_use_native_path(effective_config):
+                state_error = validate_native_state_config(effective_config.native_config)
+                if state_error:
+                    yield RuntimeEvent.error(state_error)
+                    return
+
+                hitl_error = validate_hitl_config(effective_config.native_config)
+                if hitl_error:
+                    yield RuntimeEvent.error(hitl_error)
+                    return
+
+                native_selection = split_native_builtin_tools(selected_tools)
+                backend_error = validate_native_backend_config(
+                    native_tool_names=native_selection.native_tool_names,
+                    native_config=effective_config.native_config,
+                )
+                if backend_error:
+                    yield RuntimeEvent.error(backend_error)
+                    return
+
+                notice = build_native_notice(
+                    requested_tools,
+                    feature_mode=effective_config.feature_mode,
+                )
+                if notice:
+                    yield RuntimeEvent.status(notice)
+                selected_tools = native_selection.custom_tools
+                lc_messages = self._build_lc_messages(
+                    messages,
+                    system_prompt,
+                    include_system_prompt=False,
+                )
+                input_payload, run_config, final_native_metadata = build_native_invocation(
+                    messages=lc_messages,
+                    native_config=effective_config.native_config,
+                )
+                final_session_id = final_native_metadata.get("thread_id")
+                state_notice = build_native_state_notice(final_native_metadata)
+                if state_notice:
+                    yield RuntimeEvent.native_notice(
+                        state_notice,
+                        metadata=final_native_metadata,
+                    )
+                stream = self._stream_native
+            else:
+                notice = build_portable_notice(requested_tools)
+                if notice:
+                    yield RuntimeEvent.status(notice)
+
+            async for event in stream(
                 messages=messages,
                 system_prompt=system_prompt,
                 tools=selected_tools,
                 model=effective_config.model,
                 base_url=effective_config.base_url,
+                native_config=effective_config.native_config,
+                input_payload=locals().get("input_payload"),
+                run_config=locals().get("run_config"),
             ):
-                # Пробрасываем tool events и assistant_delta напрямую
                 yield event
                 if event.type == "assistant_delta":
                     full_text += str(event.data.get("text", ""))
@@ -206,29 +195,65 @@ class DeepAgentsRuntime:
                 model=effective_config.model,
                 tool_calls_count=len(tool_calls),
             ),
+            session_id=final_session_id,
+            native_metadata=final_native_metadata,
         )
 
     def _build_lc_messages(
         self,
         messages: list[Message],
         system_prompt: str,
+        *,
+        include_system_prompt: bool = True,
     ) -> list[Any]:
         """Конвертировать cognitia Message → LangChain messages."""
-        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
-        lc_messages: list[Any] = [SystemMessage(content=system_prompt)]
-        for msg in messages:
-            if msg.role == "user":
-                lc_messages.append(HumanMessage(content=msg.content))
-            elif msg.role == "assistant":
-                lc_messages.append(AIMessage(content=msg.content))
-            elif msg.role == "system":
-                lc_messages.append(SystemMessage(content=msg.content))
-        return lc_messages
+        return build_langchain_messages(
+            messages,
+            system_prompt,
+            include_system_prompt=include_system_prompt,
+        )
 
     def _build_llm(self, model: str, base_url: str | None = None) -> Any:
         """Создать provider-specific chat model через отдельный resolver."""
         return build_deepagents_chat_model(model, base_url=base_url)
+
+    def _should_use_native_path(self, config: RuntimeConfig) -> bool:
+        """Native upstream path включаем для hybrid/native_first."""
+        return config.allow_native_features or config.feature_mode in {
+            "hybrid",
+            "native_first",
+        }
+
+    async def _stream_native(
+        self,
+        messages: list[Message],
+        system_prompt: str,
+        tools: list[ToolSpec],
+        model: str,
+        base_url: str | None = None,
+        native_config: dict[str, Any] | None = None,
+        input_payload: Any = None,
+        run_config: dict[str, Any] | None = None,
+    ) -> AsyncIterator[RuntimeEvent]:
+        """Стримить через native upstream DeepAgents graph."""
+        native_config = native_config or {}
+        graph = build_deepagents_graph(
+            model=model,
+            system_prompt=system_prompt,
+            tools=tools,
+            tool_executors=self._tool_executors,
+            base_url=base_url,
+            interrupt_on=native_config.get("interrupt_on"),
+            checkpointer=native_config.get("checkpointer"),
+            store=native_config.get("store"),
+            backend=native_config.get("backend"),
+        )
+        async for event in stream_deepagents_graph_events(
+            graph=graph,
+            input_payload=input_payload or {"messages": []},
+            run_config=run_config,
+        ):
+            yield event
 
     async def _stream_langchain(
         self,
@@ -237,66 +262,24 @@ class DeepAgentsRuntime:
         tools: list[ToolSpec],
         model: str,
         base_url: str | None = None,
+        native_config: dict[str, Any] | None = None,
+        input_payload: Any = None,
+        run_config: dict[str, Any] | None = None,
     ) -> AsyncIterator[RuntimeEvent]:
-        """Стримить через LangChain astream_events.
-
-        Yield'ит RuntimeEvent: assistant_delta, tool_call_started, tool_call_finished.
-        """
+        """Стримить через LangChain astream_events."""
         lc_messages = self._build_lc_messages(messages, system_prompt)
-
-        # Создаём LangChain tools
-        lc_tools = []
-        for spec in tools:
-            executor = self._tool_executors.get(spec.name)
-            lc_tools.append(create_langchain_tool(spec, executor))
-
+        lc_tools = [
+            create_langchain_tool(spec, self._tool_executors.get(spec.name))
+            for spec in tools
+        ]
         llm = self._build_llm(model, base_url)
+        runnable = llm.bind_tools(lc_tools) if lc_tools else llm
 
-        if lc_tools:
-            runnable = llm.bind_tools(lc_tools)
-        else:
-            runnable = llm
-
-        # Маппинг run_id → correlation_id для связки started/finished events
-        tool_correlation: dict[str, str] = {}
-
-        # astream_events v2 для получения tool events + text streaming
-        async for event in runnable.astream_events(lc_messages, version="v2"):
-            kind = event.get("event", "")
-
-            if kind == "on_chat_model_stream":
-                # Текстовый chunk от модели
-                chunk = event.get("data", {}).get("chunk")
-                if chunk and hasattr(chunk, "content") and chunk.content:
-                    content = chunk.content
-                    if isinstance(content, str) and content:
-                        yield RuntimeEvent.assistant_delta(content)
-
-            elif kind == "on_tool_start":
-                tool_name = event.get("name", "")
-                tool_input = event.get("data", {}).get("input", {})
-                run_id = event.get("run_id", "")
-                started_event = RuntimeEvent.tool_call_started(
-                    name=tool_name,
-                    args=tool_input if isinstance(tool_input, dict) else {},
-                )
-                # Сохраняем correlation_id для finished event
-                cid = started_event.data.get("correlation_id", "")
-                if run_id:
-                    tool_correlation[run_id] = cid
-                yield started_event
-
-            elif kind == "on_tool_end":
-                tool_name = event.get("name", "")
-                run_id = event.get("run_id", "")
-                cid = tool_correlation.pop(run_id, run_id[:8])
-                output = event.get("data", {}).get("output", "")
-                result_str = str(output) if output else ""
-                yield RuntimeEvent.tool_call_finished(
-                    name=tool_name,
-                    correlation_id=cid,
-                    result_summary=result_str[:500],
-                )
+        async for event in stream_langchain_runtime_events(
+            runnable=runnable,
+            lc_messages=lc_messages,
+        ):
+            yield event
 
     async def cleanup(self) -> None:
         """Нечего очищать — LangChain stateless."""
@@ -304,7 +287,7 @@ class DeepAgentsRuntime:
     @staticmethod
     def filter_builtin_tools(tools: list[ToolSpec]) -> list[ToolSpec]:
         """Отфильтровать built-in tools DeepAgents. Public для тестирования."""
-        return [t for t in tools if t.name not in _DEEPAGENTS_BUILTIN_TOOLS]
+        return filter_native_builtin_tools(tools)
 
     @staticmethod
     def select_active_tools(

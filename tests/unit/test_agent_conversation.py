@@ -39,7 +39,12 @@ class TestConversationSay:
         async def fake_execute(prompt):
             yield FakeStreamEvent("text_delta", text="Hi!")
             yield FakeStreamEvent(
-                "done", text="Hi!", is_final=True, session_id="s1", total_cost_usd=0.01
+                "done",
+                text="Hi!",
+                is_final=True,
+                session_id="s1",
+                total_cost_usd=0.01,
+                native_metadata={"thread_id": "thread-1"},
             )
 
         with patch.object(conv, "_execute", side_effect=fake_execute):
@@ -48,6 +53,7 @@ class TestConversationSay:
         assert result.ok is True
         assert result.text == "Hi!"
         assert result.session_id == "s1"
+        assert result.native_metadata == {"thread_id": "thread-1"}
 
     @pytest.mark.asyncio
     async def test_multi_turn_accumulates_history(self) -> None:

@@ -37,6 +37,13 @@ class TestRuntimeCapabilities:
         caps = get_runtime_capabilities("deepagents")
         assert caps.runtime_name == "deepagents"
         assert caps.tier == "full"
+        assert caps.supports_resume is True
+        assert caps.supports_interrupt is False
+        assert caps.supports_user_input is False
+        assert caps.supports_hitl is False
+        assert caps.supports_builtin_todo is True
+        assert caps.supports_native_subagents is True
+        assert caps.supports_provider_override is True
 
     def test_thin_is_light_tier(self) -> None:
         caps = get_runtime_capabilities("thin")

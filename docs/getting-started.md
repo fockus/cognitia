@@ -13,7 +13,14 @@ pip install cognitia
 ```bash
 pip install cognitia[thin]          # Built-in lightweight runtime (Anthropic API)
 pip install cognitia[claude]        # Claude Agent SDK runtime (subprocess + MCP)
-pip install cognitia[deepagents]    # LangChain Deep Agents runtime
+pip install cognitia[deepagents]    # DeepAgents runtime baseline (native graph + Anthropic path)
+```
+
+DeepAgents provider overrides are installed separately:
+
+```bash
+pip install cognitia[deepagents] langchain-openai openai
+pip install cognitia[deepagents] langchain-google-genai
 ```
 
 ### With storage
@@ -187,7 +194,7 @@ agent = Agent(AgentConfig(system_prompt="...", runtime="thin"))
 # Production: full Claude ecosystem with MCP
 agent = Agent(AgentConfig(system_prompt="...", runtime="claude_sdk"))
 
-# Experiments: LangChain integration
+# Experiments: DeepAgents graph runtime
 agent = Agent(AgentConfig(system_prompt="...", runtime="deepagents"))
 ```
 
@@ -196,6 +203,28 @@ Or via environment variable:
 ```bash
 export COGNITIA_RUNTIME=thin
 ```
+
+### 6.1 DeepAgents: portable first
+
+If you want the smallest migration gap between `claude_sdk` and `deepagents`, start with portable mode:
+
+```python
+agent = Agent(AgentConfig(
+    system_prompt="You are a helpful assistant.",
+    runtime="deepagents",
+    feature_mode="portable",
+))
+result = await agent.query("What is 2+2?")
+print(result.text)
+```
+
+Feature modes:
+
+- `portable` — tested parity baseline for `query()`, `stream()`, `conversation()`
+- `hybrid` — portable core + DeepAgents native built-ins/store seams
+- `native_first` — prefer DeepAgents native built-ins and graph behavior
+
+Practical note: the baseline `cognitia[deepagents]` extra is Anthropic-ready. For OpenAI or Google provider paths, install the provider bridge package separately. If you enable native built-ins, also pass an explicit `native_config["backend"]`; Cognitia now fails fast instead of silently falling back to DeepAgents `StateBackend`. For tool-heavy Gemini built-ins, prefer `portable` mode unless you are explicitly testing native provider behavior.
 
 ### 7. Model Selection
 

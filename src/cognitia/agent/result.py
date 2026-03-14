@@ -18,6 +18,7 @@ class Result:
     total_cost_usd: float | None = None
     usage: dict[str, Any] | None = None
     structured_output: Any = None
+    native_metadata: dict[str, Any] | None = None
     error: str | None = None
 
     @property

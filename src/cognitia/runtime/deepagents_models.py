@@ -122,6 +122,19 @@ def _load_provider_class(provider: str) -> type[Any]:
             )
         ) from exc
 
+    if module is None or not hasattr(module, class_name):
+        raise DeepAgentsModelError(
+            RuntimeErrorData(
+                kind="dependency_missing",
+                message=(
+                    f"Для DeepAgents provider '{provider}' нужен пакет "
+                    f"'{package_hint}'. Установите его отдельно."
+                ),
+                recoverable=False,
+                details={"provider": provider, "package": package_hint},
+            )
+        )
+
     return getattr(module, class_name)
 
 

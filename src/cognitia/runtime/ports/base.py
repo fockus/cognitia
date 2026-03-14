@@ -31,6 +31,9 @@ class StreamEvent:
     tool_name: str = ""
     tool_input: dict[str, Any] | None = None
     tool_result: str = ""
+    allowed_decisions: list[str] | None = None
+    interrupt_id: str | None = None
+    native_metadata: dict[str, Any] | None = None
     is_final: bool = False
 
 
@@ -53,6 +56,30 @@ def convert_event(event: RuntimeEvent) -> StreamEvent | None:
         return StreamEvent(
             type="tool_use_result",
             tool_result=str(event.data.get("result_summary", "")),
+        )
+
+    if event.type == "approval_required":
+        return StreamEvent(
+            type="approval_required",
+            text=str(event.data.get("description", "")),
+            tool_name=str(event.data.get("action_name", "")),
+            tool_input=event.data.get("args"),
+            allowed_decisions=event.data.get("allowed_decisions"),
+            interrupt_id=event.data.get("interrupt_id"),
+        )
+
+    if event.type == "user_input_requested":
+        return StreamEvent(
+            type="user_input_requested",
+            text=str(event.data.get("prompt", "")),
+            interrupt_id=event.data.get("interrupt_id"),
+        )
+
+    if event.type == "native_notice":
+        return StreamEvent(
+            type="native_notice",
+            text=str(event.data.get("text", "")),
+            native_metadata=event.data.get("metadata"),
         )
 
     if event.type == "error":

@@ -180,6 +180,9 @@ RUNTIME_EVENT_TYPES = frozenset(
         "status",  # статусное сообщение ("Выполняю шаг…")
         "tool_call_started",  # начало вызова инструмента
         "tool_call_finished",  # окончание вызова инструмента
+        "approval_required",  # human approval / tool review
+        "user_input_requested",  # runtime просит человеческий input
+        "native_notice",  # важная native-specific semantics notice
         "final",  # финальный ответ (полный текст + new_messages)
         "error",  # ошибка
     }
@@ -195,6 +198,9 @@ class RuntimeEvent:
     - status: data={"text": "..."}
     - tool_call_started: data={"name": "...", "correlation_id": "...", "args": {...}}
     - tool_call_finished: data={"name": "...", "correlation_id": "...", "ok": bool, "result_summary": "..."}
+    - approval_required: data={"action_name": "...", "args": {...}, "allowed_decisions": [...], "interrupt_id": "..."}
+    - user_input_requested: data={"prompt": "...", "interrupt_id": "..."}
+    - native_notice: data={"text": "...", "metadata": {...}}
     - final: data={"text": "...", "new_messages": [...], "metrics": {...}, ...metadata}
     - error: data=RuntimeErrorData.to_dict()
     """
@@ -211,6 +217,48 @@ class RuntimeEvent:
     def status(text: str) -> RuntimeEvent:
         """Статусное сообщение."""
         return RuntimeEvent(type="status", data={"text": text})
+
+    @staticmethod
+    def approval_required(
+        action_name: str,
+        args: dict[str, Any] | None = None,
+        allowed_decisions: list[str] | None = None,
+        interrupt_id: str | None = None,
+        description: str = "",
+    ) -> RuntimeEvent:
+        """Запрос на human approval / tool review."""
+        return RuntimeEvent(
+            type="approval_required",
+            data={
+                "action_name": action_name,
+                "args": args or {},
+                "allowed_decisions": list(allowed_decisions or []),
+                "interrupt_id": interrupt_id,
+                "description": description,
+            },
+        )
+
+    @staticmethod
+    def user_input_requested(
+        prompt: str,
+        interrupt_id: str | None = None,
+    ) -> RuntimeEvent:
+        """Runtime ожидает ввод пользователя/человека."""
+        return RuntimeEvent(
+            type="user_input_requested",
+            data={"prompt": prompt, "interrupt_id": interrupt_id},
+        )
+
+    @staticmethod
+    def native_notice(
+        text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeEvent:
+        """Явное уведомление о native-specific semantics."""
+        data: dict[str, Any] = {"text": text}
+        if metadata is not None:
+            data["metadata"] = metadata
+        return RuntimeEvent(type="native_notice", data=data)
 
     @staticmethod
     def tool_call_started(
@@ -252,6 +300,7 @@ class RuntimeEvent:
         total_cost_usd: float | None = None,
         usage: dict[str, Any] | None = None,
         structured_output: Any = None,
+        native_metadata: dict[str, Any] | None = None,
     ) -> RuntimeEvent:
         """Финальный ответ."""
         data: dict[str, Any] = {
@@ -267,6 +316,8 @@ class RuntimeEvent:
             data["usage"] = usage
         if structured_output is not None:
             data["structured_output"] = structured_output
+        if native_metadata is not None:
+            data["native_metadata"] = native_metadata
         return RuntimeEvent(type="final", data=data)
 
     @staticmethod
