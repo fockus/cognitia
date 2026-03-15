@@ -1,6 +1,6 @@
 """Cognitia — LLM-agnostic framework for building AI agents."""
 
-__version__ = "0.3.0b1"
+__version__ = "0.4.0"
 
 from cognitia.agent import Agent, AgentConfig, Conversation, Result, tool
 from cognitia.protocols import (

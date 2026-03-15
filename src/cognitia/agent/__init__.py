@@ -8,6 +8,8 @@ from cognitia.agent.middleware import (
     CostTracker,
     Middleware,
     SecurityGuard,
+    ToolOutputCompressor,
+    build_middleware_stack,
 )
 from cognitia.agent.result import Result
 from cognitia.agent.tool import ToolDefinition, tool
@@ -21,6 +23,8 @@ __all__ = [
     "Middleware",
     "Result",
     "SecurityGuard",
+    "ToolOutputCompressor",
+    "build_middleware_stack",
     "ToolDefinition",
     "tool",
 ]

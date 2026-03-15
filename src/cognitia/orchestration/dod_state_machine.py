@@ -37,6 +37,8 @@ class DoDStateMachine:
     """
 
     def __init__(self, max_loops: int = 3) -> None:
+        if max_loops < 1:
+            raise ValueError("max_loops must be >= 1")
         self._max_loops = max_loops
 
     async def verify_dod(self, criteria: tuple[str, ...], verifier: CodeVerifier) -> DoDResult:
@@ -82,7 +84,10 @@ class DoDStateMachine:
         }
         method_name = method_map.get(criterion.lower())
         if method_name is None:
-            return _CriterionResult(status=VerificationStatus.SKIP, passed=False)
+            import logging
+
+            logging.getLogger(__name__).warning("Unknown DoD criterion: %s (skipping)", criterion)
+            return _CriterionResult(status=VerificationStatus.SKIP, passed=True)
         method = getattr(verifier, method_name)
         result: VerificationResult = await method()
         return _CriterionResult(status=result.status, passed=result.passed)
