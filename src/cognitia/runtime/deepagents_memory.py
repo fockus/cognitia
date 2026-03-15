@@ -16,9 +16,7 @@ def validate_native_state_config(
     if native_config.get("resume") is not None and native_config.get("checkpointer") is None:
         return RuntimeErrorData(
             kind="capability_unsupported",
-            message=(
-                "DeepAgents native resume требует checkpointer в native_config."
-            ),
+            message=("DeepAgents native resume требует checkpointer в native_config."),
             recoverable=False,
         )
     return None
@@ -61,9 +59,8 @@ def build_native_invocation(
 
 def build_native_state_notice(native_metadata: dict[str, Any]) -> str | None:
     """Явный notice, когда native thread semantics отличаются от portable history replay."""
-    if (
-        native_metadata.get("history_source") != "native_thread"
-        and not native_metadata.get("resume_requested")
+    if native_metadata.get("history_source") != "native_thread" and not native_metadata.get(
+        "resume_requested"
     ):
         return None
 

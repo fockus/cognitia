@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from cognitia.config.role_router import RoleRouterConfig, load_role_router_config
 from cognitia.config.role_skills import YamlRoleSkillsLoader
 

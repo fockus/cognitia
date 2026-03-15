@@ -15,10 +15,12 @@ class TestThinkingTool:
         """Мысль записывается и возвращается в JSON."""
         from cognitia.tools.thinking import thinking_executor
 
-        result = await thinking_executor({
-            "thought": "Мне нужно найти файл конфигурации.",
-            "next_steps": ["Поиск по glob *.yaml", "Прочитать содержимое"],
-        })
+        result = await thinking_executor(
+            {
+                "thought": "Мне нужно найти файл конфигурации.",
+                "next_steps": ["Поиск по glob *.yaml", "Прочитать содержимое"],
+            }
+        )
         data = json.loads(result)
 
         assert data["status"] == "thought_recorded"

@@ -4,7 +4,6 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from cognitia.runtime.capabilities import CapabilityRequirements
 from cognitia.runtime.factory import RuntimeFactory, _ErrorRuntime
 from cognitia.runtime.types import RuntimeConfig
@@ -18,6 +17,7 @@ def factory() -> RuntimeFactory:
 # ---------------------------------------------------------------------------
 # resolve_runtime_name
 # ---------------------------------------------------------------------------
+
 
 class TestResolveRuntimeName:
     """RuntimeFactory.resolve_runtime_name — приоритет выбора."""
@@ -47,7 +47,8 @@ class TestResolveRuntimeName:
         cfg = RuntimeConfig(runtime_name="thin")
         with patch.dict(os.environ, {"COGNITIA_RUNTIME": "deepagents"}):
             result = factory.resolve_runtime_name(
-                config=cfg, runtime_override="claude_sdk",
+                config=cfg,
+                runtime_override="claude_sdk",
             )
             assert result == "claude_sdk"
 
@@ -60,7 +61,8 @@ class TestResolveRuntimeName:
         """Невалидный override — игнорируется, используется config."""
         cfg = RuntimeConfig(runtime_name="thin")
         result = factory.resolve_runtime_name(
-            config=cfg, runtime_override="invalid",
+            config=cfg,
+            runtime_override="invalid",
         )
         assert result == "thin"
 
@@ -73,6 +75,7 @@ class TestResolveRuntimeName:
 # ---------------------------------------------------------------------------
 # create
 # ---------------------------------------------------------------------------
+
 
 class TestCreate:
     """RuntimeFactory.create — создание runtime."""
@@ -161,6 +164,7 @@ class TestCapabilities:
 # ---------------------------------------------------------------------------
 # _ErrorRuntime
 # ---------------------------------------------------------------------------
+
 
 class TestErrorRuntime:
     """_ErrorRuntime — заглушка при отсутствии dependency."""

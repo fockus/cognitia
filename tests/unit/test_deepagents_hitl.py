@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from langgraph.types import Interrupt
-
 from cognitia.runtime.deepagents_hitl import (
     build_interrupt_events,
     validate_hitl_config,
 )
+from langgraph.types import Interrupt
 
 
 def test_validate_hitl_config_requires_checkpointer() -> None:

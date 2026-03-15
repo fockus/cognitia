@@ -73,7 +73,10 @@ class ClaudeCodeRuntime:
         Извлекает последнее user message, делегирует в SDK,
         конвертирует StreamEvent → RuntimeEvent.
         """
-        logger.info("ClaudeCodeRuntime.run(): начало (adapter=%s)", type(self._adapter).__name__ if self._adapter else "None")
+        logger.info(
+            "ClaudeCodeRuntime.run(): начало (adapter=%s)",
+            type(self._adapter).__name__ if self._adapter else "None",
+        )
 
         if self._adapter is None:
             logger.error("ClaudeCodeRuntime.run(): adapter is None")

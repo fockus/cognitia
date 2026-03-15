@@ -15,7 +15,12 @@ from cognitia.runtime.types import ToolSpec
 
 _READ_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "properties": {"path": {"type": "string", "description": "Путь к файлу в банке памяти (e.g. 'MEMORY.md', 'plans/feature.md')"}},
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "Путь к файлу в банке памяти (e.g. 'MEMORY.md', 'plans/feature.md')",
+        }
+    },
     "required": ["path"],
 }
 
@@ -39,7 +44,13 @@ _APPEND_SCHEMA: dict[str, Any] = {
 
 _LIST_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "properties": {"prefix": {"type": "string", "description": "Фильтр по prefix/подпапке (опционально)", "default": ""}},
+    "properties": {
+        "prefix": {
+            "type": "string",
+            "description": "Фильтр по prefix/подпапке (опционально)",
+            "default": "",
+        }
+    },
 }
 
 _DELETE_SCHEMA: dict[str, Any] = {
@@ -111,11 +122,27 @@ def create_memory_bank_tools(
             return json.dumps({"status": "error", "message": str(e)})
 
     specs = {
-        "memory_read": ToolSpec(name="memory_read", description="Прочитать файл из банка памяти", parameters=_READ_SCHEMA),
-        "memory_write": ToolSpec(name="memory_write", description="Записать файл в банк памяти", parameters=_WRITE_SCHEMA),
-        "memory_append": ToolSpec(name="memory_append", description="Дописать в конец файла в банке памяти", parameters=_APPEND_SCHEMA),
-        "memory_list": ToolSpec(name="memory_list", description="Список файлов в банке памяти", parameters=_LIST_SCHEMA),
-        "memory_delete": ToolSpec(name="memory_delete", description="Удалить файл из банка памяти", parameters=_DELETE_SCHEMA),
+        "memory_read": ToolSpec(
+            name="memory_read",
+            description="Прочитать файл из банка памяти",
+            parameters=_READ_SCHEMA,
+        ),
+        "memory_write": ToolSpec(
+            name="memory_write", description="Записать файл в банк памяти", parameters=_WRITE_SCHEMA
+        ),
+        "memory_append": ToolSpec(
+            name="memory_append",
+            description="Дописать в конец файла в банке памяти",
+            parameters=_APPEND_SCHEMA,
+        ),
+        "memory_list": ToolSpec(
+            name="memory_list", description="Список файлов в банке памяти", parameters=_LIST_SCHEMA
+        ),
+        "memory_delete": ToolSpec(
+            name="memory_delete",
+            description="Удалить файл из банка памяти",
+            parameters=_DELETE_SCHEMA,
+        ),
     }
 
     executors: dict[str, Callable] = {

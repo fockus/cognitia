@@ -89,11 +89,7 @@ class McpClient:
         """
         now = time.monotonic()
         cached = self._tools_cache.get(server_url)
-        if (
-            not force_refresh
-            and cached is not None
-            and (now - cached[0]) < self._tools_cache_ttl
-        ):
+        if not force_refresh and cached is not None and (now - cached[0]) < self._tools_cache_ttl:
             return cached[1]
 
         payload = {
@@ -150,7 +146,9 @@ class McpClient:
             if not name:
                 continue
             description = str(item.get("description", "")).strip() or f"MCP tool: {name}"
-            parameters = item.get("input_schema") or item.get("inputSchema") or item.get("parameters")
+            parameters = (
+                item.get("input_schema") or item.get("inputSchema") or item.get("parameters")
+            )
             if not isinstance(parameters, dict):
                 parameters = {"type": "object"}
             parsed.append(

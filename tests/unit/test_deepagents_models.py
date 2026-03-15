@@ -8,7 +8,6 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-
 from cognitia.runtime.deepagents_models import (
     DeepAgentsModelError,
     build_deepagents_chat_model,

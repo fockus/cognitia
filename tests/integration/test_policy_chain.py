@@ -5,7 +5,6 @@
 """
 
 import pytest
-
 from cognitia.policy.tool_budget import ToolBudget
 from cognitia.policy.tool_id_codec import DefaultToolIdCodec
 from cognitia.policy.tool_policy import (
@@ -50,25 +49,19 @@ class TestDepositAdvisorWorkflow:
     def test_allow_finuslugi_tool(self, policy: DefaultToolPolicy) -> None:
         """MCP tool от активного скилла finuslugi → allow."""
         state = _state(skills=["finuslugi", "iss-price"])
-        result = policy.can_use_tool(
-            "mcp__finuslugi__get_deposits", {}, state
-        )
+        result = policy.can_use_tool("mcp__finuslugi__get_deposits", {}, state)
         assert isinstance(result, PermissionAllow)
 
     def test_allow_iss_price_tool(self, policy: DefaultToolPolicy) -> None:
         """MCP tool от iss-price → allow."""
         state = _state(skills=["finuslugi", "iss-price"])
-        result = policy.can_use_tool(
-            "mcp__iss-price__get_bond_price", {}, state
-        )
+        result = policy.can_use_tool("mcp__iss-price__get_bond_price", {}, state)
         assert isinstance(result, PermissionAllow)
 
     def test_deny_inactive_skill_tool(self, policy: DefaultToolPolicy) -> None:
         """MCP tool от неактивного скилла funds → deny."""
         state = _state(skills=["finuslugi", "iss-price"])
-        result = policy.can_use_tool(
-            "mcp__funds__get_fund_info", {}, state
-        )
+        result = policy.can_use_tool("mcp__funds__get_fund_info", {}, state)
         assert isinstance(result, PermissionDeny)
 
     def test_deny_dangerous_tools(self, policy: DefaultToolPolicy) -> None:
@@ -83,18 +76,14 @@ class TestDepositAdvisorWorkflow:
             skills=["finuslugi"],
             local_tools={"mcp__freedom_tools__calculate_deposit"},
         )
-        result = policy.can_use_tool(
-            "mcp__freedom_tools__calculate_deposit", {}, state
-        )
+        result = policy.can_use_tool("mcp__freedom_tools__calculate_deposit", {}, state)
         assert isinstance(result, PermissionAllow)
 
 
 class TestBudgetIntegration:
     """ToolBudget + ToolPolicy: бюджет ограничивает вызовы."""
 
-    def test_budget_tracks_mcp_calls(
-        self, policy: DefaultToolPolicy, budget: ToolBudget
-    ) -> None:
+    def test_budget_tracks_mcp_calls(self, policy: DefaultToolPolicy, budget: ToolBudget) -> None:
         """Бюджет считает MCP-вызовы отдельно."""
         state = _state(skills=["iss"])
 

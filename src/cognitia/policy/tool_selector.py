@@ -24,12 +24,12 @@ class ToolGroup(IntEnum):
     Дефолтный порядок переопределяется через ToolBudgetConfig.group_priority.
     """
 
-    ALWAYS = 0    # thinking, todo — всегда включены
-    MCP = 1       # MCP tools текущей роли — бизнес-логика
-    MEMORY = 2    # memory_* tools
+    ALWAYS = 0  # thinking, todo — всегда включены
+    MCP = 1  # MCP tools текущей роли — бизнес-логика
+    MEMORY = 2  # memory_* tools
     PLANNING = 3  # plan_* tools
-    SANDBOX = 4   # bash, read, write, edit, ...
-    WEB = 5       # web_fetch, web_search
+    SANDBOX = 4  # bash, read, write, edit, ...
+    WEB = 5  # web_fetch, web_search
 
 
 @dataclass(frozen=True)

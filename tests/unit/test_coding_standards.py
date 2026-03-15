@@ -1,4 +1,5 @@
 """Tests for CodingStandardsConfig и связанные config classes с factory methods."""
+
 from __future__ import annotations
 
 from cognitia.orchestration.coding_standards import (

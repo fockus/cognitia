@@ -10,13 +10,15 @@ from unittest.mock import AsyncMock
 
 
 def _plan_json(goal: str = "test") -> str:
-    return json.dumps({
-        "goal": goal,
-        "steps": [
-            {"id": "s1", "description": "step 1"},
-            {"id": "s2", "description": "step 2"},
-        ],
-    })
+    return json.dumps(
+        {
+            "goal": goal,
+            "steps": [
+                {"id": "s1", "description": "step 1"},
+                {"id": "s2", "description": "step 2"},
+            ],
+        }
+    )
 
 
 class TestDeepAgentsPlannerGenerate:

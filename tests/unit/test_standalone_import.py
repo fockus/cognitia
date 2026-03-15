@@ -37,7 +37,9 @@ class TestStandaloneImport:
             text=True,
             timeout=30,
         )
-        assert result.returncode == 0, f"Import failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Import failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
         assert "OK" in result.stdout
 
     def test_no_reverse_dependency_in_source(self) -> None:
@@ -57,10 +59,9 @@ class TestStandaloneImport:
                 if "freedom_agent" in stripped:
                     violations.append(f"{py_file.relative_to(cognitia_src)}:{i}: {stripped}")
 
-        assert violations == [], (
-            "Найдены обратные зависимости cognitia → freedom_agent:\n"
-            + "\n".join(violations)
-        )
+        assert (
+            violations == []
+        ), "Найдены обратные зависимости cognitia → freedom_agent:\n" + "\n".join(violations)
 
     def test_no_domain_leaks(self) -> None:
         """cognitia не содержит domain-specific строк (PF5, finance, Freedom)."""
@@ -82,7 +83,6 @@ class TestStandaloneImport:
                             f"{py_file.relative_to(cognitia_src)}:{i}: [{term}] {stripped}"
                         )
 
-        assert violations == [], (
-            "Найдены domain-specific утечки в cognitia:\n"
-            + "\n".join(violations)
+        assert violations == [], "Найдены domain-specific утечки в cognitia:\n" + "\n".join(
+            violations
         )

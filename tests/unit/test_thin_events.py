@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from cognitia.runtime.thin.runtime import ThinRuntime
 from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent, ToolSpec
 
@@ -51,10 +50,12 @@ class TestEventOrdering:
     @pytest.mark.asyncio
     async def test_final_always_last(self) -> None:
         """final event — всегда последний (не error)."""
-        llm = MockLLM([
-            json.dumps({"type": "tool_call", "tool": {"name": "calc", "args": {}}}),
-            json.dumps({"type": "final", "final_message": "done"}),
-        ])
+        llm = MockLLM(
+            [
+                json.dumps({"type": "tool_call", "tool": {"name": "calc", "args": {}}}),
+                json.dumps({"type": "final", "final_message": "done"}),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm, local_tools={"calc": lambda a: {"r": 1}})
 
         events = await collect(runtime)
@@ -112,11 +113,23 @@ class TestToolEventPairing:
     @pytest.mark.asyncio
     async def test_paired_tool_events(self) -> None:
         """Каждому tool_call_started соответствует tool_call_finished."""
-        llm = MockLLM([
-            json.dumps({"type": "tool_call", "tool": {"name": "calc", "args": {}, "correlation_id": "c1"}}),
-            json.dumps({"type": "tool_call", "tool": {"name": "calc", "args": {}, "correlation_id": "c2"}}),
-            json.dumps({"type": "final", "final_message": "done"}),
-        ])
+        llm = MockLLM(
+            [
+                json.dumps(
+                    {
+                        "type": "tool_call",
+                        "tool": {"name": "calc", "args": {}, "correlation_id": "c1"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "tool_call",
+                        "tool": {"name": "calc", "args": {}, "correlation_id": "c2"},
+                    }
+                ),
+                json.dumps({"type": "final", "final_message": "done"}),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm, local_tools={"calc": lambda a: {"r": 1}})
 
         events = await collect(runtime)
@@ -128,13 +141,16 @@ class TestToolEventPairing:
     @pytest.mark.asyncio
     async def test_tool_error_still_paired(self) -> None:
         """Tool error → tool_call_finished с ok=False (парность сохраняется)."""
+
         def bad(args):
             raise RuntimeError("fail")
 
-        llm = MockLLM([
-            json.dumps({"type": "tool_call", "tool": {"name": "bad", "args": {}}}),
-            json.dumps({"type": "final", "final_message": "error handled"}),
-        ])
+        llm = MockLLM(
+            [
+                json.dumps({"type": "tool_call", "tool": {"name": "bad", "args": {}}}),
+                json.dumps({"type": "final", "final_message": "error handled"}),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm, local_tools={"bad": bad})
 
         events = await collect(runtime)

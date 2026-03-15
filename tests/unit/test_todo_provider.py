@@ -6,7 +6,7 @@ TDD: RED → GREEN → REFACTOR.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -21,8 +21,8 @@ class TestTodoItem:
             id="t1",
             content="Сделать тесты",
             status="pending",
-            created_at=datetime(2026, 2, 12, tzinfo=timezone.utc),
-            updated_at=datetime(2026, 2, 12, tzinfo=timezone.utc),
+            created_at=datetime(2026, 2, 12, tzinfo=UTC),
+            updated_at=datetime(2026, 2, 12, tzinfo=UTC),
         )
         assert item.id == "t1"
         assert item.status == "pending"
@@ -31,9 +31,11 @@ class TestTodoItem:
         from cognitia.todo.types import TodoItem
 
         item = TodoItem(
-            id="t1", content="x", status="pending",
-            created_at=datetime.now(tz=timezone.utc),
-            updated_at=datetime.now(tz=timezone.utc),
+            id="t1",
+            content="x",
+            status="pending",
+            created_at=datetime.now(tz=UTC),
+            updated_at=datetime.now(tz=UTC),
         )
         with pytest.raises(AttributeError):
             item.status = "completed"  # type: ignore[misc]
@@ -42,9 +44,11 @@ class TestTodoItem:
         from cognitia.todo.types import TodoItem
 
         item = TodoItem(
-            id="t1", content="task", status="in_progress",
-            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            id="t1",
+            content="task",
+            status="in_progress",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
         d = item.to_dict()
         assert d["id"] == "t1"
@@ -100,7 +104,8 @@ class TestTodoProviderProtocol:
         from cognitia.todo.protocols import TodoProvider
 
         methods = [
-            n for n in dir(TodoProvider)
+            n
+            for n in dir(TodoProvider)
             if not n.startswith("_") and callable(getattr(TodoProvider, n, None))
         ]
         assert len(methods) <= 5
@@ -123,14 +128,18 @@ class TestInMemoryTodoProvider:
         provider = InMemoryTodoProvider(user_id="u1", topic_id="t1")
         items = [
             TodoItem(
-                id="1", content="Задача 1", status="pending",
-                created_at=datetime.now(tz=timezone.utc),
-                updated_at=datetime.now(tz=timezone.utc),
+                id="1",
+                content="Задача 1",
+                status="pending",
+                created_at=datetime.now(tz=UTC),
+                updated_at=datetime.now(tz=UTC),
             ),
             TodoItem(
-                id="2", content="Задача 2", status="in_progress",
-                created_at=datetime.now(tz=timezone.utc),
-                updated_at=datetime.now(tz=timezone.utc),
+                id="2",
+                content="Задача 2",
+                status="in_progress",
+                created_at=datetime.now(tz=UTC),
+                updated_at=datetime.now(tz=UTC),
             ),
         ]
         await provider.write_todos(items)
@@ -144,14 +153,18 @@ class TestInMemoryTodoProvider:
         from cognitia.todo.types import TodoItem
 
         provider = InMemoryTodoProvider(user_id="u1", topic_id="t1")
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
-        await provider.write_todos([
-            TodoItem(id="1", content="old", status="pending", created_at=now, updated_at=now),
-        ])
-        await provider.write_todos([
-            TodoItem(id="2", content="new", status="pending", created_at=now, updated_at=now),
-        ])
+        await provider.write_todos(
+            [
+                TodoItem(id="1", content="old", status="pending", created_at=now, updated_at=now),
+            ]
+        )
+        await provider.write_todos(
+            [
+                TodoItem(id="2", content="new", status="pending", created_at=now, updated_at=now),
+            ]
+        )
 
         result = await provider.read_todos()
         assert len(result) == 1
@@ -163,7 +176,7 @@ class TestInMemoryTodoProvider:
         from cognitia.todo.types import TodoItem
 
         provider = InMemoryTodoProvider(user_id="u1", topic_id="t1", max_todos=2)
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         items = [
             TodoItem(id=str(i), content=f"t{i}", status="pending", created_at=now, updated_at=now)
@@ -177,13 +190,17 @@ class TestInMemoryTodoProvider:
         from cognitia.todo.inmemory_provider import InMemoryTodoProvider
         from cognitia.todo.types import TodoItem
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         p1 = InMemoryTodoProvider(user_id="alice", topic_id="t1")
         p2 = InMemoryTodoProvider(user_id="bob", topic_id="t1")
 
-        await p1.write_todos([
-            TodoItem(id="1", content="alice task", status="pending", created_at=now, updated_at=now),
-        ])
+        await p1.write_todos(
+            [
+                TodoItem(
+                    id="1", content="alice task", status="pending", created_at=now, updated_at=now
+                ),
+            ]
+        )
 
         assert len(await p1.read_todos()) == 1
         assert len(await p2.read_todos()) == 0
@@ -217,12 +234,14 @@ class TestTodoTools:
         provider = InMemoryTodoProvider(user_id="u", topic_id="t")
         _specs, executors = create_todo_tools(provider)
 
-        result = await executors["todo_write"]({
-            "todos": [
-                {"id": "1", "content": "task one", "status": "pending"},
-                {"id": "2", "content": "task two", "status": "in_progress"},
-            ],
-        })
+        result = await executors["todo_write"](
+            {
+                "todos": [
+                    {"id": "1", "content": "task one", "status": "pending"},
+                    {"id": "2", "content": "task two", "status": "in_progress"},
+                ],
+            }
+        )
         data = json.loads(result)
         assert data["status"] == "ok"
 
@@ -237,12 +256,14 @@ class TestTodoTools:
         provider = InMemoryTodoProvider(user_id="u", topic_id="t")
         _specs, executors = create_todo_tools(provider)
 
-        await executors["todo_write"]({
-            "todos": [
-                {"id": "1", "content": "done", "status": "completed"},
-                {"id": "2", "content": "wip", "status": "in_progress"},
-            ],
-        })
+        await executors["todo_write"](
+            {
+                "todos": [
+                    {"id": "1", "content": "done", "status": "completed"},
+                    {"id": "2", "content": "wip", "status": "in_progress"},
+                ],
+            }
+        )
 
         result = await executors["todo_read"]({"status_filter": "in_progress"})
         data = json.loads(result)

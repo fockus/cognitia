@@ -1,4 +1,5 @@
 """Типы для code verification pipeline."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

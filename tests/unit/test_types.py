@@ -1,7 +1,6 @@
 """Тесты для базовых типов: TurnContext, ContextPack, SkillSet."""
 
 import pytest
-
 from cognitia.types import ContextPack, SkillSet, TurnContext
 
 
@@ -58,12 +57,18 @@ class TestTurnContext:
     def test_different_skills_not_equal(self) -> None:
         """TurnContext с разными skills — разные объекты."""
         ctx1 = TurnContext(
-            user_id="u1", topic_id="t1", role_id="coach",
-            model="sonnet", active_skill_ids=("iss",),
+            user_id="u1",
+            topic_id="t1",
+            role_id="coach",
+            model="sonnet",
+            active_skill_ids=("iss",),
         )
         ctx2 = TurnContext(
-            user_id="u1", topic_id="t1", role_id="coach",
-            model="sonnet", active_skill_ids=("funds",),
+            user_id="u1",
+            topic_id="t1",
+            role_id="coach",
+            model="sonnet",
+            active_skill_ids=("funds",),
         )
         assert ctx1 != ctx2
 
@@ -87,7 +92,10 @@ class TestContextPack:
     def test_frozen(self) -> None:
         """ContextPack неизменяем."""
         pack = ContextPack(
-            pack_id="role", priority=1, content="text", tokens_estimate=5,
+            pack_id="role",
+            priority=1,
+            content="text",
+            tokens_estimate=5,
         )
         with pytest.raises(AttributeError):
             pack.content = "new"  # type: ignore[misc]

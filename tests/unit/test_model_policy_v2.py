@@ -16,7 +16,9 @@ class TestSelectForTurn:
         """Обычный запрос → sonnet."""
         policy = ModelPolicy()
         result = policy.select_for_turn(
-            role_id="coach", user_text="привет", active_skill_count=0,
+            role_id="coach",
+            user_text="привет",
+            active_skill_count=0,
         )
         assert result == "sonnet"
 
@@ -24,7 +26,9 @@ class TestSelectForTurn:
         """Слово 'план' → opus."""
         policy = ModelPolicy()
         result = policy.select_for_turn(
-            role_id="coach", user_text="составь план на год", active_skill_count=0,
+            role_id="coach",
+            user_text="составь план на год",
+            active_skill_count=0,
         )
         assert result == "opus"
 
@@ -32,7 +36,9 @@ class TestSelectForTurn:
         """'стратеги' → opus."""
         policy = ModelPolicy()
         result = policy.select_for_turn(
-            role_id="coach", user_text="нужна стратегия", active_skill_count=0,
+            role_id="coach",
+            user_text="нужна стратегия",
+            active_skill_count=0,
         )
         assert result == "opus"
 
@@ -40,7 +46,9 @@ class TestSelectForTurn:
         """'пошагово' → opus."""
         policy = ModelPolicy()
         result = policy.select_for_turn(
-            role_id="coach", user_text="объясни пошагово", active_skill_count=0,
+            role_id="coach",
+            user_text="объясни пошагово",
+            active_skill_count=0,
         )
         assert result == "opus"
 
@@ -48,7 +56,9 @@ class TestSelectForTurn:
         """2+ skills → opus."""
         policy = ModelPolicy()
         result = policy.select_for_turn(
-            role_id="coach", user_text="покажи облигации", active_skill_count=2,
+            role_id="coach",
+            user_text="покажи облигации",
+            active_skill_count=2,
         )
         assert result == "opus"
 
@@ -56,7 +66,9 @@ class TestSelectForTurn:
         """1 skill → sonnet (если нет keywords)."""
         policy = ModelPolicy()
         result = policy.select_for_turn(
-            role_id="coach", user_text="покажи вклады", active_skill_count=1,
+            role_id="coach",
+            user_text="покажи вклады",
+            active_skill_count=1,
         )
         assert result == "sonnet"
 
@@ -64,7 +76,9 @@ class TestSelectForTurn:
         """Роль эскалируется, только если явно указана в escalate_roles."""
         policy = ModelPolicy(escalate_roles={"strategy_planner"})
         result = policy.select_for_turn(
-            role_id="strategy_planner", user_text="привет", active_skill_count=0,
+            role_id="strategy_planner",
+            user_text="привет",
+            active_skill_count=0,
         )
         assert result == "opus"
 

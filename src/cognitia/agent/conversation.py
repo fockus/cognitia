@@ -46,7 +46,9 @@ class Conversation:
         from cognitia.agent.agent import apply_before_query
 
         effective_prompt = await apply_before_query(
-            prompt, self._agent.config.middleware, self._agent.config,
+            prompt,
+            self._agent.config.middleware,
+            self._agent.config,
         )
 
         self._history.append(Message(role="user", content=effective_prompt))
@@ -76,7 +78,9 @@ class Conversation:
         from cognitia.agent.agent import apply_before_query
 
         effective_prompt = await apply_before_query(
-            prompt, self._agent.config.middleware, self._agent.config,
+            prompt,
+            self._agent.config.middleware,
+            self._agent.config,
         )
 
         self._history.append(Message(role="user", content=effective_prompt))
@@ -127,9 +131,7 @@ class Conversation:
         async for event in self._adapter.stream_reply(prompt):
             yield event
 
-    async def _execute_agent_runtime(
-        self, prompt: str, runtime_name: str
-    ) -> AsyncIterator[Any]:
+    async def _execute_agent_runtime(self, prompt: str, runtime_name: str) -> AsyncIterator[Any]:
         """Multi-turn через AgentRuntime (accumulated messages)."""
         from cognitia.agent.agent import _RuntimeEventAdapter
         from cognitia.runtime.factory import RuntimeFactory
@@ -204,9 +206,7 @@ class Conversation:
             fallback_model=config.fallback_model,
             sandbox=config.sandbox,
             env=dict(config.env) if config.env else None,
-            include_partial_messages=bool(
-                config.native_config.get("include_partial_messages")
-            ),
+            include_partial_messages=bool(config.native_config.get("include_partial_messages")),
         )
 
         adapter = RuntimeAdapter(opts)

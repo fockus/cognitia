@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cognitia.orchestration.team_types import TeamMessage
 
@@ -26,10 +26,12 @@ class MessageBus:
 
     async def broadcast(self, from_agent: str, content: str, recipients: list[str]) -> None:
         """Отправить сообщение всем указанным агентам."""
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         for to_agent in recipients:
             self._messages.append(
-                TeamMessage(from_agent=from_agent, to_agent=to_agent, content=content, timestamp=now)
+                TeamMessage(
+                    from_agent=from_agent, to_agent=to_agent, content=content, timestamp=now
+                )
             )
 
     async def get_inbox(self, agent_id: str) -> list[TeamMessage]:

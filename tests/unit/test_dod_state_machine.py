@@ -1,18 +1,14 @@
 """Tests for DoDStateMachine, CodeWorkflowEngine, and WorkflowPipeline protocol."""
+
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
-
 import pytest
-
-from cognitia.orchestration.code_verifier import CodeVerifier, CommandResult
 from cognitia.orchestration.code_workflow_engine import (
     CodeWorkflowEngine,
     PlannerMode,
     WorkflowStatus,
 )
 from cognitia.orchestration.dod_state_machine import DoDStateMachine, DoDStatus
-from cognitia.orchestration.types import Plan
 from cognitia.orchestration.verification_types import (
     VerificationResult,
     VerificationStatus,

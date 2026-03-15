@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from cognitia.memory.llm_summarizer import LlmSummaryGenerator
 from cognitia.memory.types import MemoryMessage
 

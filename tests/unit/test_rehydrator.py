@@ -9,7 +9,6 @@ ISP: конструктор принимает 5 мелких протоколо
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.memory.types import GoalState, MemoryMessage, PhaseState
 from cognitia.session.rehydrator import DefaultSessionRehydrator
 from cognitia.types import TurnContext
@@ -17,8 +16,11 @@ from cognitia.types import TurnContext
 
 def _make_ctx(**kwargs) -> TurnContext:
     defaults = {
-        "user_id": "u1", "topic_id": "t1", "role_id": "coach",
-        "model": "sonnet", "active_skill_ids": (),
+        "user_id": "u1",
+        "topic_id": "t1",
+        "role_id": "coach",
+        "model": "sonnet",
+        "active_skill_ids": (),
     }
     defaults.update(kwargs)
     return TurnContext(**defaults)
@@ -37,8 +39,11 @@ def _make_stores() -> dict:
 
     goals = AsyncMock()
     goals.get_active_goal.return_value = GoalState(
-        goal_id="g1", title="Накопить 500к", target_amount=500000,
-        current_amount=100000, phase="savings",
+        goal_id="g1",
+        title="Накопить 500к",
+        target_amount=500000,
+        current_amount=100000,
+        phase="savings",
     )
 
     sessions = AsyncMock()

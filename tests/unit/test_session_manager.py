@@ -6,7 +6,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
-
 from cognitia.runtime.types import Message, RuntimeEvent, ToolSpec
 from cognitia.session.manager import InMemorySessionManager
 from cognitia.session.types import SessionKey, SessionState
@@ -20,7 +19,7 @@ def _make_adapter(connected: bool = True, events: list[Any] | None = None) -> Ma
     adapter.disconnect = AsyncMock()
 
     async def _stream_reply(user_text: str) -> AsyncIterator[Any]:
-        for e in (events or []):
+        for e in events or []:
             yield e
 
     adapter.stream_reply = _stream_reply
@@ -314,6 +313,7 @@ class TestSessionTTL:
 
         # Небольшая задержка чтобы monotonic сдвинулся
         import asyncio
+
         await asyncio.sleep(0.01)
 
         async for _ in mgr.run_turn(

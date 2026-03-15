@@ -12,7 +12,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from cognitia.tools.web_httpx import HttpxWebProvider
 from cognitia.tools.web_protocols import SearchResult, WebFetchProvider, WebSearchProvider
 from cognitia.tools.web_providers.brave import BraveSearchProvider
@@ -407,6 +406,7 @@ class TestJinaReaderFetchProvider:
         with patch("cognitia.tools.web_providers.jina.httpx") as mock_httpx:
             mock_httpx.AsyncClient = MagicMock(return_value=mock_client)
             import httpx as real_httpx
+
             mock_httpx.HTTPError = real_httpx.HTTPError
 
             provider = JinaReaderFetchProvider(api_key="test-key")
@@ -474,6 +474,7 @@ class TestCrawl4AIFetchProvider:
         provider = Crawl4AIFetchProvider()
         # Даже при установленном crawl4ai, пустой URL -> ""
         import cognitia.tools.web_providers.crawl4ai as crawl_mod
+
         original = crawl_mod.AsyncWebCrawler
         crawl_mod.AsyncWebCrawler = None
         try:
@@ -570,10 +571,12 @@ class TestSearchExecutor:
         from cognitia.tools.builtin import create_web_tools
 
         mock_web = AsyncMock()
-        mock_web.search = AsyncMock(return_value=[
-            SearchResult(title="A", url="http://a.com", snippet="a"),
-            SearchResult(title="B", url="http://b.com", snippet="b"),
-        ])
+        mock_web.search = AsyncMock(
+            return_value=[
+                SearchResult(title="A", url="http://a.com", snippet="a"),
+                SearchResult(title="B", url="http://b.com", snippet="b"),
+            ]
+        )
         _, executors = create_web_tools(mock_web)
         raw = await executors["web_search"]({"query": "test"})
         parsed = json.loads(raw)
@@ -620,7 +623,7 @@ class TestExtractText:
         """script теги полностью удаляются (regex fallback)."""
         from cognitia.tools.web_httpx import _extract_text
 
-        html = '<html><body><script>var x = 1;</script><p>Hello</p></body></html>'
+        html = "<html><body><script>var x = 1;</script><p>Hello</p></body></html>"
         # Принудительно отключаем trafilatura чтобы проверить regex
         with patch("cognitia.tools.web_httpx.trafilatura", None):
             text = _extract_text(html)
@@ -631,7 +634,7 @@ class TestExtractText:
         """style теги полностью удаляются (regex fallback)."""
         from cognitia.tools.web_httpx import _extract_text
 
-        html = '<html><body><style>.cls { color: red; }</style><p>World</p></body></html>'
+        html = "<html><body><style>.cls { color: red; }</style><p>World</p></body></html>"
         with patch("cognitia.tools.web_httpx.trafilatura", None):
             text = _extract_text(html)
         assert "color" not in text
@@ -641,7 +644,7 @@ class TestExtractText:
         """HTML теги заменяются на пробелы."""
         from cognitia.tools.web_httpx import _extract_text
 
-        html = '<div><h1>Title</h1><p>Content</p></div>'
+        html = "<div><h1>Title</h1><p>Content</p></div>"
         text = _extract_text(html)
         assert "Title" in text
         assert "Content" in text

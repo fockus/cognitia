@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-
 from cognitia.runtime.claude_code import ClaudeCodeRuntime
 from cognitia.runtime.types import Message, RuntimeEvent
 
 # ---------------------------------------------------------------------------
 # Фейковый StreamEvent (совместим с cognitia.runtime.adapter.StreamEvent)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FakeStreamEvent:
@@ -34,6 +34,7 @@ class FakeStreamEvent:
 # ---------------------------------------------------------------------------
 # Фейковый RuntimeAdapter
 # ---------------------------------------------------------------------------
+
 
 class FakeAdapter:
     """Мок RuntimeAdapter для тестов."""
@@ -64,6 +65,7 @@ class FakeAdapter:
 # Хелпер для сбора событий
 # ---------------------------------------------------------------------------
 
+
 async def collect_events(runtime: ClaudeCodeRuntime, messages: list[Message]) -> list[RuntimeEvent]:
     events = []
     async for ev in runtime.run(
@@ -78,6 +80,7 @@ async def collect_events(runtime: ClaudeCodeRuntime, messages: list[Message]) ->
 # ---------------------------------------------------------------------------
 # Тесты
 # ---------------------------------------------------------------------------
+
 
 class TestClaudeCodeRuntimeBasic:
     """Базовые сценарии ClaudeCodeRuntime."""
@@ -109,7 +112,8 @@ class TestClaudeCodeRuntimeBasic:
         adapter = FakeAdapter()
         runtime = ClaudeCodeRuntime(adapter=adapter)
         events = await collect_events(
-            runtime, [Message(role="assistant", content="old")],
+            runtime,
+            [Message(role="assistant", content="old")],
         )
 
         assert len(events) == 1
@@ -123,19 +127,21 @@ class TestClaudeCodeRuntimeStreaming:
     @pytest.mark.asyncio
     async def test_text_stream_to_final(self) -> None:
         """text_delta → assistant_delta; done → final с full_text."""
-        adapter = FakeAdapter(events=[
-            FakeStreamEvent(type="text_delta", text="Привет"),
-            FakeStreamEvent(type="text_delta", text=", мир!"),
-            FakeStreamEvent(
-                type="done",
-                text="Привет, мир!",
-                is_final=True,
-                session_id="sess-1",
-                total_cost_usd=0.2,
-                usage={"input_tokens": 10, "output_tokens": 5},
-                structured_output={"answer": "Привет, мир!"},
-            ),
-        ])
+        adapter = FakeAdapter(
+            events=[
+                FakeStreamEvent(type="text_delta", text="Привет"),
+                FakeStreamEvent(type="text_delta", text=", мир!"),
+                FakeStreamEvent(
+                    type="done",
+                    text="Привет, мир!",
+                    is_final=True,
+                    session_id="sess-1",
+                    total_cost_usd=0.2,
+                    usage={"input_tokens": 10, "output_tokens": 5},
+                    structured_output={"answer": "Привет, мир!"},
+                ),
+            ]
+        )
         runtime = ClaudeCodeRuntime(adapter=adapter)
         events = await collect_events(runtime, [Message(role="user", content="say hi")])
 
@@ -157,20 +163,22 @@ class TestClaudeCodeRuntimeStreaming:
     @pytest.mark.asyncio
     async def test_tool_events_converted(self) -> None:
         """tool_use_start/result конвертируются правильно."""
-        adapter = FakeAdapter(events=[
-            FakeStreamEvent(
-                type="tool_use_start",
-                tool_name="mcp__iss__get_bonds",
-                tool_input={"q": "obligs"},
-            ),
-            FakeStreamEvent(
-                type="tool_use_result",
-                tool_name="mcp__iss__get_bonds",
-                tool_result="found 5 bonds",
-            ),
-            FakeStreamEvent(type="text_delta", text="Результат"),
-            FakeStreamEvent(type="done", text="Результат", is_final=True),
-        ])
+        adapter = FakeAdapter(
+            events=[
+                FakeStreamEvent(
+                    type="tool_use_start",
+                    tool_name="mcp__iss__get_bonds",
+                    tool_input={"q": "obligs"},
+                ),
+                FakeStreamEvent(
+                    type="tool_use_result",
+                    tool_name="mcp__iss__get_bonds",
+                    tool_result="found 5 bonds",
+                ),
+                FakeStreamEvent(type="text_delta", text="Результат"),
+                FakeStreamEvent(type="done", text="Результат", is_final=True),
+            ]
+        )
         runtime = ClaudeCodeRuntime(adapter=adapter)
         events = await collect_events(runtime, [Message(role="user", content="bonds")])
 
@@ -191,9 +199,11 @@ class TestClaudeCodeRuntimeStreaming:
     @pytest.mark.asyncio
     async def test_error_event_forwarded(self) -> None:
         """SDK error → RuntimeEvent error."""
-        adapter = FakeAdapter(events=[
-            FakeStreamEvent(type="error", text="SDK crash"),
-        ])
+        adapter = FakeAdapter(
+            events=[
+                FakeStreamEvent(type="error", text="SDK crash"),
+            ]
+        )
         runtime = ClaudeCodeRuntime(adapter=adapter)
         events = await collect_events(runtime, [Message(role="user", content="x")])
 
@@ -205,10 +215,12 @@ class TestClaudeCodeRuntimeStreaming:
     @pytest.mark.asyncio
     async def test_extracts_last_user_message(self) -> None:
         """Использует последнее user message из истории."""
-        adapter = FakeAdapter(events=[
-            FakeStreamEvent(type="text_delta", text="OK"),
-            FakeStreamEvent(type="done", text="OK", is_final=True),
-        ])
+        adapter = FakeAdapter(
+            events=[
+                FakeStreamEvent(type="text_delta", text="OK"),
+                FakeStreamEvent(type="done", text="OK", is_final=True),
+            ]
+        )
         runtime = ClaudeCodeRuntime(adapter=adapter)
 
         messages = [

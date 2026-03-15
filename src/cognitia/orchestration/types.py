@@ -80,8 +80,12 @@ class Plan:
             msg = f"Одобрение возможно только из статуса 'draft', текущий: '{self.status}'"
             raise ValueError(msg)
         return Plan(
-            id=self.id, goal=self.goal, steps=self.steps,
-            created_at=self.created_at, status="approved", approved_by=by,
+            id=self.id,
+            goal=self.goal,
+            steps=self.steps,
+            created_at=self.created_at,
+            status="approved",
+            approved_by=by,
         )
 
     def start_execution(self) -> Plan:
@@ -94,8 +98,12 @@ class Plan:
             msg = f"Запуск возможен только из статуса 'approved', текущий: '{self.status}'"
             raise ValueError(msg)
         return Plan(
-            id=self.id, goal=self.goal, steps=self.steps,
-            created_at=self.created_at, status="executing", approved_by=self.approved_by,
+            id=self.id,
+            goal=self.goal,
+            steps=self.steps,
+            created_at=self.created_at,
+            status="executing",
+            approved_by=self.approved_by,
         )
 
     def mark_completed(self) -> Plan:
@@ -108,15 +116,23 @@ class Plan:
             msg = f"Завершение возможно только из статуса 'executing', текущий: '{self.status}'"
             raise ValueError(msg)
         return Plan(
-            id=self.id, goal=self.goal, steps=self.steps,
-            created_at=self.created_at, status="completed", approved_by=self.approved_by,
+            id=self.id,
+            goal=self.goal,
+            steps=self.steps,
+            created_at=self.created_at,
+            status="completed",
+            approved_by=self.approved_by,
         )
 
     def cancel(self) -> Plan:
         """Любой статус → cancelled."""
         return Plan(
-            id=self.id, goal=self.goal, steps=self.steps,
-            created_at=self.created_at, status="cancelled", approved_by=self.approved_by,
+            id=self.id,
+            goal=self.goal,
+            steps=self.steps,
+            created_at=self.created_at,
+            status="cancelled",
+            approved_by=self.approved_by,
         )
 
     def update_step(self, updated_step: PlanStep) -> Plan:
@@ -137,6 +153,10 @@ class Plan:
             msg = f"Шаг '{updated_step.id}' не найден в плане '{self.id}'"
             raise ValueError(msg)
         return Plan(
-            id=self.id, goal=self.goal, steps=new_steps,
-            created_at=self.created_at, status=self.status, approved_by=self.approved_by,
+            id=self.id,
+            goal=self.goal,
+            steps=new_steps,
+            created_at=self.created_at,
+            status=self.status,
+            approved_by=self.approved_by,
         )

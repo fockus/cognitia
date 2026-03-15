@@ -8,7 +8,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from cognitia.agent import Agent, AgentConfig
 from cognitia.runtime.adapter import StreamEvent
 from cognitia.runtime.types import Message, RuntimeEvent

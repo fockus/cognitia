@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from cognitia.tools.types import SandboxConfig
 
 
@@ -115,11 +114,13 @@ class TestEditExecutor:
         await sandbox.write_file("file.py", "old_value = 1\nold_value = 2")
         _, executors = sandbox_tools
 
-        result = await executors["edit"]({
-            "path": "file.py",
-            "old_string": "old_value = 1",
-            "new_string": "new_value = 42",
-        })
+        result = await executors["edit"](
+            {
+                "path": "file.py",
+                "old_string": "old_value = 1",
+                "new_string": "new_value = 42",
+            }
+        )
         data = json.loads(result)
         assert data["status"] == "ok"
 
@@ -131,11 +132,13 @@ class TestEditExecutor:
         await sandbox.write_file("f.txt", "hello")
         _, executors = sandbox_tools
 
-        result = await executors["edit"]({
-            "path": "f.txt",
-            "old_string": "not_here",
-            "new_string": "x",
-        })
+        result = await executors["edit"](
+            {
+                "path": "f.txt",
+                "old_string": "not_here",
+                "new_string": "x",
+            }
+        )
         data = json.loads(result)
         assert data["status"] == "error"
 
@@ -147,13 +150,15 @@ class TestMultiEditExecutor:
         await sandbox.write_file("m.py", "a = 1\nb = 2\nc = 3")
         _, executors = sandbox_tools
 
-        result = await executors["multi_edit"]({
-            "path": "m.py",
-            "edits": [
-                {"old_string": "a = 1", "new_string": "a = 10"},
-                {"old_string": "c = 3", "new_string": "c = 30"},
-            ],
-        })
+        result = await executors["multi_edit"](
+            {
+                "path": "m.py",
+                "edits": [
+                    {"old_string": "a = 1", "new_string": "a = 10"},
+                    {"old_string": "c = 3", "new_string": "c = 30"},
+                ],
+            }
+        )
         data = json.loads(result)
         assert data["status"] == "ok"
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cognitia.orchestration.protocols import PlanStore
 from cognitia.orchestration.thin_planner import LLMCallable
@@ -47,11 +47,13 @@ class DeepAgentsPlannerMode:
         data = json.loads(raw)
         steps = [
             PlanStep(id=s["id"], description=s["description"])
-            for s in data.get("steps", [])[:self._max_steps]
+            for s in data.get("steps", [])[: self._max_steps]
         ]
         plan = Plan(
-            id=str(uuid.uuid4()), goal=goal, steps=steps,
-            created_at=datetime.now(tz=timezone.utc),
+            id=str(uuid.uuid4()),
+            goal=goal,
+            steps=steps,
+            created_at=datetime.now(tz=UTC),
         )
         await self._store.save(plan)
         return plan

@@ -6,25 +6,27 @@ TDD: RED → GREEN. DIP: зависит от Protocol'ов.
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.orchestration.plan_store import InMemoryPlanStore
 from cognitia.orchestration.types import Plan, PlanStep
 
 
 def _plan_json() -> str:
-    return json.dumps({
-        "goal": "test",
-        "steps": [{"id": "s1", "description": "step 1"}],
-    })
+    return json.dumps(
+        {
+            "goal": "test",
+            "steps": [{"id": "s1", "description": "step 1"}],
+        }
+    )
 
 
 @pytest.fixture()
 def mock_planner() -> AsyncMock:
     """Мокнутый PlannerMode."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     planner = AsyncMock()
 
@@ -33,9 +35,10 @@ def mock_planner() -> AsyncMock:
     async def gen(goal, context=""):
         _counter["n"] += 1
         return Plan(
-            id=f"p{_counter['n']}", goal=goal,
+            id=f"p{_counter['n']}",
+            goal=goal,
             steps=[PlanStep(id="s1", description="step")],
-            created_at=datetime.now(tz=timezone.utc),
+            created_at=datetime.now(tz=UTC),
         )
 
     planner.generate_plan = AsyncMock(side_effect=gen)

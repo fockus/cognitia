@@ -46,6 +46,8 @@ def build_langchain_messages(
         elif msg.role == "system":
             lc_messages.append(SystemMessage(content=msg.content))
     return lc_messages
+
+
 async def stream_langchain_runtime_events(
     *,
     runnable: Any,

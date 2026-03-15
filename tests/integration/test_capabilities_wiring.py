@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from cognitia.tools.types import SandboxConfig
 
 
@@ -139,9 +138,11 @@ class TestCapabilityToolsExecution:
         todo = InMemoryTodoProvider(user_id="u", topic_id="t")
         _specs, executors = collect_capability_tools(todo_provider=todo)
 
-        await executors["todo_write"]({
-            "todos": [{"id": "1", "content": "test", "status": "pending"}],
-        })
+        await executors["todo_write"](
+            {
+                "todos": [{"id": "1", "content": "test", "status": "pending"}],
+            }
+        )
         result = await executors["todo_read"]({})
         data = json.loads(result)
         assert len(data["todos"]) == 1
@@ -153,9 +154,11 @@ class TestCapabilityToolsExecution:
 
         _specs, executors = collect_capability_tools(thinking_enabled=True)
 
-        result = await executors["thinking"]({
-            "thought": "анализ ситуации",
-            "next_steps": ["шаг 1"],
-        })
+        result = await executors["thinking"](
+            {
+                "thought": "анализ ситуации",
+                "next_steps": ["шаг 1"],
+            }
+        )
         data = json.loads(result)
         assert data["status"] == "thought_recorded"

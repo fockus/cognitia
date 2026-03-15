@@ -6,11 +6,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from conftest import FakeStreamEvent
-
 from cognitia.agent.agent import Agent
 from cognitia.agent.config import AgentConfig
 from cognitia.agent.conversation import Conversation
+from conftest import FakeStreamEvent
 
 # ---------------------------------------------------------------------------
 # Helpers

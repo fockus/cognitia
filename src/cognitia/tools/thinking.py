@@ -45,12 +45,14 @@ async def thinking_executor(args: dict) -> str:
     if not next_steps or not isinstance(next_steps, list) or len(next_steps) == 0:
         return json.dumps({"status": "error", "message": "next_steps обязателен (минимум 1 шаг)"})
 
-    return json.dumps({
-        "status": "thought_recorded",
-        "thought": thought,
-        "next_steps": next_steps,
-        "instruction": "Продолжай выполнение на основе этого размышления.",
-    })
+    return json.dumps(
+        {
+            "status": "thought_recorded",
+            "thought": thought,
+            "next_steps": next_steps,
+            "instruction": "Продолжай выполнение на основе этого размышления.",
+        }
+    )
 
 
 def create_thinking_tool() -> tuple[ToolSpec, Callable]:

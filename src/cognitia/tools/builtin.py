@@ -156,12 +156,14 @@ def _create_bash_executor(sandbox: SandboxProvider) -> Callable:
             return _make_json_error("command обязателен")
         try:
             result = await sandbox.execute(command)
-            return json.dumps({
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "exit_code": result.exit_code,
-                "timed_out": result.timed_out,
-            })
+            return json.dumps(
+                {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "exit_code": result.exit_code,
+                    "timed_out": result.timed_out,
+                }
+            )
         except Exception as e:
             return _make_json_error(str(e))
 
@@ -302,8 +304,18 @@ def create_sandbox_tools(
         ("bash", "Выполнить shell-команду в sandbox", _BASH_SCHEMA, _create_bash_executor(sandbox)),
         ("read", "Прочитать файл из workspace", _READ_SCHEMA, _create_read_executor(sandbox)),
         ("write", "Записать файл в workspace", _WRITE_SCHEMA, _create_write_executor(sandbox)),
-        ("edit", "Заменить подстроку в файле (str_replace)", _EDIT_SCHEMA, _create_edit_executor(sandbox)),
-        ("multi_edit", "Несколько замен в одном файле", _MULTI_EDIT_SCHEMA, _create_multi_edit_executor(sandbox)),
+        (
+            "edit",
+            "Заменить подстроку в файле (str_replace)",
+            _EDIT_SCHEMA,
+            _create_edit_executor(sandbox),
+        ),
+        (
+            "multi_edit",
+            "Несколько замен в одном файле",
+            _MULTI_EDIT_SCHEMA,
+            _create_multi_edit_executor(sandbox),
+        ),
         ("ls", "Список файлов в директории workspace", _LS_SCHEMA, _create_ls_executor(sandbox)),
         ("glob", "Поиск файлов по glob-паттерну", _GLOB_SCHEMA, _create_glob_executor(sandbox)),
         ("grep", "Поиск текста по regex в файлах", _GREP_SCHEMA, _create_grep_executor(sandbox)),
@@ -359,14 +371,15 @@ def create_web_tools(
             return _make_json_error("query обязателен")
         try:
             results = await web_provider.search(query.strip(), max_results)
-            return json.dumps({
-                "status": "ok",
-                "result_count": len(results),
-                "results": [
-                    {"title": r.title, "url": r.url, "snippet": r.snippet}
-                    for r in results
-                ],
-            })
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "result_count": len(results),
+                    "results": [
+                        {"title": r.title, "url": r.url, "snippet": r.snippet} for r in results
+                    ],
+                }
+            )
         except Exception as e:
             _log.warning("web_search_failed", query=query[:100], error=str(e))
             return json.dumps({"status": "error", "message": str(e)})

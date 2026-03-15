@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.orchestration.subagent_types import SubagentSpec
 
 
@@ -42,6 +41,7 @@ class TestThinSubagentSpawn:
 
     async def test_list_active(self, orchestrator) -> None:
         mock_runtime = AsyncMock()
+
         # Задержка чтобы задача была active
         async def slow_run(*args, **kwargs):
             await asyncio.sleep(0.5)
@@ -57,6 +57,7 @@ class TestThinSubagentSpawn:
 
     async def test_cancel(self, orchestrator) -> None:
         mock_runtime = AsyncMock()
+
         async def slow_run(*args, **kwargs):
             await asyncio.sleep(10)
             return "done"
@@ -77,6 +78,7 @@ class TestThinSubagentSpawn:
     async def test_max_concurrent(self, orchestrator) -> None:
         """Превышение max_concurrent → ValueError."""
         mock_runtime = AsyncMock()
+
         async def slow_run(*args, **kwargs):
             await asyncio.sleep(10)
             return "done"

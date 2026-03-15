@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from cognitia.runtime.thin.runtime import ThinRuntime
 from cognitia.runtime.types import Message, RuntimeEvent, ToolSpec
 
 # ---------------------------------------------------------------------------
 # Mock LLM
 # ---------------------------------------------------------------------------
+
 
 class MockLLM:
     """Mock LLM: возвращает ответы из очереди."""
@@ -28,7 +28,9 @@ class MockLLM:
         return json.dumps({"type": "final", "final_message": "fallback"})
 
 
-async def collect(runtime: ThinRuntime, text: str, tools: list[ToolSpec] | None = None) -> list[RuntimeEvent]:
+async def collect(
+    runtime: ThinRuntime, text: str, tools: list[ToolSpec] | None = None
+) -> list[RuntimeEvent]:
     events = []
     async for ev in runtime.run(
         messages=[Message(role="user", content=text)],
@@ -44,21 +46,29 @@ async def collect(runtime: ThinRuntime, text: str, tools: list[ToolSpec] | None 
 # Planner tests
 # ---------------------------------------------------------------------------
 
+
 class TestThinRuntimePlanner:
     """Planner-lite: plan → steps → final."""
 
     @pytest.mark.asyncio
     async def test_two_step_plan(self) -> None:
         """План с 2 шагами: react + conversational → final."""
-        plan = json.dumps({
-            "type": "plan",
-            "goal": "Оценить финансы",
-            "steps": [
-                {"id": "s1", "title": "Считать", "mode": "conversational", "max_iterations": 2},
-                {"id": "s2", "title": "Рекомендации", "mode": "conversational", "max_iterations": 2},
-            ],
-            "final_format": "Оценка + рекомендации",
-        })
+        plan = json.dumps(
+            {
+                "type": "plan",
+                "goal": "Оценить финансы",
+                "steps": [
+                    {"id": "s1", "title": "Считать", "mode": "conversational", "max_iterations": 2},
+                    {
+                        "id": "s2",
+                        "title": "Рекомендации",
+                        "mode": "conversational",
+                        "max_iterations": 2,
+                    },
+                ],
+                "final_format": "Оценка + рекомендации",
+            }
+        )
 
         step1_result = json.dumps({"type": "final", "final_message": "Шаг 1 готов"})
         step2_result = json.dumps({"type": "final", "final_message": "Шаг 2 готов"})
@@ -81,20 +91,24 @@ class TestThinRuntimePlanner:
     @pytest.mark.asyncio
     async def test_plan_with_react_step(self) -> None:
         """План с react-шагом (tool_call внутри шага)."""
-        plan = json.dumps({
-            "type": "plan",
-            "goal": "Найти вклады",
-            "steps": [
-                {"id": "s1", "title": "Поиск", "mode": "react", "max_iterations": 3},
-            ],
-            "final_format": "Список вкладов",
-        })
+        plan = json.dumps(
+            {
+                "type": "plan",
+                "goal": "Найти вклады",
+                "steps": [
+                    {"id": "s1", "title": "Поиск", "mode": "react", "max_iterations": 3},
+                ],
+                "final_format": "Список вкладов",
+            }
+        )
 
         # react шаг: tool_call → final
-        tool_call = json.dumps({
-            "type": "tool_call",
-            "tool": {"name": "search", "args": {"q": "вклады"}, "correlation_id": "c1"},
-        })
+        tool_call = json.dumps(
+            {
+                "type": "tool_call",
+                "tool": {"name": "search", "args": {"q": "вклады"}, "correlation_id": "c1"},
+            }
+        )
         step_final = json.dumps({"type": "final", "final_message": "Найдено 3 вклада"})
         assembly = json.dumps({"type": "final", "final_message": "Вклады: A, B, C"})
 
@@ -104,8 +118,11 @@ class TestThinRuntimePlanner:
         llm = MockLLM([plan, tool_call, step_final, assembly])
         runtime = ThinRuntime(llm_call=llm, local_tools={"search": search})
 
-        events = await collect(runtime, "Составь план по вкладам",
-                               tools=[ToolSpec(name="search", description="s", parameters={})])
+        events = await collect(
+            runtime,
+            "Составь план по вкладам",
+            tools=[ToolSpec(name="search", description="s", parameters={})],
+        )
         types = [e.type for e in events]
 
         assert "tool_call_started" in types
@@ -126,21 +143,25 @@ class TestThinRuntimePlanner:
     @pytest.mark.asyncio
     async def test_plan_step_error_stops_plan(self) -> None:
         """Ошибка в шаге → план прекращается с error."""
-        plan = json.dumps({
-            "type": "plan",
-            "goal": "Test",
-            "steps": [
-                {"id": "s1", "title": "Bad step", "mode": "react", "max_iterations": 1},
-            ],
-            "final_format": "",
-        })
+        plan = json.dumps(
+            {
+                "type": "plan",
+                "goal": "Test",
+                "steps": [
+                    {"id": "s1", "title": "Bad step", "mode": "react", "max_iterations": 1},
+                ],
+                "final_format": "",
+            }
+        )
 
         # React шаг: 1 iteration → loop_limit (max_iterations=1 и нет final)
-        llm = MockLLM([
-            plan,
-            json.dumps({"type": "tool_call", "tool": {"name": "x", "args": {}}}),
-            json.dumps({"type": "tool_call", "tool": {"name": "x", "args": {}}}),
-        ])
+        llm = MockLLM(
+            [
+                plan,
+                json.dumps({"type": "tool_call", "tool": {"name": "x", "args": {}}}),
+                json.dumps({"type": "tool_call", "tool": {"name": "x", "args": {}}}),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm)
 
         events = await collect(runtime, "test plan")

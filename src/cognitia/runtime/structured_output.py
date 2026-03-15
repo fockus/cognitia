@@ -89,7 +89,7 @@ def _strip_markdown_fences(raw: str) -> str:
 def _extract_first_json_value(text: str) -> str | None:
     decoder = json.JSONDecoder()
     for idx, char in enumerate(text):
-        if char not in "{[\"-0123456789tfn":
+        if char not in '{["-0123456789tfn':
             continue
         try:
             _, end = decoder.raw_decode(text[idx:])

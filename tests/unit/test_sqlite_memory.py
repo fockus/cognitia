@@ -8,11 +8,10 @@ import pytest
 
 aiosqlite = pytest.importorskip("aiosqlite", reason="aiosqlite не установлен")
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from cognitia.memory.sqlite import SQLiteMemoryProvider
 from cognitia.memory.types import GoalState, ToolEvent
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 async def _init_schema(session_factory: async_sessionmaker) -> None:
@@ -20,17 +19,20 @@ async def _init_schema(session_factory: async_sessionmaker) -> None:
     async with session_factory() as session:
         # Users
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     external_id TEXT NOT NULL UNIQUE
                 )
-            """)
+            """
+            )
         )
 
         # Messages
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -40,12 +42,14 @@ async def _init_schema(session_factory: async_sessionmaker) -> None:
                     tool_calls TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
         )
 
         # Facts
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE facts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -55,26 +59,32 @@ async def _init_schema(session_factory: async_sessionmaker) -> None:
                     source TEXT NOT NULL DEFAULT 'user',
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
         )
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE UNIQUE INDEX uq_facts_user_topic_key
                 ON facts(user_id, topic_id, key)
                 WHERE topic_id IS NOT NULL
-            """)
+            """
+            )
         )
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE UNIQUE INDEX uq_facts_user_global_key
                 ON facts(user_id, key)
                 WHERE topic_id IS NULL
-            """)
+            """
+            )
         )
 
         # Summaries
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE summaries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -85,12 +95,14 @@ async def _init_schema(session_factory: async_sessionmaker) -> None:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, topic_id)
                 )
-            """)
+            """
+            )
         )
 
         # Goals
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE goals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -106,12 +118,14 @@ async def _init_schema(session_factory: async_sessionmaker) -> None:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, topic_id)
                 )
-            """)
+            """
+            )
         )
 
         # Topics
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE topics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -127,24 +141,28 @@ async def _init_schema(session_factory: async_sessionmaker) -> None:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, topic_id)
                 )
-            """)
+            """
+            )
         )
 
         # Phase state
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE phase_state (
                     user_id INTEGER PRIMARY KEY,
                     phase TEXT NOT NULL,
                     notes TEXT,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
         )
 
         # Tool events
         await session.execute(
-            text("""
+            text(
+                """
                 CREATE TABLE tool_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -154,7 +172,8 @@ async def _init_schema(session_factory: async_sessionmaker) -> None:
                     output_json TEXT,
                     latency_ms INTEGER NOT NULL DEFAULT 0
                 )
-            """)
+            """
+            )
         )
         await session.commit()
 
@@ -201,7 +220,9 @@ class TestSQLiteFacts:
         assert topic_facts["product"] == "deposit"
 
     @pytest.mark.asyncio
-    async def test_topic_fact_overrides_global_with_same_key(self, provider: SQLiteMemoryProvider) -> None:
+    async def test_topic_fact_overrides_global_with_same_key(
+        self, provider: SQLiteMemoryProvider
+    ) -> None:
         await provider.upsert_fact("u1", "status", "global", source="user")
         await provider.upsert_fact("u1", "status", "topic", topic_id="t1", source="system")
 
@@ -234,7 +255,9 @@ class TestSQLiteSummaryAndGoal:
         assert loaded.is_main is True
 
     @pytest.mark.asyncio
-    async def test_goal_second_save_updates_existing_row(self, provider: SQLiteMemoryProvider) -> None:
+    async def test_goal_second_save_updates_existing_row(
+        self, provider: SQLiteMemoryProvider
+    ) -> None:
         first = GoalState(
             goal_id="t1",
             title="Подушка",
@@ -289,7 +312,10 @@ class TestSQLiteSessionAndPhase:
     async def test_session_state_delegation_persist(self, provider: SQLiteMemoryProvider) -> None:
         """Delegation fields корректно сохраняются и восстанавливаются."""
         await provider.save_session_state(
-            "u1", "t1", "deposit_advisor", ["finuslugi"],
+            "u1",
+            "t1",
+            "deposit_advisor",
+            ["finuslugi"],
             delegated_from="orchestrator",
             delegation_turn_count=3,
             pending_delegation=None,

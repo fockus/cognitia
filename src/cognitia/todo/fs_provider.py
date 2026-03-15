@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cognitia.todo.types import TodoItem
@@ -18,11 +18,11 @@ def _parse_dt(value: str | datetime) -> datetime:
     if isinstance(value, datetime):
         return value
     if not value:
-        return datetime.now(tz=timezone.utc)
+        return datetime.now(tz=UTC)
     try:
         return datetime.fromisoformat(value)
     except (ValueError, TypeError):
-        return datetime.now(tz=timezone.utc)
+        return datetime.now(tz=UTC)
 
 
 class FilesystemTodoProvider:
@@ -39,7 +39,9 @@ class FilesystemTodoProvider:
         raw = json.loads(self._file.read_text(encoding="utf-8"))
         return [
             TodoItem(
-                id=t["id"], content=t["content"], status=t["status"],
+                id=t["id"],
+                content=t["content"],
+                status=t["status"],
                 created_at=_parse_dt(t.get("created_at", "")),
                 updated_at=_parse_dt(t.get("updated_at", "")),
             )

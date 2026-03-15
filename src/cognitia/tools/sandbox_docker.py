@@ -87,7 +87,9 @@ class DockerSandboxProvider:
             raise RuntimeError("Docker daemon недоступен для sandbox container.") from exc
         return self._container
 
-    async def _exec(self, cmd: Any, *, timeout_seconds: int | None = None, **kwargs: Any) -> tuple[int, bytes]:
+    async def _exec(
+        self, cmd: Any, *, timeout_seconds: int | None = None, **kwargs: Any
+    ) -> tuple[int, bytes]:
         """Выполнить команду в container. Поддерживает sync и async container."""
         container = await self._ensure_container()
         timeout = timeout_seconds or self._config.timeout_seconds
@@ -107,7 +109,9 @@ class DockerSandboxProvider:
         safe_path = self._resolve_path(path)
         full_path = f"{self._workspace}/{safe_path}"
         _exit_code, output = await self._exec(["cat", full_path])
-        return output.decode("utf-8", errors="replace") if isinstance(output, bytes) else str(output)
+        return (
+            output.decode("utf-8", errors="replace") if isinstance(output, bytes) else str(output)
+        )
 
     async def write_file(self, path: str, content: str) -> None:
         """Записать файл через docker exec с передачей content."""
@@ -123,8 +127,7 @@ class DockerSandboxProvider:
         encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
         quoted_path = shlex.quote(full_path)
         cmd = (
-            f"mkdir -p $(dirname {quoted_path}) "
-            f"&& echo '{encoded}' | base64 -d > {quoted_path}"
+            f"mkdir -p $(dirname {quoted_path}) " f"&& echo '{encoded}' | base64 -d > {quoted_path}"
         )
         await self._exec(["sh", "-c", cmd], timeout_seconds=self._config.timeout_seconds)
 
@@ -137,8 +140,14 @@ class DockerSandboxProvider:
                 workdir=self._workspace,
                 timeout_seconds=self._config.timeout_seconds,
             )
-            stdout = output.decode("utf-8", errors="replace") if isinstance(output, bytes) else str(output)
-            return ExecutionResult(stdout=stdout, stderr="", exit_code=exit_code or 0, timed_out=False)
+            stdout = (
+                output.decode("utf-8", errors="replace")
+                if isinstance(output, bytes)
+                else str(output)
+            )
+            return ExecutionResult(
+                stdout=stdout, stderr="", exit_code=exit_code or 0, timed_out=False
+            )
         except TimeoutError:
             return ExecutionResult(stdout="", stderr="timeout", exit_code=-1, timed_out=True)
 

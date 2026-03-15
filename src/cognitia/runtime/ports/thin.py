@@ -71,7 +71,9 @@ class ThinRuntimePort(BaseRuntimePort):
         await super().disconnect()
 
     async def _run_runtime(
-        self, messages: list[Message], system_prompt: str,
+        self,
+        messages: list[Message],
+        system_prompt: str,
     ) -> AsyncIterator[RuntimeEvent]:
         """Вызвать ThinRuntime.run()."""
         if not self._runtime:

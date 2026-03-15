@@ -1,7 +1,6 @@
 """Тесты для CommandRegistry."""
 
 import pytest
-
 from cognitia.commands import CommandRegistry
 
 

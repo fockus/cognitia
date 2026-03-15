@@ -5,13 +5,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 class TestPlanStep:
@@ -80,7 +80,9 @@ class TestPlan:
         """draft → approved (by user)."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         approved = plan.approve(by="user")
         assert approved.status == "approved"
         assert approved.approved_by == "user"
@@ -89,7 +91,9 @@ class TestPlan:
         """draft → approved (by system = programmatic)."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         approved = plan.approve(by="system")
         assert approved.status == "approved"
         assert approved.approved_by == "system"
@@ -98,7 +102,9 @@ class TestPlan:
         """draft → approved (by agent = auto-approve)."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         approved = plan.approve(by="agent")
         assert approved.approved_by == "agent"
 
@@ -106,7 +112,9 @@ class TestPlan:
         """approved → executing."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         plan = plan.approve(by="system")
         executing = plan.start_execution()
         assert executing.status == "executing"
@@ -115,7 +123,9 @@ class TestPlan:
         """executing → completed."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         plan = plan.approve(by="system").start_execution()
         completed = plan.mark_completed()
         assert completed.status == "completed"
@@ -124,7 +134,9 @@ class TestPlan:
         """Любой статус → cancelled."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         cancelled = plan.cancel()
         assert cancelled.status == "cancelled"
 
@@ -134,7 +146,9 @@ class TestPlan:
         """approved → approve → ValueError."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         plan = plan.approve(by="user")
         with pytest.raises(ValueError, match="draft"):
             plan.approve(by="user")
@@ -143,7 +157,9 @@ class TestPlan:
         """draft → start_execution → ValueError."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         with pytest.raises(ValueError, match="approved"):
             plan.start_execution()
 
@@ -151,7 +167,9 @@ class TestPlan:
         """approved → mark_completed → ValueError."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="s")], created_at=_now()
+        )
         plan = plan.approve(by="system")
         with pytest.raises(ValueError, match="executing"):
             plan.mark_completed()
@@ -161,7 +179,8 @@ class TestPlan:
         from cognitia.orchestration.types import Plan, PlanStep
 
         plan = Plan(
-            id="p1", goal="g",
+            id="p1",
+            goal="g",
             steps=[PlanStep(id="s1", description="a"), PlanStep(id="s2", description="b")],
             created_at=_now(),
         )
@@ -174,7 +193,9 @@ class TestPlan:
         """Обновление несуществующего шага → ValueError."""
         from cognitia.orchestration.types import Plan, PlanStep
 
-        plan = Plan(id="p1", goal="g", steps=[PlanStep(id="s1", description="a")], created_at=_now())
+        plan = Plan(
+            id="p1", goal="g", steps=[PlanStep(id="s1", description="a")], created_at=_now()
+        )
         fake_step = PlanStep(id="s999", description="x").complete("y")
         with pytest.raises(ValueError, match="s999"):
             plan.update_step(fake_step)
@@ -213,7 +234,11 @@ class TestPlanStoreProtocol:
     def test_protocol_max_methods(self) -> None:
         from cognitia.orchestration.protocols import PlanStore
 
-        methods = [n for n in dir(PlanStore) if not n.startswith("_") and callable(getattr(PlanStore, n, None))]
+        methods = [
+            n
+            for n in dir(PlanStore)
+            if not n.startswith("_") and callable(getattr(PlanStore, n, None))
+        ]
         assert len(methods) <= 4, f"ISP: {len(methods)} > 4"
 
     def test_no_freedom_imports(self) -> None:

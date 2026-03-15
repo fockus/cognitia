@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.orchestration.subagent_types import SubagentSpec, SubagentStatus
 from cognitia.orchestration.team_types import TeamConfig, TeamMessage
 
@@ -60,7 +59,9 @@ class TestDeepAgentsTeamOrchestrator:
 
         orch = DeepAgentsTeamOrchestrator(mock_sub_orch)
         team_id = await orch.start(_config(), "t")
-        msg = TeamMessage(from_agent="lead", to_agent="w1", content="go", timestamp=datetime.now(tz=timezone.utc))
+        msg = TeamMessage(
+            from_agent="lead", to_agent="w1", content="go", timestamp=datetime.now(tz=UTC)
+        )
         await orch.send_message(team_id, msg)
         status = await orch.get_team_status(team_id)
         assert status.messages_exchanged == 1

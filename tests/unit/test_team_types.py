@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class TestTeamConfig:
@@ -23,9 +23,10 @@ class TestTeamMessage:
         from cognitia.orchestration.team_types import TeamMessage
 
         msg = TeamMessage(
-            from_agent="lead", to_agent="w1",
+            from_agent="lead",
+            to_agent="w1",
             content="начинай задачу",
-            timestamp=datetime.now(tz=timezone.utc),
+            timestamp=datetime.now(tz=UTC),
         )
         assert msg.from_agent == "lead"
 
@@ -65,7 +66,11 @@ class TestTeamOrchestratorProtocol:
     def test_isp_max_5(self) -> None:
         from cognitia.orchestration.team_protocol import TeamOrchestrator
 
-        methods = [n for n in dir(TeamOrchestrator) if not n.startswith("_") and callable(getattr(TeamOrchestrator, n, None))]
+        methods = [
+            n
+            for n in dir(TeamOrchestrator)
+            if not n.startswith("_") and callable(getattr(TeamOrchestrator, n, None))
+        ]
         assert len(methods) <= 5
 
     def test_resumable_extension_protocol(self) -> None:

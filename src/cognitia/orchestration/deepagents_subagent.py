@@ -62,4 +62,3 @@ class _DeepAgentsWorkerRuntime:
                 message = str(event.data.get("message", "DeepAgents subagent error"))
                 raise RuntimeError(message)
         return final_text
-

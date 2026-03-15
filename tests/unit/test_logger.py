@@ -1,8 +1,6 @@
 """Тесты для AgentLogger и configure_logging — покрытие observability."""
 
-
 import pytest
-
 from cognitia.observability.logger import AgentLogger, _level_to_int, configure_logging
 
 
@@ -57,14 +55,13 @@ class TestAgentLogger:
 
     def test_session_created(self, logger: AgentLogger) -> None:
         """session_created не падает."""
-        logger.session_created(
-            user_id="u1", topic_id="t1", role_id="coach", is_rehydrated=True
-        )
+        logger.session_created(user_id="u1", topic_id="t1", role_id="coach", is_rehydrated=True)
 
     def test_turn_start(self, logger: AgentLogger) -> None:
         """turn_start не падает, обрезает preview до 50 символов."""
         logger.turn_start(
-            user_id="u1", topic_id="t1",
+            user_id="u1",
+            topic_id="t1",
             user_text_preview="A" * 200,
         )
 
@@ -112,8 +109,10 @@ class TestAgentLogger:
     def test_memory_persist(self, logger: AgentLogger) -> None:
         """memory_persist логирует сохранение."""
         logger.memory_persist(
-            user_id="u1", topic_id="t1",
-            facts_saved=3, summary_updated=True,
+            user_id="u1",
+            topic_id="t1",
+            facts_saved=3,
+            summary_updated=True,
         )
 
     def test_memory_persist_defaults(self, logger: AgentLogger) -> None:

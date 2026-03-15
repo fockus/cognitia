@@ -17,7 +17,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from cognitia.runtime.adapter import RuntimeAdapter, StreamEvent
 
 pytestmark = pytest.mark.requires_claude_sdk
@@ -38,7 +37,8 @@ def _make_text_block(text: str = "Привет!") -> MagicMock:
 
 
 def _make_tool_use_block(
-    name: str = "mcp__iss__search", input_data: dict | None = None,
+    name: str = "mcp__iss__search",
+    input_data: dict | None = None,
 ) -> MagicMock:
     """Мок ToolUseBlock."""
     from cognitia.runtime.adapter import ToolUseBlock
@@ -102,7 +102,8 @@ def _make_task_started_msg(description: str = "Research task") -> MagicMock:
 
 
 def _make_task_progress_msg(
-    description: str = "Working", last_tool_name: str | None = None,
+    description: str = "Working",
+    last_tool_name: str | None = None,
 ) -> MagicMock:
     """Мок TaskProgressMessage (или SystemMessage fallback)."""
     from claude_agent_sdk import SystemMessage
@@ -117,7 +118,8 @@ def _make_task_progress_msg(
 
 
 def _make_task_notification_msg(
-    summary: str = "Task complete", status: str = "completed",
+    summary: str = "Task complete",
+    status: str = "completed",
 ) -> MagicMock:
     """Мок TaskNotificationMessage (или SystemMessage fallback)."""
     from claude_agent_sdk import SystemMessage
@@ -376,11 +378,13 @@ class TestStreamReply:
         mock_client = AsyncMock()
 
         async def fake_receive_response():
-            yield _make_assistant_msg([
-                _make_tool_use_block("mcp__iss__search", {"query": "SBER"}),
-                _make_tool_result_block("found: SBER"),
-                _make_text_block("Нашёл: SBER"),
-            ])
+            yield _make_assistant_msg(
+                [
+                    _make_tool_use_block("mcp__iss__search", {"query": "SBER"}),
+                    _make_tool_result_block("found: SBER"),
+                    _make_text_block("Нашёл: SBER"),
+                ]
+            )
 
         mock_client.receive_response = fake_receive_response
         adapter, _ = _make_adapter_with_client(mock_client)
@@ -404,10 +408,12 @@ class TestStreamReply:
         mock_client = AsyncMock()
 
         async def fake_receive_response():
-            yield _make_assistant_msg([
-                _make_thinking_block("Analyzing the question..."),
-                _make_text_block("Вот ответ"),
-            ])
+            yield _make_assistant_msg(
+                [
+                    _make_thinking_block("Analyzing the question..."),
+                    _make_text_block("Вот ответ"),
+                ]
+            )
 
         mock_client.receive_response = fake_receive_response
         adapter, _ = _make_adapter_with_client(mock_client)

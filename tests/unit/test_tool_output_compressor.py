@@ -1,10 +1,10 @@
 """Tests for ToolOutputCompressor middleware and build_middleware_stack factory."""
+
 from __future__ import annotations
 
 import json
 
 import pytest
-
 from cognitia.agent.middleware import (
     CostTracker,
     Middleware,

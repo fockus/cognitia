@@ -20,7 +20,9 @@ class DatabaseMemoryBankProvider:
     SQL изолирован внутри класса. LSP: заменяет FS provider прозрачно.
     """
 
-    def __init__(self, session_factory: Any, user_id: str, topic_id: str, max_depth: int = 2) -> None:
+    def __init__(
+        self, session_factory: Any, user_id: str, topic_id: str, max_depth: int = 2
+    ) -> None:
         self._session_factory = session_factory
         self._user_id = user_id
         self._topic_id = topic_id
@@ -35,7 +37,9 @@ class DatabaseMemoryBankProvider:
         validate_memory_path(path, max_depth=self._max_depth)
         async with await self._get_session() as session:
             result = await session.execute(
-                text("SELECT content FROM memory_bank WHERE user_id = :u AND topic_id = :t AND path = :p"),
+                text(
+                    "SELECT content FROM memory_bank WHERE user_id = :u AND topic_id = :t AND path = :p"
+                ),
                 {"u": self._user_id, "t": self._topic_id, "p": path},
             )
             row = result.fetchone()
@@ -48,12 +52,14 @@ class DatabaseMemoryBankProvider:
             # SQLite: INSERT OR REPLACE. Postgres: ON CONFLICT DO UPDATE.
             # Используем INSERT OR REPLACE (работает на обоих через SQLite-совместимый синтаксис)
             await session.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO memory_bank (user_id, topic_id, path, content, updated_at)
                     VALUES (:u, :t, :p, :c, CURRENT_TIMESTAMP)
                     ON CONFLICT (user_id, topic_id, path)
                     DO UPDATE SET content = :c, updated_at = CURRENT_TIMESTAMP
-                """),
+                """
+                ),
                 {"u": self._user_id, "t": self._topic_id, "p": path, "c": content},
             )
             await session.commit()
@@ -69,12 +75,16 @@ class DatabaseMemoryBankProvider:
         async with await self._get_session() as session:
             if prefix:
                 result = await session.execute(
-                    text("SELECT path FROM memory_bank WHERE user_id = :u AND topic_id = :t AND path LIKE :prefix ORDER BY path"),
+                    text(
+                        "SELECT path FROM memory_bank WHERE user_id = :u AND topic_id = :t AND path LIKE :prefix ORDER BY path"
+                    ),
                     {"u": self._user_id, "t": self._topic_id, "prefix": f"{prefix}%"},
                 )
             else:
                 result = await session.execute(
-                    text("SELECT path FROM memory_bank WHERE user_id = :u AND topic_id = :t ORDER BY path"),
+                    text(
+                        "SELECT path FROM memory_bank WHERE user_id = :u AND topic_id = :t ORDER BY path"
+                    ),
                     {"u": self._user_id, "t": self._topic_id},
                 )
             return [row[0] for row in result.fetchall()]

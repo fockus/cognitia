@@ -60,8 +60,7 @@ def _parse_prefixed_model(raw_model: str | None) -> tuple[str | None, str | None
             RuntimeErrorData(
                 kind="capability_unsupported",
                 message=(
-                    "DeepAgents runtime не поддерживает provider "
-                    f"'{raw_provider.strip()}'."
+                    "DeepAgents runtime не поддерживает provider " f"'{raw_provider.strip()}'."
                 ),
                 recoverable=False,
                 details={"provider": raw_provider.strip().lower()},
@@ -155,8 +154,7 @@ def build_deepagents_chat_model(
                 RuntimeErrorData(
                     kind="capability_unsupported",
                     message=(
-                        "DeepAgents google provider path не поддерживает "
-                        "base_url override."
+                        "DeepAgents google provider path не поддерживает " "base_url override."
                     ),
                     recoverable=False,
                     details={"provider": resolved.provider, "model": resolved.model_name},

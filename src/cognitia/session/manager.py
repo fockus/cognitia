@@ -44,7 +44,10 @@ class InMemorySessionManager:
         state = self._sessions.get(ks)
         if state is None:
             return None
-        if self._ttl_seconds > 0 and (time.monotonic() - state.last_activity_at) > self._ttl_seconds:
+        if (
+            self._ttl_seconds > 0
+            and (time.monotonic() - state.last_activity_at) > self._ttl_seconds
+        ):
             logger.info("get[%s]: сессия протухла (TTL=%.0fs), удаляю", ks, self._ttl_seconds)
             self._sessions.pop(ks, None)
             return None

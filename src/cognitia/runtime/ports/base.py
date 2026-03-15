@@ -137,7 +137,7 @@ class BaseRuntimePort:
         """Добавить сообщение в историю с sliding window."""
         self._history.append(Message(role=role, content=content))
         if len(self._history) > self._history_max:
-            self._history = self._history[-self._history_max:]
+            self._history = self._history[-self._history_max :]
 
     async def _maybe_summarize(self) -> None:
         """Auto-summarize: если history > cap и есть summarizer — обновить rolling_summary."""
@@ -147,10 +147,7 @@ class BaseRuntimePort:
         from cognitia.memory.types import MemoryMessage
 
         # Конвертируем Message → MemoryMessage для summarizer
-        mem_messages = [
-            MemoryMessage(role=msg.role, content=msg.content)
-            for msg in self._history
-        ]
+        mem_messages = [MemoryMessage(role=msg.role, content=msg.content) for msg in self._history]
 
         try:
             if hasattr(self._summarizer, "asummarize"):
@@ -167,7 +164,9 @@ class BaseRuntimePort:
         return f"{self._system_prompt}\n\n## Краткое содержание предыдущего диалога\n{self._rolling_summary}"
 
     async def _run_runtime(
-        self, messages: list[Message], system_prompt: str,
+        self,
+        messages: list[Message],
+        system_prompt: str,
     ) -> AsyncIterator[RuntimeEvent]:
         """Вызвать runtime. Переопределяется в подклассах."""
         raise NotImplementedError  # pragma: no cover

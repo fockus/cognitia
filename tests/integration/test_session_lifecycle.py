@@ -6,7 +6,6 @@
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
-
 from cognitia.memory.types import GoalState, MemoryMessage
 from cognitia.routing.role_router import KeywordRoleRouter
 from cognitia.runtime.model_policy import ModelPolicy
@@ -60,8 +59,11 @@ def memory() -> AsyncMock:
         MemoryMessage(role="user", content="какой вклад лучше?"),
     ]
     m.get_active_goal.return_value = GoalState(
-        goal_id="g1", title="Накопить 500к", target_amount=500_000,
-        current_amount=100_000, phase="savings",
+        goal_id="g1",
+        title="Накопить 500к",
+        target_amount=500_000,
+        current_amount=100_000,
+        phase="savings",
     )
     return m
 
@@ -94,7 +96,8 @@ class TestRoleRoutingToModelSelection:
         role = router.resolve("привет")
         assert role == "coach"
         model = model_policy.select_for_turn(
-            role_id=role, user_text="составь план",
+            role_id=role,
+            user_text="составь план",
         )
         assert model == "opus"
 
@@ -104,7 +107,8 @@ class TestRoleRoutingToModelSelection:
         """2+ скилла → opus."""
         role = router.resolve("сравни вклады и облигации")
         model = model_policy.select_for_turn(
-            role_id=role, user_text="сравни вклады и облигации",
+            role_id=role,
+            user_text="сравни вклады и облигации",
             active_skill_count=2,
         )
         assert model == "opus"
@@ -146,12 +150,19 @@ class TestRehydrationFlow:
         # ISP: передаём 5 мелких store вместо одного монолитного MemoryProvider
         memory.get_phase_state.return_value = None
         rehydrator = DefaultSessionRehydrator(
-            messages=memory, summaries=memory, goals=memory,
-            sessions=memory, phases=memory, last_n_messages=5,
+            messages=memory,
+            summaries=memory,
+            goals=memory,
+            sessions=memory,
+            phases=memory,
+            last_n_messages=5,
         )
         ctx = TurnContext(
-            user_id="u1", topic_id="t1", role_id="coach",
-            model="sonnet", active_skill_ids=(),
+            user_id="u1",
+            topic_id="t1",
+            role_id="coach",
+            model="sonnet",
+            active_skill_ids=(),
         )
         payload = await rehydrator.build_rehydration_payload(ctx)
 
@@ -167,12 +178,18 @@ class TestRehydrationFlow:
         memory.get_session_state.return_value = None
         memory.get_phase_state.return_value = None
         rehydrator = DefaultSessionRehydrator(
-            messages=memory, summaries=memory, goals=memory,
-            sessions=memory, phases=memory,
+            messages=memory,
+            summaries=memory,
+            goals=memory,
+            sessions=memory,
+            phases=memory,
         )
         ctx = TurnContext(
-            user_id="u1", topic_id="t1", role_id="diagnostician",
-            model="sonnet", active_skill_ids=("iss",),
+            user_id="u1",
+            topic_id="t1",
+            role_id="diagnostician",
+            model="sonnet",
+            active_skill_ids=("iss",),
         )
         payload = await rehydrator.build_rehydration_payload(ctx)
         assert payload["role_id"] == "diagnostician"

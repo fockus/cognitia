@@ -74,11 +74,7 @@ class RuntimeCapabilities:
 
     def enabled_flags(self) -> frozenset[str]:
         """Имена capability-флагов, поддерживаемых runtime."""
-        enabled = {
-            flag
-            for flag, is_enabled in self._flag_map().items()
-            if is_enabled
-        }
+        enabled = {flag for flag, is_enabled in self._flag_map().items() if is_enabled}
         return frozenset(enabled)
 
     def supports(self, requirements: CapabilityRequirements | None) -> bool:

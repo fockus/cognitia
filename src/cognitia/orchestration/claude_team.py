@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cognitia.orchestration.message_bus import MessageBus
 from cognitia.orchestration.subagent_protocol import SubagentOrchestrator
@@ -37,7 +37,7 @@ class ClaudeTeamOrchestrator:
         self._teams[team_id] = _TeamState(
             config=config,
             worker_ids=worker_ids,
-            started_at=datetime.now(tz=timezone.utc),
+            started_at=datetime.now(tz=UTC),
             bus=bus,
             task=task,
         )
@@ -82,7 +82,9 @@ class ClaudeTeamOrchestrator:
         state = self._teams.get(team_id)
         if not state:
             return
-        worker_name = next((name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None)
+        worker_name = next(
+            (name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None
+        )
         if worker_name is None:
             return
         await self._sub_orch.cancel(agent_id)
@@ -93,7 +95,9 @@ class ClaudeTeamOrchestrator:
         state = self._teams.get(team_id)
         if not state:
             return
-        worker_name = next((name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None)
+        worker_name = next(
+            (name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None
+        )
         if worker_name is None or worker_name not in state.paused_workers:
             return
 

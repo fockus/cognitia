@@ -137,7 +137,7 @@ class E2BSandboxProvider:
         for line in stdout.strip().split("\n"):
             line = line.strip()
             if line and line.startswith(self._workspace):
-                rel = line[len(self._workspace) + 1:]
+                rel = line[len(self._workspace) + 1 :]
                 if rel:
                     results.append(rel)
         return sorted(results)

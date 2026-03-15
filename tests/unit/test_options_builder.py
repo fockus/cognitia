@@ -46,7 +46,9 @@ class TestSpecToSdkConfig:
     def test_stdio_transport_with_args_and_env(self) -> None:
         """STDIO transport с args и env."""
         spec = McpServerSpec(
-            name="local", transport="stdio", command="node",
+            name="local",
+            transport="stdio",
+            command="node",
             args=["server.js", "--port=3000"],
             env={"NODE_ENV": "production"},
         )
@@ -127,16 +129,15 @@ class TestClaudeOptionsBuilder:
         opts = builder.build(role_id="coach", system_prompt="test")
         assert opts.model == "custom-sonnet"
 
-        opts_escalated = builder.build(
-            role_id="strategy_planner", system_prompt="test"
-        )
+        opts_escalated = builder.build(role_id="strategy_planner", system_prompt="test")
         assert opts_escalated.model == "custom-opus"
 
     def test_build_with_tool_failure_escalation(self) -> None:
         """Эскалация модели из-за ошибок tools."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             tool_failure_count=10,
         )
         assert opts.model == "opus"
@@ -193,7 +194,8 @@ class TestClaudeOptionsBuilder:
         """max_thinking_tokens передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             max_thinking_tokens=16000,
         )
         assert opts.max_thinking_tokens == 16000
@@ -203,7 +205,8 @@ class TestClaudeOptionsBuilder:
         builder = ClaudeOptionsBuilder()
         sandbox = {"enabled": True, "autoAllowBashIfSandboxed": True}
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             sandbox=sandbox,
         )
         assert opts.sandbox == sandbox
@@ -212,7 +215,8 @@ class TestClaudeOptionsBuilder:
         """env переменные передаются в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             env={"MY_VAR": "value"},
         )
         assert opts.env == {"MY_VAR": "value"}
@@ -235,7 +239,8 @@ class TestClaudeOptionsBuilder:
             ),
         }
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             agents=agents,
         )
         assert opts.agents is not None
@@ -252,7 +257,8 @@ class TestClaudeOptionsBuilder:
             },
         }
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             output_format=schema,
         )
         assert opts.output_format == schema
@@ -267,7 +273,8 @@ class TestClaudeOptionsBuilder:
         """continue_conversation передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             continue_conversation=True,
         )
         assert opts.continue_conversation is True
@@ -282,7 +289,8 @@ class TestClaudeOptionsBuilder:
         """resume (session_id) передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             resume="session-abc-123",
         )
         assert opts.resume == "session-abc-123"
@@ -291,7 +299,8 @@ class TestClaudeOptionsBuilder:
         """fork_session передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             fork_session=True,
         )
         assert opts.fork_session is True
@@ -300,7 +309,8 @@ class TestClaudeOptionsBuilder:
         """betas (1M context) передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             betas=["context-1m-2025-08-07"],
         )
         assert opts.betas == ["context-1m-2025-08-07"]
@@ -316,7 +326,8 @@ class TestClaudeOptionsBuilder:
         builder = ClaudeOptionsBuilder()
         plugins = [{"type": "local", "path": "/path/to/plugin"}]
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             plugins=plugins,
         )
         assert opts.plugins == plugins
@@ -325,7 +336,8 @@ class TestClaudeOptionsBuilder:
         """include_partial_messages передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             include_partial_messages=True,
         )
         assert opts.include_partial_messages is True
@@ -334,7 +346,8 @@ class TestClaudeOptionsBuilder:
         """enable_file_checkpointing передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             enable_file_checkpointing=True,
         )
         assert opts.enable_file_checkpointing is True
@@ -343,7 +356,8 @@ class TestClaudeOptionsBuilder:
         """max_budget_usd передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             max_budget_usd=5.0,
         )
         assert opts.max_budget_usd == 5.0
@@ -352,7 +366,8 @@ class TestClaudeOptionsBuilder:
         """fallback_model передаётся в ClaudeAgentOptions."""
         builder = ClaudeOptionsBuilder()
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             fallback_model="haiku",
         )
         assert opts.fallback_model == "haiku"
@@ -370,7 +385,8 @@ class TestClaudeOptionsBuilder:
             "PreToolUse": [HookMatcher(matcher="Bash", hooks=[my_hook])],
         }
         opts = builder.build(
-            role_id="coach", system_prompt="test",
+            role_id="coach",
+            system_prompt="test",
             hooks=hooks,
         )
         assert opts.hooks is not None

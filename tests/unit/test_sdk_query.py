@@ -73,7 +73,8 @@ def _make_sdk_task_started_msg(description: str = "Research task") -> MagicMock:
 
 
 def _make_sdk_task_progress_msg(
-    description: str = "Working", last_tool_name: str | None = None,
+    description: str = "Working",
+    last_tool_name: str | None = None,
 ) -> MagicMock:
     from claude_agent_sdk import SystemMessage
 
@@ -87,7 +88,8 @@ def _make_sdk_task_progress_msg(
 
 
 def _make_sdk_task_notification_msg(
-    summary: str = "Task complete", status: str = "completed",
+    summary: str = "Task complete",
+    status: str = "completed",
 ) -> MagicMock:
     from claude_agent_sdk import SystemMessage
 
@@ -101,7 +103,8 @@ def _make_sdk_task_notification_msg(
 
 
 def _make_sdk_tool_use_block(
-    name: str = "calc", input_data: dict[str, Any] | None = None,
+    name: str = "calc",
+    input_data: dict[str, Any] | None = None,
 ) -> MagicMock:
     from claude_agent_sdk import ToolUseBlock
 
@@ -125,6 +128,7 @@ class TestOneShotQuery:
     @pytest.mark.asyncio
     async def test_basic_query_returns_text(self) -> None:
         """Базовый запрос возвращает текстовый ответ."""
+
         async def fake_query(**kwargs):
             yield _make_sdk_assistant_msg([_make_sdk_text_block("42")])
             yield _make_sdk_result_msg()
@@ -137,6 +141,7 @@ class TestOneShotQuery:
     @pytest.mark.asyncio
     async def test_query_returns_session_id(self) -> None:
         """Результат содержит session_id."""
+
         async def fake_query(**kwargs):
             yield _make_sdk_assistant_msg([_make_sdk_text_block("ok")])
             yield _make_sdk_result_msg(session_id="sess-xyz")
@@ -149,6 +154,7 @@ class TestOneShotQuery:
     @pytest.mark.asyncio
     async def test_query_returns_cost(self) -> None:
         """Результат содержит total_cost_usd."""
+
         async def fake_query(**kwargs):
             yield _make_sdk_assistant_msg([_make_sdk_text_block("ok")])
             yield _make_sdk_result_msg(cost=0.05)
@@ -248,6 +254,7 @@ class TestOneShotQuery:
     @pytest.mark.asyncio
     async def test_no_result_message_returns_text_only(self) -> None:
         """Если нет ResultMessage — возвращаем текст без метрик."""
+
         async def fake_query(**kwargs):
             yield _make_sdk_assistant_msg([_make_sdk_text_block("partial")])
 
@@ -338,7 +345,8 @@ class TestStreamOneShotQuery:
         with patch("cognitia.runtime.sdk_query._sdk_query", side_effect=fake_query):
             events = []
             async for event in stream_one_shot_query(
-                "test", include_partial_messages=True,
+                "test",
+                include_partial_messages=True,
             ):
                 events.append(event)
 

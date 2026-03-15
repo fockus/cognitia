@@ -1,7 +1,6 @@
 """Тесты для DefaultToolPolicy."""
 
 import pytest
-
 from cognitia.policy import (
     ALWAYS_DENIED_TOOLS,
     DefaultToolPolicy,
@@ -162,6 +161,7 @@ class TestAgentLoggerIntegration:
     def test_logger_called_on_deny(self) -> None:
         """AgentLogger.tool_policy_event вызывается при deny (GAP-4)."""
         from unittest.mock import MagicMock
+
         mock_logger = MagicMock()
         policy = DefaultToolPolicy(agent_logger=mock_logger)
         state = _make_state()
@@ -178,6 +178,7 @@ class TestAgentLoggerIntegration:
     def test_logger_called_on_allow(self) -> None:
         """AgentLogger.tool_policy_event вызывается при allow (GAP-4)."""
         from unittest.mock import MagicMock
+
         mock_logger = MagicMock()
         policy = DefaultToolPolicy(agent_logger=mock_logger)
         state = _make_state(active_skills=["iss"])

@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from cognitia.runtime.thin.runtime import ThinRuntime
 from cognitia.runtime.types import Message, RuntimeEvent, ToolSpec
 
 # ---------------------------------------------------------------------------
 # Mock LLM — возвращает заранее заданные ответы
 # ---------------------------------------------------------------------------
+
 
 class MockLLM:
     """Mock LLM: возвращает ответы из очереди."""
@@ -32,8 +32,13 @@ class MockLLM:
 # Хелперы
 # ---------------------------------------------------------------------------
 
-async def collect(runtime: ThinRuntime, text: str = "test", tools: list[ToolSpec] | None = None,
-                  mode_hint: str | None = None) -> list[RuntimeEvent]:
+
+async def collect(
+    runtime: ThinRuntime,
+    text: str = "test",
+    tools: list[ToolSpec] | None = None,
+    mode_hint: str | None = None,
+) -> list[RuntimeEvent]:
     events = []
     async for ev in runtime.run(
         messages=[Message(role="user", content=text)],
@@ -46,11 +51,13 @@ async def collect(runtime: ThinRuntime, text: str = "test", tools: list[ToolSpec
 
 
 def make_tool_call_response(name: str, args: dict | None = None, cid: str = "c1") -> str:
-    return json.dumps({
-        "type": "tool_call",
-        "tool": {"name": name, "args": args or {}, "correlation_id": cid},
-        "assistant_message": "",
-    })
+    return json.dumps(
+        {
+            "type": "tool_call",
+            "tool": {"name": name, "args": args or {}, "correlation_id": cid},
+            "assistant_message": "",
+        }
+    )
 
 
 def make_final_response(text: str) -> str:
@@ -58,16 +65,19 @@ def make_final_response(text: str) -> str:
 
 
 def make_clarify_response(questions: list[dict], msg: str = "") -> str:
-    return json.dumps({
-        "type": "clarify",
-        "questions": questions,
-        "assistant_message": msg,
-    })
+    return json.dumps(
+        {
+            "type": "clarify",
+            "questions": questions,
+            "assistant_message": msg,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # React mode tests
 # ---------------------------------------------------------------------------
+
 
 class TestThinRuntimeReact:
     """React loop: tool_call → tool_result → final."""
@@ -75,13 +85,16 @@ class TestThinRuntimeReact:
     @pytest.mark.asyncio
     async def test_single_tool_then_final(self) -> None:
         """1 tool_call → tool_result → final."""
+
         def calc(args):
             return {"result": 42}
 
-        llm = MockLLM([
-            make_tool_call_response("calc", {"x": 1}),
-            make_final_response("Результат: 42"),
-        ])
+        llm = MockLLM(
+            [
+                make_tool_call_response("calc", {"x": 1}),
+                make_final_response("Результат: 42"),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm, local_tools={"calc": calc})
 
         events = await collect(runtime, "Посчитай", mode_hint="react")
@@ -97,17 +110,20 @@ class TestThinRuntimeReact:
     @pytest.mark.asyncio
     async def test_two_tools_then_final(self) -> None:
         """2 tool_calls → final."""
+
         def tool_a(args):
             return {"a": 1}
 
         def tool_b(args):
             return {"b": 2}
 
-        llm = MockLLM([
-            make_tool_call_response("tool_a"),
-            make_tool_call_response("tool_b"),
-            make_final_response("Готово: a=1, b=2"),
-        ])
+        llm = MockLLM(
+            [
+                make_tool_call_response("tool_a"),
+                make_tool_call_response("tool_b"),
+                make_final_response("Готово: a=1, b=2"),
+            ]
+        )
         runtime = ThinRuntime(
             llm_call=llm,
             local_tools={"tool_a": tool_a, "tool_b": tool_b},
@@ -134,12 +150,14 @@ class TestThinRuntimeReact:
     @pytest.mark.asyncio
     async def test_clarify_response(self) -> None:
         """LLM возвращает clarify → final с вопросами."""
-        llm = MockLLM([
-            make_clarify_response(
-                [{"id": "income", "text": "Какой доход?"}],
-                msg="Уточните",
-            ),
-        ])
+        llm = MockLLM(
+            [
+                make_clarify_response(
+                    [{"id": "income", "text": "Какой доход?"}],
+                    msg="Уточните",
+                ),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm)
 
         events = await collect(runtime, "Посчитай", mode_hint="react")
@@ -149,13 +167,16 @@ class TestThinRuntimeReact:
     @pytest.mark.asyncio
     async def test_tool_execution_error(self) -> None:
         """Tool raises → tool_call_finished с ok=False, loop продолжается."""
+
         def bad_tool(args):
             raise ValueError("broken")
 
-        llm = MockLLM([
-            make_tool_call_response("bad_tool"),
-            make_final_response("Не удалось"),
-        ])
+        llm = MockLLM(
+            [
+                make_tool_call_response("bad_tool"),
+                make_final_response("Не удалось"),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm, local_tools={"bad_tool": bad_tool})
 
         events = await collect(runtime, "test", mode_hint="react")
@@ -168,6 +189,7 @@ class TestThinRuntimeReact:
 # ---------------------------------------------------------------------------
 # Conversational mode
 # ---------------------------------------------------------------------------
+
 
 class TestThinRuntimeConversational:
     """Conversational mode: single LLM call → final."""
@@ -187,10 +209,12 @@ class TestThinRuntimeConversational:
     @pytest.mark.asyncio
     async def test_conversational_bad_json_retry(self) -> None:
         """Плохой JSON → retry → успех."""
-        llm = MockLLM([
-            "это не JSON",
-            make_final_response("Повторный ответ"),
-        ])
+        llm = MockLLM(
+            [
+                "это не JSON",
+                make_final_response("Повторный ответ"),
+            ]
+        )
         runtime = ThinRuntime(llm_call=llm)
 
         events = await collect(runtime, "test", mode_hint="conversational")

@@ -1,7 +1,6 @@
 """Тесты для runtime types — Message, ToolSpec, RuntimeEvent, RuntimeErrorData, RuntimeConfig, resolve_model_name."""
 
 import pytest
-
 from cognitia.runtime.types import (
     DEFAULT_MODEL,
     RUNTIME_ERROR_KINDS,
@@ -18,6 +17,7 @@ from cognitia.runtime.types import (
 # ---------------------------------------------------------------------------
 # Message
 # ---------------------------------------------------------------------------
+
 
 class TestMessage:
     """Message — универсальное сообщение для AgentRuntime."""
@@ -48,8 +48,10 @@ class TestMessage:
 
     def test_to_dict_full(self) -> None:
         msg = Message(
-            role="tool", content="result",
-            name="calc", tool_calls=[{"id": "1"}],
+            role="tool",
+            content="result",
+            name="calc",
+            tool_calls=[{"id": "1"}],
             metadata={"ts": 123},
         )
         d = msg.to_dict()
@@ -77,6 +79,7 @@ class TestMessage:
 # ---------------------------------------------------------------------------
 # ToolSpec
 # ---------------------------------------------------------------------------
+
 
 class TestToolSpec:
     """ToolSpec — описание инструмента."""
@@ -110,6 +113,7 @@ class TestToolSpec:
 # RuntimeErrorData
 # ---------------------------------------------------------------------------
 
+
 class TestRuntimeErrorData:
     """RuntimeErrorData — типизированная ошибка."""
 
@@ -125,8 +129,10 @@ class TestRuntimeErrorData:
 
     def test_to_dict(self) -> None:
         err = RuntimeErrorData(
-            kind="mcp_timeout", message="timeout",
-            recoverable=True, details={"server": "iss"},
+            kind="mcp_timeout",
+            message="timeout",
+            recoverable=True,
+            details={"server": "iss"},
         )
         d = err.to_dict()
         assert d["kind"] == "mcp_timeout"
@@ -136,9 +142,14 @@ class TestRuntimeErrorData:
     def test_all_kinds_exist(self) -> None:
         """Все заявленные kinds доступны."""
         expected = {
-            "runtime_crash", "bad_model_output", "loop_limit",
-            "budget_exceeded", "mcp_timeout", "tool_error",
-            "dependency_missing", "capability_unsupported",
+            "runtime_crash",
+            "bad_model_output",
+            "loop_limit",
+            "budget_exceeded",
+            "mcp_timeout",
+            "tool_error",
+            "dependency_missing",
+            "capability_unsupported",
         }
         assert expected == RUNTIME_ERROR_KINDS
 
@@ -146,6 +157,7 @@ class TestRuntimeErrorData:
 # ---------------------------------------------------------------------------
 # RuntimeEvent (фабричные методы)
 # ---------------------------------------------------------------------------
+
 
 class TestRuntimeEvent:
     """RuntimeEvent — унифицированное событие стриминга."""
@@ -208,8 +220,10 @@ class TestRuntimeEvent:
 
     def test_tool_call_finished(self) -> None:
         ev = RuntimeEvent.tool_call_finished(
-            name="calc", correlation_id="c1",
-            ok=True, result_summary="done",
+            name="calc",
+            correlation_id="c1",
+            ok=True,
+            result_summary="done",
         )
         assert ev.type == "tool_call_finished"
         assert ev.data["ok"] is True
@@ -218,7 +232,8 @@ class TestRuntimeEvent:
     def test_tool_call_finished_truncates_summary(self) -> None:
         long_result = "x" * 300
         ev = RuntimeEvent.tool_call_finished(
-            name="calc", correlation_id="c1",
+            name="calc",
+            correlation_id="c1",
             result_summary=long_result,
         )
         assert len(ev.data["result_summary"]) == 200
@@ -266,9 +281,15 @@ class TestRuntimeEvent:
 
     def test_all_event_types(self) -> None:
         expected = {
-            "assistant_delta", "status", "tool_call_started",
-            "tool_call_finished", "approval_required",
-            "user_input_requested", "native_notice", "final", "error",
+            "assistant_delta",
+            "status",
+            "tool_call_started",
+            "tool_call_finished",
+            "approval_required",
+            "user_input_requested",
+            "native_notice",
+            "final",
+            "error",
         }
         assert expected == RUNTIME_EVENT_TYPES
 
@@ -276,6 +297,7 @@ class TestRuntimeEvent:
 # ---------------------------------------------------------------------------
 # RuntimeConfig
 # ---------------------------------------------------------------------------
+
 
 class TestRuntimeConfig:
     """RuntimeConfig — конфигурация runtime."""
@@ -333,6 +355,7 @@ class TestRuntimeConfig:
 # resolve_model_name
 # ---------------------------------------------------------------------------
 
+
 class TestResolveModelName:
     """resolve_model_name — разрешение имени модели (alias + полное имя)."""
 
@@ -384,6 +407,7 @@ class TestResolveModelName:
     def test_valid_model_names_via_registry(self) -> None:
         """ModelRegistry.valid_models содержит модели всех провайдеров."""
         from cognitia.runtime.model_registry import get_registry
+
         valid = get_registry().valid_models
         assert "claude-sonnet-4-20250514" in valid
         assert "claude-opus-4-20250514" in valid
@@ -394,6 +418,7 @@ class TestResolveModelName:
 # ---------------------------------------------------------------------------
 # TurnMetrics
 # ---------------------------------------------------------------------------
+
 
 class TestTurnMetrics:
     """TurnMetrics — метрики turn'а."""

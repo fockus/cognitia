@@ -7,7 +7,7 @@ Lead + workers через SubagentOrchestrator.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cognitia.orchestration.message_bus import MessageBus
 from cognitia.orchestration.subagent_protocol import SubagentOrchestrator
@@ -33,8 +33,11 @@ class DeepAgentsTeamOrchestrator:
             worker_ids[spec.name] = agent_id
 
         self._teams[team_id] = _TeamState(
-            config=config, worker_ids=worker_ids,
-            started_at=datetime.now(tz=timezone.utc), bus=bus, task=task,
+            config=config,
+            worker_ids=worker_ids,
+            started_at=datetime.now(tz=UTC),
+            bus=bus,
+            task=task,
         )
         return team_id
 
@@ -61,8 +64,10 @@ class DeepAgentsTeamOrchestrator:
         history = await state.bus.get_history()
 
         return TeamStatus(
-            team_id=team_id, state=team_state,
-            workers=workers, messages_exchanged=len(history),
+            team_id=team_id,
+            state=team_state,
+            workers=workers,
+            messages_exchanged=len(history),
         )
 
     async def send_message(self, team_id: str, message: TeamMessage) -> None:
@@ -76,7 +81,9 @@ class DeepAgentsTeamOrchestrator:
         state = self._teams.get(team_id)
         if not state:
             return
-        worker_name = next((name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None)
+        worker_name = next(
+            (name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None
+        )
         if worker_name is None:
             return
         await self._sub_orch.cancel(agent_id)
@@ -88,7 +95,9 @@ class DeepAgentsTeamOrchestrator:
         if not state:
             return
 
-        worker_name = next((name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None)
+        worker_name = next(
+            (name for name, cur_id in state.worker_ids.items() if cur_id == agent_id), None
+        )
         if worker_name is None or worker_name not in state.paused_workers:
             return
 
@@ -110,8 +119,12 @@ class _TeamState:
     """Внутреннее состояние команды."""
 
     def __init__(
-        self, config: TeamConfig, worker_ids: dict[str, str],
-        started_at: datetime, bus: MessageBus, task: str,
+        self,
+        config: TeamConfig,
+        worker_ids: dict[str, str],
+        started_at: datetime,
+        bus: MessageBus,
+        task: str,
     ) -> None:
         self.config = config
         self.worker_ids = worker_ids

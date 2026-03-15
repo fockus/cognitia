@@ -2,6 +2,7 @@
 
 Disabled checks return VerificationStatus.SKIP automatically.
 """
+
 from __future__ import annotations
 
 from cognitia.orchestration.code_verifier import CommandResult, CommandRunner
@@ -51,9 +52,7 @@ class TddCodeVerifier:
         return VerificationResult(
             status=status,
             checks=(
-                CheckDetail(
-                    name="ruff", status=status, message=result.stdout or result.stderr
-                ),
+                CheckDetail(name="ruff", status=status, message=result.stdout or result.stderr),
             ),
             summary=result.stdout or result.stderr,
         )

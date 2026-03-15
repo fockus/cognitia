@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from cognitia.runtime.types import ToolSpec
 
 
@@ -60,7 +59,9 @@ class TestToolSelector:
         from cognitia.policy.tool_selector import ToolGroup, ToolSelector
 
         selector = ToolSelector(max_tools=5)
-        selector.add_group(ToolGroup.ALWAYS, [_spec("thinking"), _spec("todo_read"), _spec("todo_write")])
+        selector.add_group(
+            ToolGroup.ALWAYS, [_spec("thinking"), _spec("todo_read"), _spec("todo_write")]
+        )
         selector.add_group(ToolGroup.SANDBOX, [_spec("bash"), _spec("read"), _spec("write")])
 
         selected = selector.select()
@@ -84,7 +85,9 @@ class TestToolSelector:
         selector = ToolSelector(max_tools=5)
         selector.add_group(ToolGroup.ALWAYS, [_spec("thinking")])
         selector.add_group(ToolGroup.MCP, [_spec("mcp_search"), _spec("mcp_get")])
-        selector.add_group(ToolGroup.SANDBOX, [_spec("bash"), _spec("read"), _spec("write"), _spec("edit")])
+        selector.add_group(
+            ToolGroup.SANDBOX, [_spec("bash"), _spec("read"), _spec("write"), _spec("edit")]
+        )
 
         selected = selector.select()
         names = [s.name for s in selected]
@@ -100,7 +103,9 @@ class TestToolSelector:
         cfg = ToolBudgetConfig(max_tools=4, group_limits={ToolGroup.SANDBOX: 2})
         selector = ToolSelector(config=cfg)
         selector.add_group(ToolGroup.ALWAYS, [_spec("thinking")])
-        selector.add_group(ToolGroup.SANDBOX, [_spec("bash"), _spec("read"), _spec("write"), _spec("edit")])
+        selector.add_group(
+            ToolGroup.SANDBOX, [_spec("bash"), _spec("read"), _spec("write"), _spec("edit")]
+        )
 
         selected = selector.select()
         names = [s.name for s in selected]

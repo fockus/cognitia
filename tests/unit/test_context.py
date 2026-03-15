@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from cognitia.context import (
     ContextBudget,
     ContextInput,
@@ -263,7 +262,9 @@ class TestDefaultContextBuilder:
             inp,
             goal_text=goal_text,
             phase_text=phase_text,
-            user_profile=profile, recall_facts=recall, summary="long " * 1000,
+            user_profile=profile,
+            recall_facts=recall,
+            summary="long " * 1000,
         )
 
         # Guardrails и роль всегда есть
@@ -286,14 +287,18 @@ class TestContextBuilderLastMessages:
     @staticmethod
     def _make_inp(role_id: str = "coach", budget: ContextBudget | None = None) -> ContextInput:
         return ContextInput(
-            user_id="u1", topic_id="t1", role_id=role_id,
-            user_text="тест", active_skill_ids=[],
+            user_id="u1",
+            topic_id="t1",
+            role_id=role_id,
+            user_text="тест",
+            active_skill_ids=[],
             budget=budget or ContextBudget(),
         )
 
     @pytest.mark.asyncio
     async def test_last_messages_included_in_prompt(
-        self, builder: DefaultContextBuilder,
+        self,
+        builder: DefaultContextBuilder,
     ) -> None:
         """Если last_messages переданы, они появляются в system_prompt."""
         messages = [
@@ -307,7 +312,8 @@ class TestContextBuilderLastMessages:
 
     @pytest.mark.asyncio
     async def test_last_messages_empty_list_no_pack(
-        self, builder: DefaultContextBuilder,
+        self,
+        builder: DefaultContextBuilder,
     ) -> None:
         """Пустой список last_messages — pack не добавляется."""
         result = await builder.build(self._make_inp(), last_messages=[])
@@ -315,7 +321,8 @@ class TestContextBuilderLastMessages:
 
     @pytest.mark.asyncio
     async def test_last_messages_none_no_pack(
-        self, builder: DefaultContextBuilder,
+        self,
+        builder: DefaultContextBuilder,
     ) -> None:
         """last_messages=None — pack не добавляется."""
         result = await builder.build(self._make_inp(), last_messages=None)
@@ -323,7 +330,8 @@ class TestContextBuilderLastMessages:
 
     @pytest.mark.asyncio
     async def test_last_messages_truncated_by_budget(
-        self, builder: DefaultContextBuilder,
+        self,
+        builder: DefaultContextBuilder,
     ) -> None:
         """Длинные сообщения обрезаются по budget.messages_max."""
         inp = self._make_inp(budget=ContextBudget(messages_max=100))
@@ -355,8 +363,11 @@ class TestContextBuilderHotReload:
         """Изменённый файл роли подхватывается без перезапуска."""
         builder = DefaultContextBuilder(prompts_dir)
         inp = ContextInput(
-            user_id="u1", topic_id="t1", role_id="coach",
-            user_text="привет", active_skill_ids=[],
+            user_id="u1",
+            topic_id="t1",
+            role_id="coach",
+            user_text="привет",
+            active_skill_ids=[],
         )
         result1 = await builder.build(inp)
         assert "коуча" in result1.system_prompt
@@ -367,6 +378,7 @@ class TestContextBuilderHotReload:
         # Гарантируем отличие mtime (некоторые FS имеют секундную точность)
         import os
         import time
+
         os.utime(role_file, (time.time() + 1, time.time() + 1))
 
         result2 = await builder.build(inp)
@@ -378,8 +390,11 @@ class TestContextBuilderHotReload:
         """Изменённый identity.md подхватывается без перезапуска."""
         builder = DefaultContextBuilder(prompts_dir)
         inp = ContextInput(
-            user_id="u1", topic_id="t1", role_id="coach",
-            user_text="привет", active_skill_ids=[],
+            user_id="u1",
+            topic_id="t1",
+            role_id="coach",
+            user_text="привет",
+            active_skill_ids=[],
         )
         result1 = await builder.build(inp)
         assert "Freedom AI" in result1.system_prompt
@@ -389,6 +404,7 @@ class TestContextBuilderHotReload:
         identity_file.write_text("Ты — Мегабот, финансовый гуру.")
         import os
         import time
+
         os.utime(identity_file, (time.time() + 1, time.time() + 1))
 
         result2 = await builder.build(inp)
@@ -400,8 +416,11 @@ class TestContextBuilderHotReload:
         """Новый файл роли подхватывается без перезапуска."""
         builder = DefaultContextBuilder(prompts_dir)
         inp = ContextInput(
-            user_id="u1", topic_id="t1", role_id="wizard",
-            user_text="привет", active_skill_ids=[],
+            user_id="u1",
+            topic_id="t1",
+            role_id="wizard",
+            user_text="привет",
+            active_skill_ids=[],
         )
         result1 = await builder.build(inp)
         assert "волшебник" not in result1.system_prompt
@@ -417,8 +436,11 @@ class TestContextBuilderHotReload:
         """Если файлы не менялись — повторная загрузка не происходит."""
         builder = DefaultContextBuilder(prompts_dir)
         inp = ContextInput(
-            user_id="u1", topic_id="t1", role_id="coach",
-            user_text="привет", active_skill_ids=[],
+            user_id="u1",
+            topic_id="t1",
+            role_id="coach",
+            user_text="привет",
+            active_skill_ids=[],
         )
         result1 = await builder.build(inp)
         result2 = await builder.build(inp)

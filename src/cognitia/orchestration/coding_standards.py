@@ -3,6 +3,7 @@
 Все конфиги — frozen dataclass (pure value objects, 0 зависимостей).
 Factory methods предоставляют типовые пресеты.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -37,17 +37,25 @@ class TestLoadMcpFromSettings:
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
         # project settings
-        (claude_dir / "settings.json").write_text(json.dumps({
-            "mcpServers": {
-                "iss": {"type": "url", "url": "https://prod.com/iss/mcp"},
-            }
-        }))
+        (claude_dir / "settings.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "iss": {"type": "url", "url": "https://prod.com/iss/mcp"},
+                    }
+                }
+            )
+        )
         # local overrides
-        (claude_dir / "settings.local.json").write_text(json.dumps({
-            "mcpServers": {
-                "iss": {"type": "url", "url": "https://dev.com/iss/mcp"},
-            }
-        }))
+        (claude_dir / "settings.local.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "iss": {"type": "url", "url": "https://dev.com/iss/mcp"},
+                    }
+                }
+            )
+        )
 
         servers = load_mcp_from_settings(tmp_path)
         assert servers["iss"].url == "https://dev.com/iss/mcp"

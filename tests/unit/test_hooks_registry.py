@@ -1,6 +1,5 @@
 """Тесты для HookRegistry — регистрация и получение хуков событий."""
 
-
 from cognitia.hooks.registry import HookEntry, HookRegistry
 
 

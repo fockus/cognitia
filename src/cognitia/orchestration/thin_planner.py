@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 from cognitia.orchestration.protocols import PlanStore
@@ -46,7 +46,7 @@ class ThinPlannerMode:
         prompt = (
             f"Создай пошаговый план для цели: {goal}\n"
             f"Контекст: {context}\n"
-            f"Верни JSON: {{\"goal\": \"...\", \"steps\": [{{\"id\": \"s1\", \"description\": \"...\"}}]}}\n"
+            f'Верни JSON: {{"goal": "...", "steps": [{{"id": "s1", "description": "..."}}]}}\n'
             f"Максимум {self._max_steps} шагов."
         )
         raw = await self._llm.generate(prompt)
@@ -54,14 +54,14 @@ class ThinPlannerMode:
 
         steps = [
             PlanStep(id=s["id"], description=s["description"])
-            for s in data.get("steps", [])[:self._max_steps]
+            for s in data.get("steps", [])[: self._max_steps]
         ]
 
         plan = Plan(
             id=str(uuid.uuid4()),
             goal=goal,
             steps=steps,
-            created_at=datetime.now(tz=timezone.utc),
+            created_at=datetime.now(tz=UTC),
         )
         await self._store.save(plan)
         return plan

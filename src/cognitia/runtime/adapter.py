@@ -38,6 +38,7 @@ try:
         TaskProgressMessage,
         TaskStartedMessage,
     )
+
     _HAS_TASK_MESSAGES = True
 except ImportError:
     _HAS_TASK_MESSAGES = False
@@ -148,12 +149,13 @@ class RuntimeAdapter:
                 self._client.connect(),
                 timeout=self.CONNECT_TIMEOUT_SECONDS,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             elapsed = time.monotonic() - t0
             logger.error(
                 "Таймаут подключения Claude SDK (%.1fs > %.1fs). "
                 "Возможно, MCP серверы недоступны или медленно инициализируются.",
-                elapsed, self.CONNECT_TIMEOUT_SECONDS,
+                elapsed,
+                self.CONNECT_TIMEOUT_SECONDS,
             )
             # Убиваем зависший subprocess
             with suppress(Exception):
@@ -181,7 +183,7 @@ class RuntimeAdapter:
                 self._client.connect(),
                 timeout=self.CONNECT_TIMEOUT_SECONDS,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             elapsed = time.monotonic() - t0
             logger.error("Таймаут reconnect (%.1fs)", elapsed)
             with suppress(Exception):
@@ -258,7 +260,8 @@ class RuntimeAdapter:
                 if attempt == 0:
                     logger.warning(
                         "BrokenPipe при query (attempt=%d): %s. Reconnect...",
-                        attempt, exc,
+                        attempt,
+                        exc,
                     )
                     await self._reconnect()
                 else:
@@ -295,7 +298,8 @@ class RuntimeAdapter:
                     }
 
                 if self._options.include_partial_messages and isinstance(
-                    message, SdkStreamEvent,
+                    message,
+                    SdkStreamEvent,
                 ):
                     partial_text = _extract_partial_text_delta(message)
                     if partial_text:
@@ -366,7 +370,8 @@ class RuntimeAdapter:
                     # ThinkingBlock — внутреннее рассуждение модели.
                     # Не стримим пользователю, но логируем для observability.
                     logger.debug(
-                        "ThinkingBlock (len=%d)", len(block.thinking),
+                        "ThinkingBlock (len=%d)",
+                        len(block.thinking),
                     )
                 elif isinstance(block, ToolUseBlock):
                     yield StreamEvent(

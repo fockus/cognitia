@@ -7,7 +7,6 @@
 from pathlib import Path
 
 import pytest
-
 from cognitia.policy.tool_id_codec import DefaultToolIdCodec
 from cognitia.policy.tool_policy import (
     DefaultToolPolicy,

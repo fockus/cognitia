@@ -44,7 +44,8 @@ class FilesystemMemoryBankProvider:
         """Записать файл. Атомарная запись."""
         if len(content.encode("utf-8")) > self._config.max_file_size_bytes:
             raise MemoryBankViolation(
-                f"Файл превышает лимит {self._config.max_file_size_bytes} байт", path=path,
+                f"Файл превышает лимит {self._config.max_file_size_bytes} байт",
+                path=path,
             )
         safe = self._resolve(path)
         safe.parent.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,5 @@
 """CodeWorkflowEngine — structured code pipeline with DoD verification loop."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,9 +51,7 @@ class CodeWorkflowEngine:
         self._dod = dod
         self._planner = planner
 
-    async def run(
-        self, goal: str, dod_criteria: tuple[str, ...] = ()
-    ) -> WorkflowResult:
+    async def run(self, goal: str, dod_criteria: tuple[str, ...] = ()) -> WorkflowResult:
         """Execute full workflow: plan → execute → verify DoD."""
         plan = await self._planner.create_plan(goal)
         output = await self._planner.execute_plan(plan)

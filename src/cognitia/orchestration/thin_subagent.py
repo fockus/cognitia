@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 from cognitia.orchestration.subagent_types import (
@@ -58,26 +58,38 @@ class ThinSubagentOrchestrator:
 
     async def _run_agent(self, agent_id: str, runtime: _SubagentRuntime, task: str) -> str:
         """Выполнить subagent — обёрнуть в try/except для graceful failure."""
-        started = datetime.now(tz=timezone.utc)
+        started = datetime.now(tz=UTC)
         try:
             output = await runtime.run(task)
             self._results[agent_id] = SubagentResult(
                 agent_id=agent_id,
-                status=SubagentStatus(state="completed", result=output, started_at=started, finished_at=datetime.now(tz=timezone.utc)),
+                status=SubagentStatus(
+                    state="completed",
+                    result=output,
+                    started_at=started,
+                    finished_at=datetime.now(tz=UTC),
+                ),
                 output=output,
             )
             return output
         except asyncio.CancelledError:
             self._results[agent_id] = SubagentResult(
                 agent_id=agent_id,
-                status=SubagentStatus(state="cancelled", started_at=started, finished_at=datetime.now(tz=timezone.utc)),
+                status=SubagentStatus(
+                    state="cancelled", started_at=started, finished_at=datetime.now(tz=UTC)
+                ),
                 output="",
             )
             return ""
         except Exception as e:
             self._results[agent_id] = SubagentResult(
                 agent_id=agent_id,
-                status=SubagentStatus(state="failed", error=str(e), started_at=started, finished_at=datetime.now(tz=timezone.utc)),
+                status=SubagentStatus(
+                    state="failed",
+                    error=str(e),
+                    started_at=started,
+                    finished_at=datetime.now(tz=UTC),
+                ),
                 output="",
             )
             return ""

@@ -7,14 +7,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from conftest import FakeStreamEvent
-
 from cognitia.agent.agent import Agent
 from cognitia.agent.config import AgentConfig
 from cognitia.agent.middleware import Middleware
 from cognitia.agent.result import Result
 from cognitia.agent.tool import tool
 from cognitia.runtime.thin.runtime import ThinRuntime
+from conftest import FakeStreamEvent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -595,9 +594,7 @@ class TestRuntimeEventAdapter:
     def test_assistant_delta_maps_to_text_delta(self) -> None:
         from cognitia.agent.agent import _RuntimeEventAdapter
 
-        adapted = _RuntimeEventAdapter(
-            self._make_event("assistant_delta", {"text": "Hello"})
-        )
+        adapted = _RuntimeEventAdapter(self._make_event("assistant_delta", {"text": "Hello"}))
         assert adapted.type == "text_delta"
         assert adapted.text == "Hello"
         assert adapted.is_final is False
@@ -630,9 +627,7 @@ class TestRuntimeEventAdapter:
     def test_error_maps_to_error(self) -> None:
         from cognitia.agent.agent import _RuntimeEventAdapter
 
-        adapted = _RuntimeEventAdapter(
-            self._make_event("error", {"message": "Something broke"})
-        )
+        adapted = _RuntimeEventAdapter(self._make_event("error", {"message": "Something broke"}))
         assert adapted.type == "error"
         assert adapted.text == "Something broke"
 
@@ -646,9 +641,7 @@ class TestRuntimeEventAdapter:
         from cognitia.agent.agent import _RuntimeEventAdapter
 
         adapted = _RuntimeEventAdapter(
-            self._make_event(
-                "tool_call_started", {"name": "calc", "args": {"x": 1}}
-            )
+            self._make_event("tool_call_started", {"name": "calc", "args": {"x": 1}})
         )
         assert adapted.type == "tool_use_start"
         assert adapted.tool_name == "calc"
@@ -659,9 +652,7 @@ class TestRuntimeEventAdapter:
         from cognitia.agent.agent import _RuntimeEventAdapter
 
         adapted = _RuntimeEventAdapter(
-            self._make_event(
-                "tool_call_finished", {"result_summary": "42"}
-            )
+            self._make_event("tool_call_finished", {"result_summary": "42"})
         )
         assert adapted.type == "tool_use_result"
         assert adapted.tool_result == "42"
@@ -670,9 +661,7 @@ class TestRuntimeEventAdapter:
     def test_unknown_event_passthrough(self) -> None:
         from cognitia.agent.agent import _RuntimeEventAdapter
 
-        adapted = _RuntimeEventAdapter(
-            self._make_event("status", {"text": "thinking..."})
-        )
+        adapted = _RuntimeEventAdapter(self._make_event("status", {"text": "thinking..."}))
         assert adapted.type == "status"
         assert adapted.text == "thinking..."
         assert adapted.is_final is False

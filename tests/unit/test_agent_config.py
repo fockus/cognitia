@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-
 from cognitia.agent.config import AgentConfig
 from cognitia.runtime.capabilities import CapabilityRequirements
 

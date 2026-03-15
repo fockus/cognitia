@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from cognitia.agent import Agent, AgentConfig
 from cognitia.runtime.capabilities import CapabilityRequirements
 from cognitia.runtime.factory import RuntimeFactory

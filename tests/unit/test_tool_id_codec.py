@@ -5,7 +5,6 @@
 """
 
 import pytest
-
 from cognitia.policy.tool_id_codec import DefaultToolIdCodec
 
 

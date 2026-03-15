@@ -6,7 +6,6 @@ import sys
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.tools.types import SandboxConfig
 
 
@@ -120,7 +119,9 @@ class TestDockerSandboxProvider:
         assert mock_container.stop.called
         assert mock_container.remove.called
 
-    async def test_dependency_or_daemon_error_raises_runtime_error(self, config, monkeypatch) -> None:
+    async def test_dependency_or_daemon_error_raises_runtime_error(
+        self, config, monkeypatch
+    ) -> None:
         from cognitia.tools.sandbox_docker import DockerSandboxProvider
 
         class BrokenDocker:

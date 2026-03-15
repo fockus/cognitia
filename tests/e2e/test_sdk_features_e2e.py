@@ -18,7 +18,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from cognitia.hooks.registry import HookRegistry
 from cognitia.hooks.sdk_bridge import registry_to_sdk_hooks
 from cognitia.runtime.adapter import (
@@ -205,16 +204,21 @@ class TestE2EMcpToolFlow:
         Проверяет что in-process MCP tool попадает в options и может
         быть использован runtime'ом.
         """
-        @mcp_tool("calculate_goal", "Calculate financial goal plan", {"target": float, "years": int})
+
+        @mcp_tool(
+            "calculate_goal", "Calculate financial goal plan", {"target": float, "years": int}
+        )
         async def calculate_goal(args: dict[str, Any]) -> dict[str, Any]:
             target = args["target"]
             years = args["years"]
             monthly = target / (years * 12)
             return {
-                "content": [{
-                    "type": "text",
-                    "text": f"Monthly savings needed: {monthly:.2f}",
-                }],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Monthly savings needed: {monthly:.2f}",
+                    }
+                ],
             }
 
         server = create_mcp_server("freedom_tools", tools=[calculate_goal])
@@ -234,6 +238,7 @@ class TestE2EMcpToolFlow:
     @pytest.mark.asyncio
     async def test_mcp_tool_handler_execution(self) -> None:
         """MCP tool handler вызывается и возвращает корректный результат."""
+
         @mcp_tool("assess_health", "Assess financial health", {"income": float, "expenses": float})
         async def assess_health(args: dict[str, Any]) -> dict[str, Any]:
             ratio = args["expenses"] / args["income"] if args["income"] > 0 else 1.0
@@ -369,12 +374,14 @@ class TestE2EMultiTurnWithMetrics:
 
         async def fake_receive_response():
             # Assistant thinks, uses tool, gets result, responds
-            yield _mock_assistant_msg([
-                _mock_thinking_block("Let me analyze the deposits..."),
-                _mock_tool_use_block("mcp__finuslugi__get_deposits", {"min_rate": 15}),
-                _mock_tool_result_block("Found 5 deposits with rate >= 15%"),
-                _mock_text_block("Я нашёл 5 вкладов с доходностью от 15%."),
-            ])
+            yield _mock_assistant_msg(
+                [
+                    _mock_thinking_block("Let me analyze the deposits..."),
+                    _mock_tool_use_block("mcp__finuslugi__get_deposits", {"min_rate": 15}),
+                    _mock_tool_result_block("Found 5 deposits with rate >= 15%"),
+                    _mock_text_block("Я нашёл 5 вкладов с доходностью от 15%."),
+                ]
+            )
             yield _mock_result_msg(
                 session_id="sess-deposits",
                 cost=0.08,

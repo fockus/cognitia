@@ -1,4 +1,5 @@
 """Tests for VerificationResult, VerificationStatus, CheckDetail types."""
+
 from __future__ import annotations
 
 from cognitia.orchestration.verification_types import (

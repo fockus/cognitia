@@ -11,7 +11,6 @@ from collections.abc import AsyncIterator
 from typing import Any, get_type_hints
 
 import pytest
-
 from cognitia.protocols import (
     ModelSelector,
     RoleSkillsProvider,
@@ -36,9 +35,7 @@ class TestProtocolISP:
             (ModelSelector, 5),
         ],
     )
-    def test_protocol_method_count(
-        self, protocol_cls: type, max_methods: int
-    ) -> None:
+    def test_protocol_method_count(self, protocol_cls: type, max_methods: int) -> None:
         """Protocol имеет ≤ max_methods публичных методов/свойств."""
         public = [
             name
@@ -139,11 +136,7 @@ class TestRoleSkillsProviderContract:
 
     def test_method_count_is_2(self) -> None:
         """RoleSkillsProvider имеет ровно 2 метода (ISP)."""
-        methods = [
-            n
-            for n in dir(RoleSkillsProvider)
-            if not n.startswith("_") and n != "register"
-        ]
+        methods = [n for n in dir(RoleSkillsProvider) if not n.startswith("_") and n != "register"]
         assert len(methods) == 2
 
     def test_dummy_implementation_satisfies_protocol(self) -> None:
@@ -241,6 +234,7 @@ class TestBaseRuntimePortContract:
 
     def _make_config(self) -> Any:
         from cognitia.runtime.types import RuntimeConfig
+
         return RuntimeConfig(runtime_name="thin")
 
     def test_satisfies_runtime_port_interface(self) -> None:
@@ -258,7 +252,9 @@ class TestBaseRuntimePortContract:
         from cognitia.runtime.ports.base import BaseRuntimePort
 
         port = BaseRuntimePort(
-            system_prompt="test", config=self._make_config(), history_max=5,
+            system_prompt="test",
+            config=self._make_config(),
+            history_max=5,
         )
         assert hasattr(port, "_append_to_history")
         assert hasattr(port, "_maybe_summarize")

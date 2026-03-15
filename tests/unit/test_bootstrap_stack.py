@@ -132,9 +132,7 @@ class TestCognitiaStackCreate:
         assert stack.role_router_config.default_role == "default"
         assert stack.role_skills_loader.get_skills("nonexistent") == []
 
-    def test_accepts_runtime_config_and_local_tool_resolver(
-        self, tmp_path: Path
-    ) -> None:
+    def test_accepts_runtime_config_and_local_tool_resolver(self, tmp_path: Path) -> None:
         """create() принимает runtime_config и local_tool_resolver из app."""
         project_root, prompts_dir, skills_dir = _create_fixture_dirs(tmp_path)
 
@@ -261,8 +259,5 @@ class TestLocalToolResolverProtocol:
 
     def test_isp_2_methods(self) -> None:
         """LocalToolResolver имеет ровно 2 метода (ISP)."""
-        methods = [
-            n for n in dir(LocalToolResolver)
-            if not n.startswith("_") and n != "register"
-        ]
+        methods = [n for n in dir(LocalToolResolver) if not n.startswith("_") and n != "register"]
         assert len(methods) == 2

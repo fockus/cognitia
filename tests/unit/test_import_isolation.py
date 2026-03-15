@@ -43,41 +43,54 @@ def _block_packages(*names: str) -> Generator[None, None, None]:
 
 # -- Core library (no optional deps) --
 
+
 class TestCoreImportsWithoutOptionalDeps:
     """Import core cognitia without any optional dependencies."""
 
     def test_import_cognitia_top_level(self) -> None:
         """Top-level `import cognitia` must work without optional deps."""
-        with _block_packages("claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"):
+        with _block_packages(
+            "claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"
+        ):
             # Force reimport
             for key in list(sys.modules):
                 if key.startswith("cognitia"):
                     del sys.modules[key]
             import cognitia
+
             assert hasattr(cognitia, "__version__")
 
     def test_import_runtime_types(self) -> None:
-        with _block_packages("claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"):
+        with _block_packages(
+            "claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"
+        ):
             for key in list(sys.modules):
                 if key.startswith("cognitia.runtime"):
                     del sys.modules[key]
             from cognitia.runtime.types import Message
+
             assert Message is not None
 
     def test_import_runtime_factory(self) -> None:
-        with _block_packages("claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"):
+        with _block_packages(
+            "claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"
+        ):
             for key in list(sys.modules):
                 if key.startswith("cognitia.runtime"):
                     del sys.modules[key]
             from cognitia.runtime.factory import RuntimeFactory
+
             assert RuntimeFactory is not None
 
     def test_import_memory(self) -> None:
-        with _block_packages("claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"):
+        with _block_packages(
+            "claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"
+        ):
             for key in list(sys.modules):
                 if key.startswith("cognitia.memory"):
                     del sys.modules[key]
             from cognitia.memory import InMemoryMemoryProvider
+
             assert InMemoryMemoryProvider is not None
 
     def test_import_context(self) -> None:
@@ -86,6 +99,7 @@ class TestCoreImportsWithoutOptionalDeps:
                 if key.startswith("cognitia.context"):
                     del sys.modules[key]
             from cognitia.context import DefaultContextBuilder
+
             assert DefaultContextBuilder is not None
 
     def test_import_policy(self) -> None:
@@ -94,6 +108,7 @@ class TestCoreImportsWithoutOptionalDeps:
                 if key.startswith("cognitia.policy"):
                     del sys.modules[key]
             from cognitia.policy import DefaultToolPolicy
+
             assert DefaultToolPolicy is not None
 
     def test_import_routing(self) -> None:
@@ -102,6 +117,7 @@ class TestCoreImportsWithoutOptionalDeps:
                 if key.startswith("cognitia.routing"):
                     del sys.modules[key]
             from cognitia.routing import KeywordRoleRouter
+
             assert KeywordRoleRouter is not None
 
     def test_import_hooks_without_sdk(self) -> None:
@@ -111,15 +127,19 @@ class TestCoreImportsWithoutOptionalDeps:
                 if key.startswith("cognitia.hooks"):
                     del sys.modules[key]
             from cognitia.hooks import HookRegistry
+
             assert HookRegistry is not None
 
     def test_import_agent_module(self) -> None:
         """Agent facade imports without optional deps."""
-        with _block_packages("claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"):
+        with _block_packages(
+            "claude_agent_sdk", "anthropic", "langchain_core", "langchain_anthropic"
+        ):
             for key in list(sys.modules):
                 if key.startswith("cognitia.agent"):
                     del sys.modules[key]
             from cognitia.agent import Agent
+
             assert Agent is not None
 
     def test_block_packages_restores_cognitia_module_identity(self) -> None:

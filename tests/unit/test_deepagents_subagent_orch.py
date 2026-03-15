@@ -89,6 +89,7 @@ class TestClaudeSubagentOrchestrator:
 
             async def stream_reply(self, user_text: str):
                 _ = user_text
+
                 class Event:
                     type = "text_delta"
                     text = "claude result"
@@ -122,6 +123,7 @@ class TestClaudeSubagentOrchestrator:
 
             async def stream_reply(self, user_text: str):
                 _ = user_text
+
                 class Event:
                     type = "error"
                     text = "sdk boom"

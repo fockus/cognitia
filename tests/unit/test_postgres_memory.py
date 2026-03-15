@@ -7,7 +7,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from cognitia.memory.postgres import _USER_ID_SUB, PostgresMemoryProvider, _json_or_none
 from cognitia.memory.types import GoalState
 
@@ -299,8 +298,12 @@ class TestSaveGoal:
         provider = PostgresMemoryProvider(factory)
 
         goal = GoalState(
-            goal_id="g1", title="Накопить", target_amount=500_000,
-            current_amount=100_000, phase="savings", plan=["Шаг 1", "Шаг 2"],
+            goal_id="g1",
+            title="Накопить",
+            target_amount=500_000,
+            current_amount=100_000,
+            phase="savings",
+            plan=["Шаг 1", "Шаг 2"],
         )
         await provider.save_goal("u1", goal)
 

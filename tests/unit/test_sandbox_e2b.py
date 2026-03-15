@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from cognitia.tools.types import SandboxConfig
 
 
@@ -69,7 +68,8 @@ class TestE2BSandboxProvider:
 
         mock_sandbox = AsyncMock()
         mock_sandbox.filesystem.list.return_value = [
-            MagicMock(name="a.txt"), MagicMock(name="b.py"),
+            MagicMock(name="a.txt"),
+            MagicMock(name="b.py"),
         ]
         # Мокаем .name явно т.к. MagicMock(name=) перехватывается
         mock_sandbox.filesystem.list.return_value[0].name = "a.txt"

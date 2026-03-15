@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from cognitia.runtime.model_registry import ModelRegistry, get_registry, reset_registry
 
 # ---------------------------------------------------------------------------
 # Fixture: temp config
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_config(tmp_path: Path) -> Path:
@@ -61,6 +61,7 @@ def registry(tmp_config: Path) -> ModelRegistry:
 # Базовые тесты
 # ---------------------------------------------------------------------------
 
+
 class TestModelRegistryBasic:
     """Базовое поведение: загрузка, default, valid models."""
 
@@ -98,6 +99,7 @@ class TestModelRegistryBasic:
 # ---------------------------------------------------------------------------
 # Resolve
 # ---------------------------------------------------------------------------
+
 
 class TestModelRegistryResolve:
     """resolve() — alias, prefix, full name, fallback."""
@@ -143,6 +145,7 @@ class TestModelRegistryResolve:
 # Provider detection
 # ---------------------------------------------------------------------------
 
+
 class TestModelRegistryProvider:
     """get_provider() — определение провайдера по model_id."""
 
@@ -170,6 +173,7 @@ class TestModelRegistryProvider:
 # Description
 # ---------------------------------------------------------------------------
 
+
 class TestModelRegistryDescription:
     """get_description() — описание модели."""
 
@@ -184,6 +188,7 @@ class TestModelRegistryDescription:
 # ---------------------------------------------------------------------------
 # Aliases
 # ---------------------------------------------------------------------------
+
 
 class TestModelRegistryAliases:
     """list_aliases() — полный маппинг alias → model."""
@@ -203,6 +208,7 @@ class TestModelRegistryAliases:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestModelRegistryEdgeCases:
     """Edge cases: отсутствующий файл, пустой YAML, bad data."""
@@ -235,6 +241,7 @@ class TestModelRegistryEdgeCases:
 # Singleton
 # ---------------------------------------------------------------------------
 
+
 class TestModelRegistrySingleton:
     """get_registry() / reset_registry() — синглтон."""
 
@@ -261,6 +268,7 @@ class TestModelRegistrySingleton:
 # ---------------------------------------------------------------------------
 # Production config (models.yaml рядом с model_registry.py)
 # ---------------------------------------------------------------------------
+
 
 class TestProductionConfig:
     """Проверка что production models.yaml загружается корректно."""

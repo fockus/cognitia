@@ -23,13 +23,31 @@ _log = structlog.get_logger(component="tool_policy")
 ALWAYS_DENIED_TOOLS: frozenset[str] = frozenset(
     {
         # PascalCase (Claude SDK naming)
-        "Bash", "Read", "Write", "Edit", "MultiEdit",
-        "Glob", "Grep", "LS", "TodoRead", "TodoWrite",
-        "WebFetch", "WebSearch",
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "Glob",
+        "Grep",
+        "LS",
+        "TodoRead",
+        "TodoWrite",
+        "WebFetch",
+        "WebSearch",
         # snake_case (builtin canonical naming)
-        "bash", "read", "write", "edit", "multi_edit",
-        "glob", "grep", "ls", "todo_read", "todo_write",
-        "web_fetch", "web_search",
+        "bash",
+        "read",
+        "write",
+        "edit",
+        "multi_edit",
+        "glob",
+        "grep",
+        "ls",
+        "todo_read",
+        "todo_write",
+        "web_fetch",
+        "web_search",
     }
 )
 

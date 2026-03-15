@@ -83,18 +83,25 @@ def create_plan_tools(
         auto_execute = args.get("auto_execute", False)
         try:
             plan = await manager.create_plan(
-                goal=goal, user_id=user_id, topic_id=topic_id,
+                goal=goal,
+                user_id=user_id,
+                topic_id=topic_id,
                 auto_approve=bool(auto_execute),
             )
-            return json.dumps({
-                "status": "ok",
-                "plan": {
-                    "id": plan.id,
-                    "goal": plan.goal,
-                    "status": plan.status,
-                    "steps": [{"id": s.id, "description": s.description, "status": s.status} for s in plan.steps],
-                },
-            })
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "plan": {
+                        "id": plan.id,
+                        "goal": plan.goal,
+                        "status": plan.status,
+                        "steps": [
+                            {"id": s.id, "description": s.description, "status": s.status}
+                            for s in plan.steps
+                        ],
+                    },
+                }
+            )
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})
 
@@ -102,17 +109,21 @@ def create_plan_tools(
         """Показать текущие планы."""
         try:
             plans = await manager.list_plans(user_id, topic_id)
-            return json.dumps({
-                "status": "ok",
-                "plans": [
-                    {
-                        "id": p.id, "goal": p.goal, "status": p.status,
-                        "steps_total": len(p.steps),
-                        "steps_completed": sum(1 for s in p.steps if s.status == "completed"),
-                    }
-                    for p in plans
-                ],
-            })
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "plans": [
+                        {
+                            "id": p.id,
+                            "goal": p.goal,
+                            "status": p.status,
+                            "steps_total": len(p.steps),
+                            "steps_completed": sum(1 for s in p.steps if s.status == "completed"),
+                        }
+                        for p in plans
+                    ],
+                }
+            )
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})
 
@@ -124,10 +135,14 @@ def create_plan_tools(
         try:
             completed: list[dict[str, str]] = []
             async for step in manager.execute_plan(plan_id):
-                completed.append({
-                    "id": step.id, "description": step.description,
-                    "status": step.status, "result": step.result or "",
-                })
+                completed.append(
+                    {
+                        "id": step.id,
+                        "description": step.description,
+                        "status": step.status,
+                        "result": step.result or "",
+                    }
+                )
             return json.dumps({"status": "ok", "completed_steps": completed})
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})

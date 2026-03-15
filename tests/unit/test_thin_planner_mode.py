@@ -7,28 +7,29 @@ execute_step, execute_all, replan.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.orchestration.plan_store import InMemoryPlanStore
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _make_plan_json(goal: str = "test") -> str:
     """JSON-ответ LLM с планом."""
-    return json.dumps({
-        "goal": goal,
-        "steps": [
-            {"id": "s1", "description": "Шаг 1: анализ"},
-            {"id": "s2", "description": "Шаг 2: реализация"},
-            {"id": "s3", "description": "Шаг 3: проверка"},
-        ],
-    })
+    return json.dumps(
+        {
+            "goal": goal,
+            "steps": [
+                {"id": "s1", "description": "Шаг 1: анализ"},
+                {"id": "s2", "description": "Шаг 2: реализация"},
+                {"id": "s3", "description": "Шаг 3: проверка"},
+            ],
+        }
+    )
 
 
 def _make_step_result_json(step_id: str, result: str) -> str:

@@ -47,7 +47,9 @@ class Agent:
         """
         # 1. Middleware before_query
         effective_prompt = await apply_before_query(
-            prompt, self._config.middleware, self._config,
+            prompt,
+            self._config.middleware,
+            self._config,
         )
 
         # 2. Execute + collect
@@ -68,7 +70,9 @@ class Agent:
         Middleware before_query применяется, after_result — нет (streaming).
         """
         effective_prompt = await apply_before_query(
-            prompt, self._config.middleware, self._config,
+            prompt,
+            self._config.middleware,
+            self._config,
         )
 
         async for event in self._execute_stream(effective_prompt):
@@ -143,9 +147,7 @@ class Agent:
                 betas=list(self._config.betas) if self._config.betas else None,
                 env=dict(self._config.env) if self._config.env else None,
                 setting_sources=(
-                    list(self._config.setting_sources)
-                    if self._config.setting_sources
-                    else None
+                    list(self._config.setting_sources) if self._config.setting_sources else None
                 ),
                 include_partial_messages=bool(
                     self._config.native_config.get("include_partial_messages")
@@ -158,9 +160,7 @@ class Agent:
             logger.exception("Agent._execute_claude_sdk error")
             yield StreamEvent(type="error", text=str(exc))
 
-    async def _execute_agent_runtime(
-        self, prompt: str, runtime_name: str
-    ) -> AsyncIterator[Any]:
+    async def _execute_agent_runtime(self, prompt: str, runtime_name: str) -> AsyncIterator[Any]:
         """Execute через AgentRuntime (thin/deepagents)."""
         from cognitia.runtime.factory import RuntimeFactory
         from cognitia.runtime.types import Message
@@ -283,7 +283,9 @@ def _adapt_handler(handler: Any) -> Any:
 
 
 async def apply_before_query(
-    prompt: str, middleware: tuple[Any, ...], config: Any,
+    prompt: str,
+    middleware: tuple[Any, ...],
+    config: Any,
 ) -> str:
     """Применить middleware.before_query chain к prompt."""
     for mw in middleware:

@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from cognitia.skills import LoadedSkill, SkillRegistry, YamlSkillLoader
 from cognitia.skills.types import McpServerSpec, SkillSpec
 
@@ -58,9 +57,7 @@ tools:
 """,
         encoding="utf-8",
     )
-    (funds_dir / "INSTRUCTION.md").write_text(
-        "# Skill Funds\nПоиск ПИФов.", encoding="utf-8"
-    )
+    (funds_dir / "INSTRUCTION.md").write_text("# Skill Funds\nПоиск ПИФов.", encoding="utf-8")
 
     return tmp_path
 

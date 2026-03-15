@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.policy import DefaultToolPolicy, PermissionAllow, PermissionDeny
 from cognitia.policy.tool_policy import ToolPolicyInput
 from cognitia.todo.inmemory_provider import InMemoryTodoProvider
@@ -63,7 +62,7 @@ class TestTenantBoundaries:
         alice = InMemoryTodoProvider(user_id="alice", topic_id="t1")
         bob = InMemoryTodoProvider(user_id="bob", topic_id="t1")
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         await alice.write_todos(
             [
                 TodoItem(

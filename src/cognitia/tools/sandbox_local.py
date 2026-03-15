@@ -68,9 +68,7 @@ class LocalSandboxProvider:
             # Убираем path prefix (e.g. /usr/bin/rm → rm)
             cmd_name = os.path.basename(word)
             if cmd_name in self._config.denied_commands:
-                raise SandboxViolation(
-                    f"Команда '{cmd_name}' запрещена", path=command
-                )
+                raise SandboxViolation(f"Команда '{cmd_name}' запрещена", path=command)
 
     async def read_file(self, path: str) -> str:
         """Прочитать файл из workspace."""
@@ -127,7 +125,7 @@ class LocalSandboxProvider:
                 exit_code=proc.returncode or 0,
                 timed_out=False,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Убиваем процесс при timeout
             proc.kill()
             await proc.wait()

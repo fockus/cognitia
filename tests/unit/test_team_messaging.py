@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 from cognitia.orchestration.subagent_types import SubagentSpec, SubagentStatus
@@ -14,7 +14,7 @@ from cognitia.orchestration.team_types import TeamConfig, TeamMessage
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 class TestMessageBus:
@@ -42,9 +42,15 @@ class TestMessageBus:
         from cognitia.orchestration.message_bus import MessageBus
 
         bus = MessageBus()
-        await bus.send(TeamMessage(from_agent="lead", to_agent="w1", content="msg1", timestamp=_now()))
-        await bus.send(TeamMessage(from_agent="lead", to_agent="w1", content="msg2", timestamp=_now()))
-        await bus.send(TeamMessage(from_agent="lead", to_agent="w2", content="msg3", timestamp=_now()))
+        await bus.send(
+            TeamMessage(from_agent="lead", to_agent="w1", content="msg1", timestamp=_now())
+        )
+        await bus.send(
+            TeamMessage(from_agent="lead", to_agent="w1", content="msg2", timestamp=_now())
+        )
+        await bus.send(
+            TeamMessage(from_agent="lead", to_agent="w2", content="msg3", timestamp=_now())
+        )
 
         inbox_w1 = await bus.get_inbox("w1")
         inbox_w2 = await bus.get_inbox("w2")
@@ -68,7 +74,9 @@ class TestMessageBus:
         from cognitia.orchestration.message_bus import MessageBus
 
         bus = MessageBus()
-        await bus.send(TeamMessage(from_agent="w1", to_agent="lead", content="результат", timestamp=_now()))
+        await bus.send(
+            TeamMessage(from_agent="w1", to_agent="lead", content="результат", timestamp=_now())
+        )
 
         outbox = await bus.get_outbox("w1")
         assert len(outbox) == 1
@@ -115,7 +123,9 @@ class TestTeamWithMessaging:
         )
         team_id = await orch.start(config, "задача")
 
-        msg = TeamMessage(from_agent="lead", to_agent="w1", content="начинай анализ", timestamp=_now())
+        msg = TeamMessage(
+            from_agent="lead", to_agent="w1", content="начинай анализ", timestamp=_now()
+        )
         await orch.send_message(team_id, msg)
 
         # Проверяем что сообщение в bus
@@ -134,11 +144,15 @@ class TestTeamWithMessaging:
         mock_sub.get_status.return_value = SubagentStatus(state="running")
 
         orch = DeepAgentsTeamOrchestrator(mock_sub)
-        config = TeamConfig(lead_prompt="lead", worker_specs=[SubagentSpec(name="w1", system_prompt="p")])
+        config = TeamConfig(
+            lead_prompt="lead", worker_specs=[SubagentSpec(name="w1", system_prompt="p")]
+        )
         team_id = await orch.start(config, "задача")
 
         # Воркер отвечает лиду
-        reply = TeamMessage(from_agent="w1", to_agent="lead", content="готово: 5 вкладов", timestamp=_now())
+        reply = TeamMessage(
+            from_agent="w1", to_agent="lead", content="готово: 5 вкладов", timestamp=_now()
+        )
         await orch.send_message(team_id, reply)
 
         bus = orch.get_message_bus(team_id)
@@ -155,11 +169,17 @@ class TestTeamWithMessaging:
         mock_sub.get_status.return_value = SubagentStatus(state="running")
 
         orch = DeepAgentsTeamOrchestrator(mock_sub)
-        config = TeamConfig(lead_prompt="lead", worker_specs=[SubagentSpec(name="w1", system_prompt="p")])
+        config = TeamConfig(
+            lead_prompt="lead", worker_specs=[SubagentSpec(name="w1", system_prompt="p")]
+        )
         team_id = await orch.start(config, "t")
 
-        await orch.send_message(team_id, TeamMessage(from_agent="lead", to_agent="w1", content="a", timestamp=_now()))
-        await orch.send_message(team_id, TeamMessage(from_agent="w1", to_agent="lead", content="b", timestamp=_now()))
+        await orch.send_message(
+            team_id, TeamMessage(from_agent="lead", to_agent="w1", content="a", timestamp=_now())
+        )
+        await orch.send_message(
+            team_id, TeamMessage(from_agent="w1", to_agent="lead", content="b", timestamp=_now())
+        )
 
         status = await orch.get_team_status(team_id)
         assert status.messages_exchanged == 2

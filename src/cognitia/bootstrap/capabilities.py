@@ -96,9 +96,7 @@ def collect_capability_tools(
         selected_names = _select_tool_names_by_budget(all_specs, tool_budget_config)
         all_specs = {name: spec for name, spec in all_specs.items() if name in selected_names}
         all_executors = {
-            name: executor
-            for name, executor in all_executors.items()
-            if name in selected_names
+            name: executor for name, executor in all_executors.items() if name in selected_names
         }
 
     return all_specs, all_executors

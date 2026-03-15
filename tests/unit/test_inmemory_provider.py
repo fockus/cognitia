@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from cognitia.memory.inmemory import InMemoryMemoryProvider
 from cognitia.memory.types import GoalState, ToolEvent
 
@@ -151,7 +150,10 @@ class TestSessionState:
     async def test_session_state_delegation_persist(self, provider: InMemoryMemoryProvider) -> None:
         """Delegation fields сохраняются и восстанавливаются."""
         await provider.save_session_state(
-            "u1", "t1", "deposit_advisor", ["finuslugi"],
+            "u1",
+            "t1",
+            "deposit_advisor",
+            ["finuslugi"],
             delegated_from="orchestrator",
             delegation_turn_count=5,
             pending_delegation=None,

@@ -9,8 +9,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from conftest import FakeStreamEvent
-
 from cognitia.agent import (
     Agent,
     AgentConfig,
@@ -20,6 +18,7 @@ from cognitia.agent import (
     SecurityGuard,
     tool,
 )
+from conftest import FakeStreamEvent
 
 # ---------------------------------------------------------------------------
 # E2E: One-shot query
@@ -65,9 +64,7 @@ class TestE2EStreaming:
         async def fake_stream(prompt):
             yield FakeStreamEvent(type="text_delta", text="Hello ")
             yield FakeStreamEvent(type="text_delta", text="World")
-            yield FakeStreamEvent(
-                type="done", text="Hello World", is_final=True
-            )
+            yield FakeStreamEvent(type="done", text="Hello World", is_final=True)
 
         with patch.object(agent, "_execute_stream", side_effect=fake_stream):
             events = []
@@ -116,12 +113,8 @@ class TestE2EConversation:
         assert r2.text == "R2"
         assert r3.text == "R3"
         assert len(conv.history) == 6
-        assert all(
-            conv.history[i].role == "user" for i in range(0, 6, 2)
-        )
-        assert all(
-            conv.history[i].role == "assistant" for i in range(1, 6, 2)
-        )
+        assert all(conv.history[i].role == "user" for i in range(0, 6, 2))
+        assert all(conv.history[i].role == "assistant" for i in range(1, 6, 2))
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +268,17 @@ class TestE2EPublicAPI:
             ToolDefinition,
         )
 
-        assert all([
-            Agent, AgentConfig, BudgetExceededError, Conversation,
-            CostTracker, Middleware, Result, SecurityGuard, ToolDefinition, tool,
-        ])
+        assert all(
+            [
+                Agent,
+                AgentConfig,
+                BudgetExceededError,
+                Conversation,
+                CostTracker,
+                Middleware,
+                Result,
+                SecurityGuard,
+                ToolDefinition,
+                tool,
+            ]
+        )

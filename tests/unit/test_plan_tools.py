@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-
 from cognitia.orchestration.plan_store import InMemoryPlanStore
 from cognitia.orchestration.types import Plan, PlanStep
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 @pytest.fixture()
@@ -30,7 +29,8 @@ def mock_planner(plan_store) -> AsyncMock:
     async def gen(goal, context=""):
         _counter["n"] += 1
         plan = Plan(
-            id=f"p{_counter['n']}", goal=goal,
+            id=f"p{_counter['n']}",
+            goal=goal,
             steps=[
                 PlanStep(id="s1", description="Шаг 1"),
                 PlanStep(id="s2", description="Шаг 2"),

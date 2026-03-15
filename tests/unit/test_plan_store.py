@@ -5,13 +5,13 @@ CRUD операции, edge cases, multi-tenant.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cognitia.orchestration.types import Plan, PlanStep
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _make_plan(plan_id: str = "p1", goal: str = "test") -> Plan:

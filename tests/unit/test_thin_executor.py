@@ -4,7 +4,6 @@ import json
 
 import httpx
 import pytest
-
 from cognitia.agent.tool import tool
 from cognitia.runtime.thin.executor import ToolExecutor
 
@@ -15,6 +14,7 @@ class TestToolExecutorLocal:
     @pytest.mark.asyncio
     async def test_sync_local_tool(self) -> None:
         """Sync local tool выполняется через asyncio.to_thread."""
+
         def calc(args):
             return {"result": args["a"] + args["b"]}
 
@@ -26,6 +26,7 @@ class TestToolExecutorLocal:
     @pytest.mark.asyncio
     async def test_async_local_tool(self) -> None:
         """Async local tool выполняется напрямую."""
+
         async def acalc(args):
             return {"result": args["x"] * 2}
 
@@ -37,6 +38,7 @@ class TestToolExecutorLocal:
     @pytest.mark.asyncio
     async def test_local_tool_error(self) -> None:
         """Ошибка local tool → JSON с error."""
+
         def bad_tool(args):
             raise ValueError("bad input")
 
@@ -49,6 +51,7 @@ class TestToolExecutorLocal:
     @pytest.mark.asyncio
     async def test_local_tool_returns_string(self) -> None:
         """Local tool возвращает строку — не переоборачиваем."""
+
         def str_tool(args):
             return "hello world"
 
@@ -149,7 +152,9 @@ class TestToolExecutorMcp:
 
         monkeypatch.setattr("cognitia.runtime.thin.mcp_client.httpx.AsyncClient", _Client)
 
-        executor = ToolExecutor(mcp_servers={"iss": "https://example.test/mcp"}, timeout_seconds=0.01)
+        executor = ToolExecutor(
+            mcp_servers={"iss": "https://example.test/mcp"}, timeout_seconds=0.01
+        )
         result = await executor.execute("mcp__iss__get_bonds", {"q": "test"})
         data = json.loads(result)
         assert "error" in data

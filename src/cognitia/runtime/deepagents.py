@@ -281,8 +281,7 @@ class DeepAgentsRuntime:
         """Стримить через LangChain astream_events."""
         lc_messages = self._build_lc_messages(messages, system_prompt)
         lc_tools = [
-            create_langchain_tool(spec, self._tool_executors.get(spec.name))
-            for spec in tools
+            create_langchain_tool(spec, self._tool_executors.get(spec.name)) for spec in tools
         ]
         llm = self._build_llm(model, base_url)
         runnable = llm.bind_tools(lc_tools) if lc_tools else llm

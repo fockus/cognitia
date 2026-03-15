@@ -425,8 +425,7 @@ class ThinRuntime:
 
         yield RuntimeEvent.status(f"План: {plan.goal} ({len(plan.steps)} шагов)")
         steps_preview = " -> ".join(
-            f"{idx}. {step.title} [{step.mode}]"
-            for idx, step in enumerate(plan.steps, start=1)
+            f"{idx}. {step.title} [{step.mode}]" for idx, step in enumerate(plan.steps, start=1)
         )
         if steps_preview:
             yield RuntimeEvent.status(f"Следующие шаги: {steps_preview}")

@@ -1,9 +1,9 @@
 """Tests for CodeVerifier protocol, TddCodeVerifier, and PlanStep DoD fields."""
+
 from __future__ import annotations
 
 import pytest
-
-from cognitia.orchestration.code_verifier import CommandResult, CommandRunner
+from cognitia.orchestration.code_verifier import CommandResult
 from cognitia.orchestration.coding_standards import CodingStandardsConfig
 from cognitia.orchestration.tdd_code_verifier import TddCodeVerifier
 from cognitia.orchestration.types import PlanStep

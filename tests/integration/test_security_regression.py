@@ -6,8 +6,9 @@ memory bank path traversal.
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC
 
+import pytest
 from cognitia.memory_bank.types import MemoryBankConfig, MemoryBankViolation
 from cognitia.tools.types import SandboxConfig, SandboxViolation
 
@@ -29,7 +30,9 @@ class TestPathIsolationPrefixBypass:
         secret = ws2 / "secret.txt"
         secret.write_text("SECRET")
 
-        sandbox = LocalSandboxProvider(SandboxConfig(root_path=str(tmp_path), user_id="u1", topic_id="t1"))
+        sandbox = LocalSandboxProvider(
+            SandboxConfig(root_path=str(tmp_path), user_id="u1", topic_id="t1")
+        )
 
         # Попытка прочитать файл из workspace2 через относительный путь
         with pytest.raises((SandboxViolation, FileNotFoundError)):
@@ -57,8 +60,12 @@ class TestCrossTenantIsolation:
     async def test_sandbox_cross_user_cannot_read(self, tmp_path) -> None:
         from cognitia.tools.sandbox_local import LocalSandboxProvider
 
-        sb_a = LocalSandboxProvider(SandboxConfig(root_path=str(tmp_path), user_id="alice", topic_id="t1"))
-        sb_b = LocalSandboxProvider(SandboxConfig(root_path=str(tmp_path), user_id="bob", topic_id="t1"))
+        sb_a = LocalSandboxProvider(
+            SandboxConfig(root_path=str(tmp_path), user_id="alice", topic_id="t1")
+        )
+        sb_b = LocalSandboxProvider(
+            SandboxConfig(root_path=str(tmp_path), user_id="bob", topic_id="t1")
+        )
 
         await sb_a.write_file("private.txt", "alice-secret")
 
@@ -77,19 +84,30 @@ class TestCrossTenantIsolation:
 
     async def test_plan_store_multi_tenant(self) -> None:
         """PlanStore фильтрует list_plans по user_id/topic_id."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from cognitia.orchestration.plan_store import InMemoryPlanStore
         from cognitia.orchestration.types import Plan, PlanStep
 
         store = InMemoryPlanStore()
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         store.set_namespace("alice", "t1")
-        await store.save(Plan(id="p1", goal="alice-plan", steps=[PlanStep(id="s1", description="x")], created_at=now))
+        await store.save(
+            Plan(
+                id="p1",
+                goal="alice-plan",
+                steps=[PlanStep(id="s1", description="x")],
+                created_at=now,
+            )
+        )
 
         store.set_namespace("bob", "t1")
-        await store.save(Plan(id="p2", goal="bob-plan", steps=[PlanStep(id="s1", description="y")], created_at=now))
+        await store.save(
+            Plan(
+                id="p2", goal="bob-plan", steps=[PlanStep(id="s1", description="y")], created_at=now
+            )
+        )
 
         alice_plans = await store.list_plans("alice", "t1")
         bob_plans = await store.list_plans("bob", "t1")
@@ -108,7 +126,9 @@ class TestPolicyCaseSensitivity:
         from cognitia.policy.tool_policy import ToolPolicyInput
 
         policy = DefaultToolPolicy()
-        state = ToolPolicyInput(tool_name="", input_data={}, active_skill_ids=[], allowed_local_tools=set())
+        state = ToolPolicyInput(
+            tool_name="", input_data={}, active_skill_ids=[], allowed_local_tools=set()
+        )
         # snake_case должен быть запрещён
         assert isinstance(policy.can_use_tool("bash", {}, state), PermissionDeny)
         assert isinstance(policy.can_use_tool("read", {}, state), PermissionDeny)
@@ -118,7 +138,9 @@ class TestPolicyCaseSensitivity:
         from cognitia.policy.tool_policy import ToolPolicyInput
 
         policy = DefaultToolPolicy()
-        state = ToolPolicyInput(tool_name="", input_data={}, active_skill_ids=[], allowed_local_tools=set())
+        state = ToolPolicyInput(
+            tool_name="", input_data={}, active_skill_ids=[], allowed_local_tools=set()
+        )
         assert isinstance(policy.can_use_tool("Bash", {}, state), PermissionDeny)
         assert isinstance(policy.can_use_tool("Read", {}, state), PermissionDeny)
 
@@ -127,6 +149,8 @@ class TestPolicyCaseSensitivity:
         from cognitia.policy.tool_policy import ToolPolicyInput
 
         policy = DefaultToolPolicy(allowed_system_tools={"Bash", "bash"})
-        state = ToolPolicyInput(tool_name="", input_data={}, active_skill_ids=[], allowed_local_tools={"Bash", "bash"})
+        state = ToolPolicyInput(
+            tool_name="", input_data={}, active_skill_ids=[], allowed_local_tools={"Bash", "bash"}
+        )
         assert isinstance(policy.can_use_tool("Bash", {}, state), PermissionAllow)
         assert isinstance(policy.can_use_tool("bash", {}, state), PermissionAllow)

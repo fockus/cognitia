@@ -148,9 +148,15 @@ class TestRegistryToSdkHooks:
 
         sdk_callback = result["PreToolUse"][0].hooks[0]
         output = await sdk_callback(
-            {"hook_event_name": "PreToolUse", "tool_name": "X",
-             "tool_input": {}, "tool_use_id": "t1",
-             "session_id": "s", "transcript_path": "", "cwd": ""},
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "X",
+                "tool_input": {},
+                "tool_use_id": "t1",
+                "session_id": "s",
+                "transcript_path": "",
+                "cwd": "",
+            },
             "t1",
             {"signal": None},
         )

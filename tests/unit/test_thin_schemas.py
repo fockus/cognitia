@@ -1,13 +1,12 @@
 """Тесты для Pydantic-схем ThinRuntime — ActionEnvelope, PlanSchema."""
 
 import pytest
-from pydantic import ValidationError
-
 from cognitia.runtime.thin.schemas import (
     ActionEnvelope,
     PlanSchema,
     PlanStep,
 )
+from pydantic import ValidationError
 
 
 class TestActionEnvelopeToolCall:
@@ -16,7 +15,11 @@ class TestActionEnvelopeToolCall:
     def test_parse_tool_call(self) -> None:
         data = {
             "type": "tool_call",
-            "tool": {"name": "mcp__iss__get_bonds", "args": {"q": "облигации"}, "correlation_id": "c1"},
+            "tool": {
+                "name": "mcp__iss__get_bonds",
+                "args": {"q": "облигации"},
+                "correlation_id": "c1",
+            },
         }
         env = ActionEnvelope.model_validate(data)
         assert env.type == "tool_call"
@@ -128,19 +131,28 @@ class TestPlanSchema:
 
     def test_plan_empty_steps_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            PlanSchema.model_validate({
-                "type": "plan", "goal": "x", "steps": [],
-            })
+            PlanSchema.model_validate(
+                {
+                    "type": "plan",
+                    "goal": "x",
+                    "steps": [],
+                }
+            )
 
     def test_plan_invalid_mode_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            PlanStep.model_validate({
-                "id": "s1", "title": "x", "mode": "invalid",
-            })
+            PlanStep.model_validate(
+                {
+                    "id": "s1",
+                    "title": "x",
+                    "mode": "invalid",
+                }
+            )
 
     def test_plan_step_with_hints(self) -> None:
         step = PlanStep(
-            id="s1", title="Найти вклады",
+            id="s1",
+            title="Найти вклады",
             mode="react",
             tool_hints=["mcp__finuslugi__get_bank_deposits"],
             success_criteria=["Найдены вклады > 10%"],

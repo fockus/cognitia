@@ -133,6 +133,7 @@ class TestMcpToolsToOptions:
 
     def test_mcp_tools_in_options_pipeline(self) -> None:
         """@mcp_tool → create_mcp_server → sdk_mcp_servers → options."""
+
         @mcp_tool("greet", "Greet user", {"name": str})
         async def greet(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": f"Hi {args['name']}"}]}

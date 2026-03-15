@@ -49,10 +49,12 @@ class PostgresMemoryProvider:
         """Сохранить сообщение в историю темы."""
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO messages (user_id, topic_id, role, content, tool_calls)
                     VALUES ({_USER_ID_SUB}, :topic_id, :role, :content, CAST(:tool_calls AS jsonb))
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": topic_id,
@@ -68,13 +70,15 @@ class PostgresMemoryProvider:
         """Получить последние N сообщений темы (ASC по времени)."""
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT role, content, tool_calls
                     FROM messages
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
                     ORDER BY created_at DESC
                     LIMIT :limit
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id, "limit": limit},
             )
             rows = result.fetchall()
@@ -88,10 +92,12 @@ class PostgresMemoryProvider:
         """Количество сообщений в теме."""
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT COUNT(*) as cnt FROM messages
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -101,7 +107,8 @@ class PostgresMemoryProvider:
         """Удалить старые сообщения, оставив последние keep_last."""
         async with self._session(commit=True) as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     DELETE FROM messages
                     WHERE id IN (
                         SELECT id FROM messages
@@ -113,7 +120,8 @@ class PostgresMemoryProvider:
                             WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
                         )
                     )
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id, "keep_last": keep_last},
             )
             return int(result.rowcount)  # type: ignore[attr-defined]
@@ -139,7 +147,8 @@ class PostgresMemoryProvider:
             if topic_id is not None:
                 # Факт привязан к теме
                 await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         INSERT INTO facts (user_id, topic_id, key, value, source)
                         VALUES ({_USER_ID_SUB}, :topic_id, :key, CAST(:value AS jsonb), :source)
                         ON CONFLICT (user_id, topic_id, key)
@@ -149,7 +158,8 @@ class PostgresMemoryProvider:
                             source = EXCLUDED.source,
                             updated_at = now()
                         WHERE facts.source != 'user' OR EXCLUDED.source = 'user'
-                    """),
+                    """
+                    ),
                     {
                         "user_id": user_id,
                         "topic_id": topic_id,
@@ -161,7 +171,8 @@ class PostgresMemoryProvider:
             else:
                 # Глобальный факт (topic_id IS NULL)
                 await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         INSERT INTO facts (user_id, topic_id, key, value, source)
                         VALUES ({_USER_ID_SUB}, NULL, :key, CAST(:value AS jsonb), :source)
                         ON CONFLICT (user_id, key)
@@ -171,7 +182,8 @@ class PostgresMemoryProvider:
                             source = EXCLUDED.source,
                             updated_at = now()
                         WHERE facts.source != 'user' OR EXCLUDED.source = 'user'
-                    """),
+                    """
+                    ),
                     {
                         "user_id": user_id,
                         "key": key,
@@ -185,21 +197,25 @@ class PostgresMemoryProvider:
         async with self._session() as session:
             if topic_id:
                 result = await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         SELECT key, value, topic_id FROM facts
                         WHERE user_id = {_USER_ID_SUB}
                           AND (topic_id IS NULL OR topic_id = :topic_id)
                         ORDER BY updated_at DESC
-                    """),
+                    """
+                    ),
                     {"user_id": user_id, "topic_id": topic_id},
                 )
             else:
                 result = await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         SELECT key, value FROM facts
                         WHERE user_id = {_USER_ID_SUB} AND topic_id IS NULL
                         ORDER BY updated_at DESC
-                    """),
+                    """
+                    ),
                     {"user_id": user_id},
                 )
             rows = result.fetchall()
@@ -219,7 +235,8 @@ class PostgresMemoryProvider:
         """Сохранить/обновить rolling summary с версионированием."""
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO summaries (user_id, topic_id, summary, messages_covered, version)
                     VALUES ({_USER_ID_SUB}, :topic_id, :summary, :messages_covered, 1)
                     ON CONFLICT (user_id, topic_id)
@@ -228,7 +245,8 @@ class PostgresMemoryProvider:
                         messages_covered = EXCLUDED.messages_covered,
                         version = summaries.version + 1,
                         updated_at = now()
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": topic_id,
@@ -241,10 +259,12 @@ class PostgresMemoryProvider:
         """Получить summary темы."""
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT summary FROM summaries
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -256,11 +276,13 @@ class PostgresMemoryProvider:
         """Создать пользователя если не существует, вернуть external_id."""
         async with self._session(commit=True) as session:
             await session.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO users (external_id)
                     VALUES (:external_id)
                     ON CONFLICT (external_id) DO NOTHING
-                """),
+                """
+                ),
                 {"external_id": external_id},
             )
         return external_id
@@ -271,7 +293,8 @@ class PostgresMemoryProvider:
         """Сохранить/обновить цель."""
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO goals (user_id, topic_id, title, target_amount, current_amount,
                                        phase, is_main, plan, status)
                     VALUES (
@@ -287,7 +310,8 @@ class PostgresMemoryProvider:
                         is_main = EXCLUDED.is_main,
                         plan = EXCLUDED.plan,
                         status = 'active'
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": goal.goal_id,
@@ -304,7 +328,8 @@ class PostgresMemoryProvider:
         """Получить активную цель темы."""
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT topic_id, title, target_amount, current_amount, phase, plan, is_main
                     FROM goals
                     WHERE user_id = {_USER_ID_SUB}
@@ -312,7 +337,8 @@ class PostgresMemoryProvider:
                       AND status = 'active'
                     ORDER BY priority DESC, created_at DESC
                     LIMIT 1
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -346,7 +372,8 @@ class PostgresMemoryProvider:
         """Сохранить состояние сессии для rehydration (таблица topics, §8.4)."""
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO topics (user_id, topic_id, role_id, active_skill_ids, prompt_hash,
                                         delegated_from, delegation_turn_count, pending_delegation, delegation_summary)
                     VALUES ({_USER_ID_SUB}, :topic_id, :role_id, CAST(:skill_ids AS jsonb), :prompt_hash,
@@ -361,7 +388,8 @@ class PostgresMemoryProvider:
                         pending_delegation = EXCLUDED.pending_delegation,
                         delegation_summary = EXCLUDED.delegation_summary,
                         updated_at = now()
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": topic_id,
@@ -379,13 +407,15 @@ class PostgresMemoryProvider:
         """Получить состояние сессии (из таблицы topics)."""
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT role_id, active_skill_ids, title, COALESCE(prompt_hash, '') as prompt_hash,
                            delegated_from, COALESCE(delegation_turn_count, 0) as delegation_turn_count,
                            pending_delegation, delegation_summary
                     FROM topics
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -420,7 +450,8 @@ class PostgresMemoryProvider:
         """Сохранить/обновить текущую фазу пользователя."""
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO phase_state (user_id, phase, notes)
                     VALUES ({_USER_ID_SUB}, :phase, :notes)
                     ON CONFLICT (user_id)
@@ -428,7 +459,8 @@ class PostgresMemoryProvider:
                         phase = EXCLUDED.phase,
                         notes = EXCLUDED.notes,
                         updated_at = now()
-                """),
+                """
+                ),
                 {"user_id": user_id, "phase": phase, "notes": notes},
             )
 
@@ -436,10 +468,12 @@ class PostgresMemoryProvider:
         """Получить текущую фазу пользователя."""
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT phase, notes FROM phase_state
                     WHERE user_id = {_USER_ID_SUB}
-                """),
+                """
+                ),
                 {"user_id": user_id},
             )
             row = result.fetchone()
@@ -461,12 +495,14 @@ class PostgresMemoryProvider:
         """Сохранить событие вызова инструмента."""
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO tool_events (user_id, topic_id, tool_name,
                                              input_json, output_json, latency_ms)
                     VALUES ({_USER_ID_SUB}, :topic_id, :tool_name,
                             CAST(:input_json AS jsonb), CAST(:output_json AS jsonb), :latency_ms)
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": event.topic_id,

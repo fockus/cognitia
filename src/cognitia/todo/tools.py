@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from cognitia.runtime.types import ToolSpec
@@ -69,9 +69,11 @@ def create_todo_tools(
             status_filter = args.get("status_filter")
             if status_filter:
                 todos = [t for t in todos if t.status == status_filter]
-            return json.dumps({
-                "todos": [t.to_dict() for t in todos],
-            })
+            return json.dumps(
+                {
+                    "todos": [t.to_dict() for t in todos],
+                }
+            )
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})
 
@@ -81,7 +83,7 @@ def create_todo_tools(
         if not isinstance(raw_todos, list):
             return json.dumps({"status": "error", "message": "todos должен быть массивом"})
         try:
-            now = datetime.now(tz=timezone.utc)
+            now = datetime.now(tz=UTC)
             items = [
                 TodoItem(
                     id=t.get("id", ""),

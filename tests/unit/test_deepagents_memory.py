@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.types import Command
-
 from cognitia.runtime.deepagents_memory import (
     build_native_invocation,
     build_native_state_notice,
     validate_native_state_config,
 )
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.types import Command
 
 
 def test_validate_resume_requires_checkpointer() -> None:

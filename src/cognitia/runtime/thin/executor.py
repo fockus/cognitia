@@ -74,7 +74,7 @@ class ToolExecutor:
             if isinstance(result, str):
                 return result
             return json.dumps(result, ensure_ascii=False, default=str)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return json.dumps(
                 {"error": f"Таймаут выполнения {tool_name} ({self._timeout}s)"},
                 ensure_ascii=False,
@@ -132,7 +132,8 @@ class ToolExecutor:
             return not any(
                 param.default is inspect.Parameter.empty
                 for param in params
-                if param.kind in (
+                if param.kind
+                in (
                     inspect.Parameter.POSITIONAL_OR_KEYWORD,
                     inspect.Parameter.KEYWORD_ONLY,
                 )
@@ -141,7 +142,8 @@ class ToolExecutor:
         accepted_names = {
             param.name
             for param in params
-            if param.kind in (
+            if param.kind
+            in (
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 inspect.Parameter.KEYWORD_ONLY,
             )

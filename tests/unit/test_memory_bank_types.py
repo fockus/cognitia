@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -23,8 +23,11 @@ class TestMemoryBankConfig:
         from cognitia.memory_bank.types import MemoryBankConfig
 
         cfg = MemoryBankConfig(
-            enabled=True, backend="database",
-            max_entries=50, max_depth=1, default_folders=["custom"],
+            enabled=True,
+            backend="database",
+            max_entries=50,
+            max_depth=1,
+            default_folders=["custom"],
         )
         assert cfg.enabled is True
         assert cfg.backend == "database"
@@ -36,9 +39,10 @@ class TestMemoryEntry:
         from cognitia.memory_bank.types import MemoryEntry
 
         entry = MemoryEntry(
-            path="plans/2026-02-12_feature.md", content="# Plan",
-            created_at=datetime.now(tz=timezone.utc),
-            updated_at=datetime.now(tz=timezone.utc),
+            path="plans/2026-02-12_feature.md",
+            content="# Plan",
+            created_at=datetime.now(tz=UTC),
+            updated_at=datetime.now(tz=UTC),
         )
         assert entry.path == "plans/2026-02-12_feature.md"
         assert entry.content == "# Plan"
@@ -114,7 +118,11 @@ class TestMemoryBankProviderProtocol:
     def test_isp_max_5(self) -> None:
         from cognitia.memory_bank.protocols import MemoryBankProvider
 
-        methods = [n for n in dir(MemoryBankProvider) if not n.startswith("_") and callable(getattr(MemoryBankProvider, n, None))]
+        methods = [
+            n
+            for n in dir(MemoryBankProvider)
+            if not n.startswith("_") and callable(getattr(MemoryBankProvider, n, None))
+        ]
         assert len(methods) <= 5
 
     def test_no_freedom_imports(self) -> None:

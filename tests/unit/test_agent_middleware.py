@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from cognitia.agent.config import AgentConfig
 from cognitia.agent.middleware import (
     BudgetExceededError,

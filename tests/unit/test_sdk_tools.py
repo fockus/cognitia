@@ -1,7 +1,6 @@
 """Тесты для sdk_tools — in-process MCP tools wrapper."""
 
 import pytest
-
 from cognitia.runtime.sdk_tools import create_mcp_server, mcp_tool
 
 
@@ -10,6 +9,7 @@ class TestMcpTool:
 
     def test_decorator_returns_sdk_mcp_tool(self) -> None:
         """@mcp_tool возвращает SdkMcpTool."""
+
         @mcp_tool("greet", "Greet user", {"name": str})
         async def greet(args):
             return {"content": [{"type": "text", "text": f"Hi {args['name']}"}]}
@@ -19,6 +19,7 @@ class TestMcpTool:
 
     def test_decorator_preserves_handler(self) -> None:
         """Handler сохраняется в SdkMcpTool."""
+
         @mcp_tool("add", "Add two numbers", {"a": float, "b": float})
         async def add(args):
             return {"content": [{"type": "text", "text": str(args["a"] + args["b"])}]}
@@ -28,6 +29,7 @@ class TestMcpTool:
     @pytest.mark.asyncio
     async def test_handler_callable(self) -> None:
         """Handler вызывается корректно."""
+
         @mcp_tool("echo", "Echo input", {"text": str})
         async def echo(args):
             return {"content": [{"type": "text", "text": args["text"]}]}
@@ -41,6 +43,7 @@ class TestCreateMcpServer:
 
     def test_creates_sdk_config(self) -> None:
         """create_mcp_server возвращает McpSdkServerConfig."""
+
         @mcp_tool("test_tool", "Test", {"x": str})
         async def test_tool(args):
             return {"content": [{"type": "text", "text": "ok"}]}
@@ -63,6 +66,7 @@ class TestCreateMcpServer:
 
     def test_multiple_tools(self) -> None:
         """Сервер с несколькими инструментами."""
+
         @mcp_tool("tool_a", "Tool A", {"x": str})
         async def tool_a(args):
             return {"content": [{"type": "text", "text": "a"}]}

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from cognitia.runtime.thin.runtime import ThinRuntime
 from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent, ToolSpec
 
@@ -48,10 +47,12 @@ class TestLoopLimit:
     async def test_loop_limit_reached(self) -> None:
         """Превышение max_iterations → RuntimeError(kind=loop_limit)."""
         # LLM всегда возвращает tool_call — loop не завершится
-        tool_call = json.dumps({
-            "type": "tool_call",
-            "tool": {"name": "calc", "args": {}, "correlation_id": "c1"},
-        })
+        tool_call = json.dumps(
+            {
+                "type": "tool_call",
+                "tool": {"name": "calc", "args": {}, "correlation_id": "c1"},
+            }
+        )
         llm = MockLLM(response=tool_call)
         runtime = ThinRuntime(
             llm_call=llm,
@@ -69,10 +70,12 @@ class TestLoopLimit:
     @pytest.mark.asyncio
     async def test_loop_limit_default(self) -> None:
         """Default max_iterations=6."""
-        tool_call = json.dumps({
-            "type": "tool_call",
-            "tool": {"name": "calc", "args": {}},
-        })
+        tool_call = json.dumps(
+            {
+                "type": "tool_call",
+                "tool": {"name": "calc", "args": {}},
+            }
+        )
         llm = MockLLM(response=tool_call)
         runtime = ThinRuntime(
             llm_call=llm,
@@ -91,10 +94,12 @@ class TestBudgetExceeded:
     @pytest.mark.asyncio
     async def test_tool_calls_budget_exceeded(self) -> None:
         """Превышение max_tool_calls → RuntimeError(kind=budget_exceeded)."""
-        tool_call = json.dumps({
-            "type": "tool_call",
-            "tool": {"name": "calc", "args": {}},
-        })
+        tool_call = json.dumps(
+            {
+                "type": "tool_call",
+                "tool": {"name": "calc", "args": {}},
+            }
+        )
         llm = MockLLM(response=tool_call)
         runtime = ThinRuntime(
             llm_call=llm,
@@ -104,7 +109,7 @@ class TestBudgetExceeded:
         config = RuntimeConfig(
             runtime_name="thin",
             max_iterations=20,  # высокий, чтобы не сработал loop_limit
-            max_tool_calls=2,   # низкий — сработает budget_exceeded
+            max_tool_calls=2,  # низкий — сработает budget_exceeded
         )
         events = await collect(runtime, config)
 

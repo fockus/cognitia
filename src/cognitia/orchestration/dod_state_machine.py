@@ -2,6 +2,7 @@
 
 State machine: PENDING → VERIFYING → PASSED / FAILED / MAX_LOOPS_EXCEEDED.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,9 +39,7 @@ class DoDStateMachine:
     def __init__(self, max_loops: int = 3) -> None:
         self._max_loops = max_loops
 
-    async def verify_dod(
-        self, criteria: tuple[str, ...], verifier: CodeVerifier
-    ) -> DoDResult:
+    async def verify_dod(self, criteria: tuple[str, ...], verifier: CodeVerifier) -> DoDResult:
         """Run verification loop until all criteria pass or max loops exceeded."""
         if not criteria:
             return DoDResult(status=DoDStatus.PASSED, loop_count=0, verification_log="No criteria")
@@ -70,9 +69,7 @@ class DoDStateMachine:
             verification_log="\n".join(log_lines),
         )
 
-    async def _run_criterion(
-        self, criterion: str, verifier: CodeVerifier
-    ) -> _CriterionResult:
+    async def _run_criterion(self, criterion: str, verifier: CodeVerifier) -> _CriterionResult:
         """Map criterion name to verifier method and run it."""
         from cognitia.orchestration.verification_types import VerificationResult
 
@@ -85,9 +82,7 @@ class DoDStateMachine:
         }
         method_name = method_map.get(criterion.lower())
         if method_name is None:
-            return _CriterionResult(
-                status=VerificationStatus.SKIP, passed=False
-            )
+            return _CriterionResult(status=VerificationStatus.SKIP, passed=False)
         method = getattr(verifier, method_name)
         result: VerificationResult = await method()
         return _CriterionResult(status=result.status, passed=result.passed)

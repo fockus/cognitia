@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from cognitia.runtime.deepagents_native import (
     build_deepagents_graph,
     stream_deepagents_graph_events,

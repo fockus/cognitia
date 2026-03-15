@@ -40,10 +40,12 @@ class SQLiteMemoryProvider:
     ) -> None:
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO messages (user_id, topic_id, role, content, tool_calls)
                     VALUES ({_USER_ID_SUB}, :topic_id, :role, :content, :tool_calls)
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": topic_id,
@@ -61,13 +63,15 @@ class SQLiteMemoryProvider:
     ) -> list[MemoryMessage]:
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT role, content, tool_calls
                     FROM messages
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
                     ORDER BY created_at DESC, id DESC
                     LIMIT :limit
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id, "limit": limit},
             )
             rows = result.fetchall()
@@ -83,11 +87,13 @@ class SQLiteMemoryProvider:
     async def count_messages(self, user_id: str, topic_id: str) -> int:
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT COUNT(*) AS cnt
                     FROM messages
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -98,7 +104,8 @@ class SQLiteMemoryProvider:
     async def delete_messages_before(self, user_id: str, topic_id: str, keep_last: int = 10) -> int:
         async with self._session(commit=True) as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     DELETE FROM messages
                     WHERE id IN (
                         SELECT id FROM messages
@@ -113,7 +120,8 @@ class SQLiteMemoryProvider:
                             WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
                         )
                     )
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id, "keep_last": keep_last},
             )
             return int(result.rowcount or 0)
@@ -133,7 +141,8 @@ class SQLiteMemoryProvider:
             if topic_id is not None:
                 # Для topic-scoped фактов сохраняем правило приоритета source.
                 updated = await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         UPDATE facts
                         SET value = :value,
                             source = :source,
@@ -142,7 +151,8 @@ class SQLiteMemoryProvider:
                           AND topic_id = :topic_id
                           AND key = :key
                           AND (source != 'user' OR :source = 'user')
-                    """),
+                    """
+                    ),
                     {
                         "user_id": user_id,
                         "topic_id": topic_id,
@@ -153,10 +163,12 @@ class SQLiteMemoryProvider:
                 )
                 if (updated.rowcount or 0) == 0:
                     await session.execute(
-                        text(f"""
+                        text(
+                            f"""
                             INSERT INTO facts (user_id, topic_id, key, value, source)
                             VALUES ({_USER_ID_SUB}, :topic_id, :key, :value, :source)
-                        """),
+                        """
+                        ),
                         {
                             "user_id": user_id,
                             "topic_id": topic_id,
@@ -167,7 +179,8 @@ class SQLiteMemoryProvider:
                     )
             else:
                 updated = await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         UPDATE facts
                         SET value = :value,
                             source = :source,
@@ -176,7 +189,8 @@ class SQLiteMemoryProvider:
                           AND topic_id IS NULL
                           AND key = :key
                           AND (source != 'user' OR :source = 'user')
-                    """),
+                    """
+                    ),
                     {
                         "user_id": user_id,
                         "key": key,
@@ -186,10 +200,12 @@ class SQLiteMemoryProvider:
                 )
                 if (updated.rowcount or 0) == 0:
                     await session.execute(
-                        text(f"""
+                        text(
+                            f"""
                             INSERT INTO facts (user_id, topic_id, key, value, source)
                             VALUES ({_USER_ID_SUB}, NULL, :key, :value, :source)
-                        """),
+                        """
+                        ),
                         {
                             "user_id": user_id,
                             "key": key,
@@ -202,22 +218,26 @@ class SQLiteMemoryProvider:
         async with self._session() as session:
             if topic_id:
                 result = await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         SELECT key, value, topic_id FROM facts
                         WHERE user_id = {_USER_ID_SUB}
                           AND (topic_id IS NULL OR topic_id = :topic_id)
                         ORDER BY updated_at DESC, id DESC
-                    """),
+                    """
+                    ),
                     {"user_id": user_id, "topic_id": topic_id},
                 )
             else:
                 result = await session.execute(
-                    text(f"""
+                    text(
+                        f"""
                         SELECT key, value FROM facts
                         WHERE user_id = {_USER_ID_SUB}
                           AND topic_id IS NULL
                         ORDER BY updated_at DESC, id DESC
-                    """),
+                    """
+                    ),
                     {"user_id": user_id},
                 )
             rows = result.fetchall()
@@ -236,7 +256,8 @@ class SQLiteMemoryProvider:
     ) -> None:
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO summaries (user_id, topic_id, summary, messages_covered, version)
                     VALUES ({_USER_ID_SUB}, :topic_id, :summary, :messages_covered, 1)
                     ON CONFLICT (user_id, topic_id)
@@ -245,7 +266,8 @@ class SQLiteMemoryProvider:
                         messages_covered = excluded.messages_covered,
                         version = summaries.version + 1,
                         updated_at = CURRENT_TIMESTAMP
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": topic_id,
@@ -257,10 +279,12 @@ class SQLiteMemoryProvider:
     async def get_summary(self, user_id: str, topic_id: str) -> str | None:
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT summary FROM summaries
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -271,11 +295,13 @@ class SQLiteMemoryProvider:
     async def ensure_user(self, external_id: str) -> str:
         async with self._session(commit=True) as session:
             await session.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO users (external_id)
                     VALUES (:external_id)
                     ON CONFLICT (external_id) DO NOTHING
-                """),
+                """
+                ),
                 {"external_id": external_id},
             )
         return external_id
@@ -285,7 +311,8 @@ class SQLiteMemoryProvider:
     async def save_goal(self, user_id: str, goal: GoalState) -> None:
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO goals (
                         user_id, topic_id, title, target_amount,
                         current_amount, phase, is_main, plan, status
@@ -302,7 +329,8 @@ class SQLiteMemoryProvider:
                         is_main = excluded.is_main,
                         plan = excluded.plan,
                         status = 'active'
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": goal.goal_id,
@@ -318,7 +346,8 @@ class SQLiteMemoryProvider:
     async def get_active_goal(self, user_id: str, topic_id: str) -> GoalState | None:
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT topic_id, title, target_amount, current_amount, phase, plan, is_main
                     FROM goals
                     WHERE user_id = {_USER_ID_SUB}
@@ -326,7 +355,8 @@ class SQLiteMemoryProvider:
                       AND status = 'active'
                     ORDER BY priority DESC, created_at DESC
                     LIMIT 1
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -359,7 +389,8 @@ class SQLiteMemoryProvider:
     ) -> None:
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO topics (user_id, topic_id, role_id, active_skill_ids, prompt_hash,
                                         delegated_from, delegation_turn_count, pending_delegation, delegation_summary)
                     VALUES ({_USER_ID_SUB}, :topic_id, :role_id, :skill_ids, :prompt_hash,
@@ -374,7 +405,8 @@ class SQLiteMemoryProvider:
                         pending_delegation = excluded.pending_delegation,
                         delegation_summary = excluded.delegation_summary,
                         updated_at = CURRENT_TIMESTAMP
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": topic_id,
@@ -391,13 +423,15 @@ class SQLiteMemoryProvider:
     async def get_session_state(self, user_id: str, topic_id: str) -> dict[str, Any] | None:
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT role_id, active_skill_ids, title, COALESCE(prompt_hash, '') AS prompt_hash,
                            delegated_from, COALESCE(delegation_turn_count, 0) AS delegation_turn_count,
                            pending_delegation, delegation_summary
                     FROM topics
                     WHERE user_id = {_USER_ID_SUB} AND topic_id = :topic_id
-                """),
+                """
+                ),
                 {"user_id": user_id, "topic_id": topic_id},
             )
             row = result.fetchone()
@@ -430,7 +464,8 @@ class SQLiteMemoryProvider:
     ) -> None:
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO phase_state (user_id, phase, notes)
                     VALUES ({_USER_ID_SUB}, :phase, :notes)
                     ON CONFLICT (user_id)
@@ -438,18 +473,21 @@ class SQLiteMemoryProvider:
                         phase = excluded.phase,
                         notes = excluded.notes,
                         updated_at = CURRENT_TIMESTAMP
-                """),
+                """
+                ),
                 {"user_id": user_id, "phase": phase, "notes": notes},
             )
 
     async def get_phase_state(self, user_id: str) -> PhaseState | None:
         async with self._session() as session:
             result = await session.execute(
-                text(f"""
+                text(
+                    f"""
                     SELECT phase, notes
                     FROM phase_state
                     WHERE user_id = {_USER_ID_SUB}
-                """),
+                """
+                ),
                 {"user_id": user_id},
             )
             row = result.fetchone()
@@ -470,10 +508,12 @@ class SQLiteMemoryProvider:
     ) -> None:
         async with self._session(commit=True) as session:
             await session.execute(
-                text(f"""
+                text(
+                    f"""
                     INSERT INTO tool_events (user_id, topic_id, tool_name, input_json, output_json, latency_ms)
                     VALUES ({_USER_ID_SUB}, :topic_id, :tool_name, :input_json, :output_json, :latency_ms)
-                """),
+                """
+                ),
                 {
                     "user_id": user_id,
                     "topic_id": event.topic_id,

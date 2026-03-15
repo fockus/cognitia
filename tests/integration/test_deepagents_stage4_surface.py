@@ -6,7 +6,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from cognitia.agent.agent import Agent
 from cognitia.agent.config import AgentConfig
 from cognitia.agent.conversation import Conversation

@@ -50,6 +50,7 @@ class TestDetectModeReact:
     def test_compare_keyword(self) -> None:
         assert detect_mode("Сравни условия") == "react"
 
+
 class TestDetectModeConversational:
     """Default → conversational."""
 

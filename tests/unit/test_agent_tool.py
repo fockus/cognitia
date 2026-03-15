@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from cognitia.agent.tool import ToolDefinition, tool
 
 

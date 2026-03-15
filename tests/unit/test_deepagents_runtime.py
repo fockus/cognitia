@@ -20,7 +20,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from cognitia.runtime.deepagents import (
     DeepAgentsRuntime,
     _check_langchain_available,
@@ -82,7 +81,10 @@ class TestBuiltinToolsFiltering:
 
     def test_all_builtins_removed(self) -> None:
         """Каждый builtin из frozenset действительно фильтруется."""
-        tools = [ToolSpec(name=name, description="x", parameters={}) for name in DEEPAGENTS_NATIVE_BUILTIN_TOOLS]
+        tools = [
+            ToolSpec(name=name, description="x", parameters={})
+            for name in DEEPAGENTS_NATIVE_BUILTIN_TOOLS
+        ]
         filtered = DeepAgentsRuntime.filter_builtin_tools(tools)
         assert filtered == []
 
@@ -259,7 +261,8 @@ class TestDeepAgentsRuntimeRun:
     async def test_run_passes_base_url(self) -> None:
         """base_url из config пробрасывается в _stream_langchain."""
         cfg = RuntimeConfig(
-            runtime_name="deepagents", model="test",
+            runtime_name="deepagents",
+            model="test",
             base_url="https://proxy.example.com",
         )
         runtime = DeepAgentsRuntime(config=cfg)
@@ -333,7 +336,11 @@ class TestDeepAgentsRuntimeRun:
         with (
             patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
             patch.object(runtime, "_stream_native", side_effect=_fake_native) as mock_native,
-            patch.object(runtime, "_stream_langchain", side_effect=AssertionError("compat path не должен вызываться")),
+            patch.object(
+                runtime,
+                "_stream_langchain",
+                side_effect=AssertionError("compat path не должен вызываться"),
+            ),
         ):
             events = []
             async for ev in runtime.run(
@@ -360,7 +367,11 @@ class TestDeepAgentsRuntimeRun:
         with (
             patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
             patch.object(runtime, "_stream_langchain", side_effect=_fake_compat) as mock_compat,
-            patch.object(runtime, "_stream_native", side_effect=AssertionError("native path не должен вызываться")),
+            patch.object(
+                runtime,
+                "_stream_native",
+                side_effect=AssertionError("native path не должен вызываться"),
+            ),
         ):
             events = []
             async for ev in runtime.run(
@@ -405,7 +416,9 @@ class TestDeepAgentsRuntimeRun:
 
         async def _fake_stream_with_tools(**kwargs):
             yield RuntimeEvent.tool_call_started(name="calc", args={"x": 1}, correlation_id="cid-1")
-            yield RuntimeEvent.tool_call_finished(name="calc", correlation_id="cid-1", result_summary="42")
+            yield RuntimeEvent.tool_call_finished(
+                name="calc", correlation_id="cid-1", result_summary="42"
+            )
             yield RuntimeEvent.assistant_delta("Результат: 42")
 
         with (
@@ -687,7 +700,8 @@ class TestBuildLcMessages:
             pytest.skip("langchain_core не установлен")
 
         lc = runtime._build_lc_messages(
-            [Message(role="user", content="Привет")], "sys",
+            [Message(role="user", content="Привет")],
+            "sys",
         )
         assert isinstance(lc[1], HumanMessage)
         assert lc[1].content == "Привет"
@@ -701,7 +715,8 @@ class TestBuildLcMessages:
             pytest.skip("langchain_core не установлен")
 
         lc = runtime._build_lc_messages(
-            [Message(role="assistant", content="Ответ")], "sys",
+            [Message(role="assistant", content="Ответ")],
+            "sys",
         )
         assert isinstance(lc[1], AIMessage)
         assert lc[1].content == "Ответ"
@@ -715,7 +730,8 @@ class TestBuildLcMessages:
             pytest.skip("langchain_core не установлен")
 
         lc = runtime._build_lc_messages(
-            [Message(role="system", content="extra context")], "main prompt",
+            [Message(role="system", content="extra context")],
+            "main prompt",
         )
         system_msgs = [m for m in lc if isinstance(m, SystemMessage)]
         assert len(system_msgs) == 2
@@ -809,7 +825,10 @@ class TestStreamLangchain:
         ):
             events = []
             async for ev in runtime._stream_langchain(
-                messages=[], system_prompt="sys", tools=[], model="test",
+                messages=[],
+                system_prompt="sys",
+                tools=[],
+                model="test",
             ):
                 events.append(ev)
 
@@ -846,7 +865,10 @@ class TestStreamLangchain:
         ):
             events = []
             async for ev in runtime._stream_langchain(
-                messages=[], system_prompt="sys", tools=[], model="test",
+                messages=[],
+                system_prompt="sys",
+                tools=[],
+                model="test",
             ):
                 events.append(ev)
 
@@ -876,7 +898,10 @@ class TestStreamLangchain:
         ):
             events = []
             async for ev in runtime._stream_langchain(
-                messages=[], system_prompt="sys", tools=[], model="test",
+                messages=[],
+                system_prompt="sys",
+                tools=[],
+                model="test",
             ):
                 events.append(ev)
 
@@ -906,7 +931,10 @@ class TestStreamLangchain:
         ):
             events = []
             async for ev in runtime._stream_langchain(
-                messages=[], system_prompt="sys", tools=[], model="test",
+                messages=[],
+                system_prompt="sys",
+                tools=[],
+                model="test",
             ):
                 events.append(ev)
 
@@ -933,7 +961,10 @@ class TestStreamLangchain:
         ):
             events = []
             async for ev in runtime._stream_langchain(
-                messages=[], system_prompt="sys", tools=[], model="test",
+                messages=[],
+                system_prompt="sys",
+                tools=[],
+                model="test",
             ):
                 events.append(ev)
 
@@ -961,7 +992,10 @@ class TestStreamLangchain:
             patch("cognitia.runtime.deepagents.create_langchain_tool", return_value=MagicMock()),
         ):
             async for _ in runtime._stream_langchain(
-                messages=[], system_prompt="sys", tools=[spec], model="test",
+                messages=[],
+                system_prompt="sys",
+                tools=[spec],
+                model="test",
             ):
                 pass
 
@@ -984,7 +1018,10 @@ class TestStreamLangchain:
             patch.object(runtime, "_build_llm", return_value=mock_llm),
         ):
             async for _ in runtime._stream_langchain(
-                messages=[], system_prompt="sys", tools=[], model="test",
+                messages=[],
+                system_prompt="sys",
+                tools=[],
+                model="test",
             ):
                 pass
 
@@ -1080,6 +1117,7 @@ class TestCreateLangchainTool:
     async def test_executor_returns_dict_serialized(self) -> None:
         """Executor возвращает dict → сериализуется в JSON."""
         import json
+
         spec = ToolSpec(name="json_tool", description="d", parameters={})
 
         async def executor(**kwargs):
