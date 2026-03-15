@@ -10,13 +10,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from cognitia.runtime.deepagents import DeepAgentsRuntime
 from cognitia.runtime.ports.base import HISTORY_MAX, BaseRuntimePort
 from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent, ToolSpec
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from cognitia.runtime.deepagents import DeepAgentsRuntime
 
 
 class DeepAgentsRuntimePort(BaseRuntimePort):
@@ -56,6 +58,13 @@ class DeepAgentsRuntimePort(BaseRuntimePort):
 
     async def connect(self) -> None:
         """Инициализировать DeepAgentsRuntime."""
+        try:
+            from cognitia.runtime.deepagents import DeepAgentsRuntime
+        except ImportError as exc:
+            raise RuntimeError(
+                "DeepAgents runtime недоступен: установите optional dependency "
+                "`cognitia[deepagents]`."
+            ) from exc
         self._runtime = DeepAgentsRuntime(
             config=self._config,
             tool_executors=self._tool_executors,

@@ -60,6 +60,22 @@ class TestDockerSandboxProvider:
         with pytest.raises(SandboxViolation):
             await provider.execute("rm -rf /")
 
+    async def test_execute_denied_command_via_shell_wrapper_sh(self, config) -> None:
+        from cognitia.tools.sandbox_docker import DockerSandboxProvider
+        from cognitia.tools.types import SandboxViolation
+
+        provider = DockerSandboxProvider(config, _container=AsyncMock())
+        with pytest.raises(SandboxViolation):
+            await provider.execute("sh -c 'rm -rf /'")
+
+    async def test_execute_denied_command_via_shell_wrapper_bash(self, config) -> None:
+        from cognitia.tools.sandbox_docker import DockerSandboxProvider
+        from cognitia.tools.types import SandboxViolation
+
+        provider = DockerSandboxProvider(config, _container=AsyncMock())
+        with pytest.raises(SandboxViolation):
+            await provider.execute('bash -lc "rm -rf /"')
+
     async def test_list_dir(self, config) -> None:
         from cognitia.tools.sandbox_docker import DockerSandboxProvider
 
@@ -79,6 +95,14 @@ class TestDockerSandboxProvider:
         provider = DockerSandboxProvider(config, _container=mock_container)
         result = await provider.glob_files("**/*.py")
         assert "main.py" in result
+
+    async def test_glob_traversal_blocked(self, config) -> None:
+        from cognitia.tools.sandbox_docker import DockerSandboxProvider
+        from cognitia.tools.types import SandboxViolation
+
+        provider = DockerSandboxProvider(config, _container=AsyncMock())
+        with pytest.raises(SandboxViolation):
+            await provider.glob_files("../../*.txt")
 
     async def test_isinstance_protocol(self, config) -> None:
         from cognitia.tools.protocols import SandboxProvider

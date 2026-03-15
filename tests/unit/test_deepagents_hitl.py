@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("langgraph", reason="langgraph не установлен")
+
 from cognitia.runtime.deepagents_hitl import (
     build_interrupt_events,
     validate_hitl_config,

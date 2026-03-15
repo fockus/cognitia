@@ -19,6 +19,7 @@ from cognitia.agent import (
     tool,
 )
 from cognitia.hooks.registry import HookRegistry
+from conftest import FakeStreamEvent
 
 # ---------------------------------------------------------------------------
 # Full pipeline: Agent + tools + hooks + middleware
@@ -77,11 +78,9 @@ class TestAgentFullPipeline:
         agent = Agent(config)
 
         # Mock stream
-        from cognitia.runtime.adapter import StreamEvent
-
         async def fake_stream(prompt):
-            yield StreamEvent(
-                type="done",
+            yield FakeStreamEvent(
+                "done",
                 text="result",
                 is_final=True,
                 total_cost_usd=0.5,
@@ -158,11 +157,10 @@ class TestConversationPipeline:
         async def fake_execute(prompt):
             nonlocal turn
             turn += 1
-            from cognitia.runtime.adapter import StreamEvent
 
-            yield StreamEvent(type="text_delta", text=f"Reply {turn}")
-            yield StreamEvent(
-                type="done",
+            yield FakeStreamEvent("text_delta", text=f"Reply {turn}")
+            yield FakeStreamEvent(
+                "done",
                 text=f"Reply {turn}",
                 is_final=True,
                 total_cost_usd=0.01 * turn,
@@ -187,10 +185,8 @@ class TestConversationPipeline:
         conv = Conversation(agent=agent)
 
         async def fake_execute(prompt):
-            from cognitia.runtime.adapter import StreamEvent
-
-            yield StreamEvent(
-                type="done",
+            yield FakeStreamEvent(
+                "done",
                 text="ok",
                 is_final=True,
                 total_cost_usd=1.0,

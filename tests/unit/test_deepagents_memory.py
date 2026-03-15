@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("langgraph", reason="langgraph не установлен")
+
 from cognitia.runtime.deepagents_memory import (
     build_native_invocation,
     build_native_state_notice,

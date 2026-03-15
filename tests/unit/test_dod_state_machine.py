@@ -54,7 +54,9 @@ class FailThenPassVerifier:
     async def verify_linters(self) -> VerificationResult:
         self._call_count += 1
         if self._call_count <= self._fail_count:
-            return VerificationResult(status=VerificationStatus.FAIL, summary="lint error")
+            return VerificationResult(
+                status=VerificationStatus.FAIL, summary="lint error"
+            )
         return VerificationResult(status=VerificationStatus.PASS)
 
     async def verify_coverage(self, min_pct: int = 85) -> VerificationResult:
@@ -74,7 +76,9 @@ class AlwaysFailVerifier:
         return VerificationResult(status=VerificationStatus.PASS)
 
     async def verify_linters(self) -> VerificationResult:
-        return VerificationResult(status=VerificationStatus.FAIL, summary="always fails")
+        return VerificationResult(
+            status=VerificationStatus.FAIL, summary="always fails"
+        )
 
     async def verify_coverage(self, min_pct: int = 85) -> VerificationResult:
         return VerificationResult(status=VerificationStatus.PASS)
@@ -116,6 +120,17 @@ class TestDoDStateMachine:
         assert result.status == DoDStatus.PASSED
         assert result.loop_count == 0
 
+    @pytest.mark.asyncio
+    async def test_dod_unknown_criterion_does_not_pass(self) -> None:
+        dod = DoDStateMachine(max_loops=1)
+        verifier = AlwaysPassVerifier()
+
+        result = await dod.verify_dod(("coverage 95%",), verifier)
+
+        assert result.status == DoDStatus.MAX_LOOPS_EXCEEDED
+        assert result.loop_count == 1
+        assert "coverage 95%: skip" in result.verification_log
+
 
 class TestCodeWorkflowEngine:
     @pytest.mark.asyncio
@@ -152,6 +167,18 @@ class TestCodeWorkflowEngine:
         result = await engine.run("Feature", dod_criteria=("linters",))
         assert result.status == WorkflowStatus.DOD_NOT_MET
         assert result.loop_count == 2
+
+    @pytest.mark.asyncio
+    async def test_workflow_engine_unknown_criterion_returns_dod_not_met(self) -> None:
+        verifier = AlwaysPassVerifier()
+        dod = DoDStateMachine(max_loops=1)
+        planner = PlannerMode()
+        engine = CodeWorkflowEngine(verifier=verifier, dod=dod, planner=planner)
+
+        result = await engine.run("Feature", dod_criteria=("coverage 95%",))
+
+        assert result.status == WorkflowStatus.DOD_NOT_MET
+        assert result.loop_count == 1
 
 
 class TestWorkflowPipelineProtocol:

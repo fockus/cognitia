@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 
-class VerificationStatus(StrEnum):
+class VerificationStatus(str, Enum):
     PASS = "pass"
     FAIL = "fail"
     SKIP = "skip"

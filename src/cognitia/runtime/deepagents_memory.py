@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from langgraph.types import Command
-
 from cognitia.runtime.types import RuntimeErrorData
+
+
+def _build_resume_command(resume_value: Any) -> Any:
+    """Собрать langgraph Command lazily, чтобы base-install оставался import-safe."""
+    try:
+        from langgraph.types import Command
+    except ImportError as exc:
+        raise RuntimeError(
+            "DeepAgents native resume требует optional dependency `langgraph` "
+            "(установите `cognitia[deepagents]`)."
+        ) from exc
+    return Command(resume=resume_value)
 
 
 def validate_native_state_config(
@@ -35,7 +45,7 @@ def build_native_invocation(
     uses_native_thread = checkpointer is not None
 
     if resume_value is not None:
-        payload: Any = Command(resume=resume_value)
+        payload: Any = _build_resume_command(resume_value)
     elif uses_native_thread:
         payload = {"messages": list(messages[-1:])}
     else:

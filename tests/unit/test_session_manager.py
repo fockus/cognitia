@@ -9,6 +9,7 @@ import pytest
 from cognitia.runtime.types import Message, RuntimeEvent, ToolSpec
 from cognitia.session.manager import InMemorySessionManager
 from cognitia.session.types import SessionKey, SessionState
+from conftest import FakeStreamEvent
 
 
 def _make_adapter(connected: bool = True, events: list[Any] | None = None) -> MagicMock:
@@ -174,11 +175,9 @@ class TestStreamReply:
     @pytest.mark.asyncio
     async def test_stream_forwards_events(self) -> None:
         """Подключённый адаптер → события прокидываются."""
-        from cognitia.runtime.adapter import StreamEvent
-
         test_events = [
-            StreamEvent(type="text_delta", text="Привет!"),
-            StreamEvent(type="done", text="Привет!", is_final=True),
+            FakeStreamEvent("text_delta", text="Привет!"),
+            FakeStreamEvent("done", text="Привет!", is_final=True),
         ]
         mgr = InMemorySessionManager()
         mgr.register(_make_state(events=test_events))

@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 from pathlib import Path
 
 from cognitia.tools.types import ExecutionResult, SandboxConfig, SandboxViolation
+
+_DENYLIST_WRAPPERS = frozenset({"sh", "bash", "zsh", "ksh", "dash", "fish", "env"})
 
 
 class LocalSandboxProvider:
@@ -53,22 +56,45 @@ class LocalSandboxProvider:
 
         return resolved
 
-    def _check_denied_command(self, command: str) -> None:
+    def _parse_command(self, command: str) -> list[str]:
+        """Распарсить command string в argv без shell semantics.
+
+        Raises:
+            SandboxViolation: Пустая или невалидная команда.
+        """
+        try:
+            argv = shlex.split(command, posix=True)
+        except ValueError as exc:
+            raise SandboxViolation(f"Невалидная команда: {command}", path=command) from exc
+
+        if not argv:
+            raise SandboxViolation("Пустая команда запрещена", path=command)
+
+        return argv
+
+    def _check_denied_command(self, argv: list[str], raw_command: str) -> None:
         """Проверить что команда не в denied_commands.
 
         Raises:
             SandboxViolation: Команда запрещена.
         """
-        if not self._config.denied_commands:
-            return
+        cmd_name = os.path.basename(argv[0])
+        if cmd_name in _DENYLIST_WRAPPERS:
+            raise SandboxViolation(f"Shell wrapper '{cmd_name}' запрещён", path=raw_command)
 
-        # Извлекаем первое слово (имя команды) и все слова
-        words = command.split()
-        for word in words:
-            # Убираем path prefix (e.g. /usr/bin/rm → rm)
+        denied = self._config.denied_commands or frozenset()
+        for word in argv:
             cmd_name = os.path.basename(word)
-            if cmd_name in self._config.denied_commands:
-                raise SandboxViolation(f"Команда '{cmd_name}' запрещена", path=command)
+            if cmd_name in denied:
+                raise SandboxViolation(f"Команда '{cmd_name}' запрещена", path=raw_command)
+
+    @staticmethod
+    def _validate_glob_pattern(pattern: str) -> None:
+        if os.path.isabs(pattern):
+            raise SandboxViolation(f"Абсолютный путь запрещён: {pattern}", path=pattern)
+        parts = [part for part in pattern.split("/") if part]
+        if any(part == ".." for part in parts):
+            raise SandboxViolation(f"Path traversal запрещён: {pattern}", path=pattern)
 
     async def read_file(self, path: str) -> str:
         """Прочитать файл из workspace."""
@@ -103,14 +129,16 @@ class LocalSandboxProvider:
 
     async def execute(self, command: str) -> ExecutionResult:
         """Выполнить shell-команду в workspace."""
-        self._check_denied_command(command)
+        argv = self._parse_command(command)
+        self._check_denied_command(argv, command)
 
         # Создаём workspace если не существует
         self._workspace.mkdir(parents=True, exist_ok=True)
 
+        proc: asyncio.subprocess.Process | None = None
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self._workspace),
@@ -127,8 +155,9 @@ class LocalSandboxProvider:
             )
         except TimeoutError:
             # Убиваем процесс при timeout
-            proc.kill()
-            await proc.wait()
+            if proc is not None:
+                proc.kill()
+                await proc.wait()
             return ExecutionResult(
                 stdout="",
                 stderr="timeout",
@@ -148,12 +177,18 @@ class LocalSandboxProvider:
     async def glob_files(self, pattern: str) -> list[str]:
         """Поиск файлов по glob-паттерну внутри workspace."""
         self._workspace.mkdir(parents=True, exist_ok=True)
+        self._validate_glob_pattern(pattern)
 
         results: list[str] = []
         workspace_resolved = self._workspace.resolve()
 
         for match in workspace_resolved.glob(pattern):
             if match.is_file():
+                if not match.resolve().is_relative_to(workspace_resolved):
+                    raise SandboxViolation(
+                        f"Path traversal запрещён: {pattern}",
+                        path=pattern,
+                    )
                 # Возвращаем относительный путь от workspace
                 rel = match.relative_to(workspace_resolved)
                 results.append(str(rel))

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 from cognitia.orchestration.code_verifier import CodeVerifier
 from cognitia.orchestration.dod_state_machine import DoDStateMachine, DoDStatus
 
 
-class WorkflowStatus(StrEnum):
+class WorkflowStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     DOD_NOT_MET = "dod_not_met"

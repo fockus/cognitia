@@ -6,13 +6,13 @@ State machine: PENDING → VERIFYING → PASSED / FAILED / MAX_LOOPS_EXCEEDED.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 from cognitia.orchestration.code_verifier import CodeVerifier
 from cognitia.orchestration.verification_types import VerificationStatus
 
 
-class DoDStatus(StrEnum):
+class DoDStatus(str, Enum):
     PENDING = "pending"
     VERIFYING = "verifying"
     PASSED = "passed"
@@ -41,10 +41,14 @@ class DoDStateMachine:
             raise ValueError("max_loops must be >= 1")
         self._max_loops = max_loops
 
-    async def verify_dod(self, criteria: tuple[str, ...], verifier: CodeVerifier) -> DoDResult:
+    async def verify_dod(
+        self, criteria: tuple[str, ...], verifier: CodeVerifier
+    ) -> DoDResult:
         """Run verification loop until all criteria pass or max loops exceeded."""
         if not criteria:
-            return DoDResult(status=DoDStatus.PASSED, loop_count=0, verification_log="No criteria")
+            return DoDResult(
+                status=DoDStatus.PASSED, loop_count=0, verification_log="No criteria"
+            )
 
         log_lines: list[str] = []
 
@@ -54,7 +58,7 @@ class DoDStateMachine:
 
             for criterion in criteria:
                 result = await self._run_criterion(criterion, verifier)
-                log_lines.append(f"  {criterion}: {result.status}")
+                log_lines.append(f"  {criterion}: {result.status.value}")
                 if not result.passed:
                     all_passed = False
 
@@ -71,7 +75,9 @@ class DoDStateMachine:
             verification_log="\n".join(log_lines),
         )
 
-    async def _run_criterion(self, criterion: str, verifier: CodeVerifier) -> _CriterionResult:
+    async def _run_criterion(
+        self, criterion: str, verifier: CodeVerifier
+    ) -> _CriterionResult:
         """Map criterion name to verifier method and run it."""
         from cognitia.orchestration.verification_types import VerificationResult
 
@@ -86,8 +92,10 @@ class DoDStateMachine:
         if method_name is None:
             import logging
 
-            logging.getLogger(__name__).warning("Unknown DoD criterion: %s (skipping)", criterion)
-            return _CriterionResult(status=VerificationStatus.SKIP, passed=True)
+            logging.getLogger(__name__).warning(
+                "Unknown DoD criterion: %s (skipping)", criterion
+            )
+            return _CriterionResult(status=VerificationStatus.SKIP, passed=False)
         method = getattr(verifier, method_name)
         result: VerificationResult = await method()
         return _CriterionResult(status=result.status, passed=result.passed)

@@ -145,6 +145,16 @@ class TestLocalSandboxExecute:
         with pytest.raises(SandboxViolation):
             await sandbox.execute("sudo ls")
 
+    async def test_execute_denied_via_shell_wrapper_sh(self, sandbox) -> None:
+        """Обход denylist через sh -c блокируется."""
+        with pytest.raises(SandboxViolation):
+            await sandbox.execute("sh -c 'rm -rf /'")
+
+    async def test_execute_denied_via_shell_wrapper_bash(self, sandbox) -> None:
+        """Обход denylist через bash -lc блокируется."""
+        with pytest.raises(SandboxViolation):
+            await sandbox.execute('bash -lc "rm -rf /"')
+
     async def test_execute_timeout(self, sandbox_config, tmp_path) -> None:
         """Команда с timeout → timed_out=True."""
         config = SandboxConfig(
@@ -166,8 +176,8 @@ class TestLocalSandboxExecute:
 
     async def test_execute_stderr(self, sandbox) -> None:
         """Stderr корректно захватывается."""
-        result = await sandbox.execute("echo err >&2")
-        assert "err" in result.stderr
+        result = await sandbox.execute("cat missing_file")
+        assert "missing_file" in result.stderr
 
 
 class TestLocalSandboxListDir:
@@ -224,6 +234,11 @@ class TestLocalSandboxGlob:
         """Glob без совпадений → пустой список."""
         result = await sandbox.glob_files("*.rs")
         assert result == []
+
+    async def test_glob_traversal_blocked(self, sandbox) -> None:
+        """Traversal в glob-паттерне блокируется."""
+        with pytest.raises(SandboxViolation):
+            await sandbox.glob_files("../../*.txt")
 
 
 class TestLocalSandboxIsolation:

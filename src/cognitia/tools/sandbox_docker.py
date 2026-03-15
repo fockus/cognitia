@@ -16,6 +16,8 @@ from typing import Any
 
 from cognitia.tools.types import ExecutionResult, SandboxConfig, SandboxViolation
 
+_DENYLIST_WRAPPERS = frozenset({"sh", "bash", "zsh", "ksh", "dash", "fish", "env"})
+
 
 class DockerSandboxProvider:
     """SandboxProvider через Docker container.
@@ -47,13 +49,33 @@ class DockerSandboxProvider:
             raise SandboxViolation(f"Path traversal запрещён: {path}", path=path)
         return "/".join(parts)
 
-    def _check_denied_command(self, command: str) -> None:
+    def _parse_command(self, command: str) -> list[str]:
+        """Распарсить command string в argv без shell semantics."""
+        try:
+            argv = shlex.split(command, posix=True)
+        except ValueError as exc:
+            raise SandboxViolation(f"Невалидная команда: {command}", path=command) from exc
+        if not argv:
+            raise SandboxViolation("Пустая команда запрещена", path=command)
+        return argv
+
+    def _check_denied_command(self, argv: list[str], raw_command: str) -> None:
         denied = self._config.denied_commands or frozenset()
-        words = command.split()
-        for word in words:
+        cmd_name = os.path.basename(argv[0])
+        if cmd_name in _DENYLIST_WRAPPERS:
+            raise SandboxViolation(f"Shell wrapper '{cmd_name}' запрещён", path=raw_command)
+        for word in argv:
             cmd_name = os.path.basename(word)
             if cmd_name in denied:
-                raise SandboxViolation(f"Команда '{cmd_name}' запрещена", path=command)
+                raise SandboxViolation(f"Команда '{cmd_name}' запрещена", path=raw_command)
+
+    @staticmethod
+    def _validate_glob_pattern(pattern: str) -> None:
+        if os.path.isabs(pattern):
+            raise SandboxViolation(f"Абсолютный путь запрещён: {pattern}", path=pattern)
+        parts = [p for p in pattern.split("/") if p]
+        if any(part == ".." for part in parts):
+            raise SandboxViolation(f"Path traversal запрещён: {pattern}", path=pattern)
 
     async def _ensure_container(self) -> Any:
         """Ленивая инициализация docker container."""
@@ -133,10 +155,11 @@ class DockerSandboxProvider:
 
     async def execute(self, command: str) -> ExecutionResult:
         """Выполнить команду через docker exec."""
-        self._check_denied_command(command)
+        argv = self._parse_command(command)
+        self._check_denied_command(argv, command)
         try:
             exit_code, output = await self._exec(
-                ["sh", "-c", command],
+                argv,
                 workdir=self._workspace,
                 timeout_seconds=self._config.timeout_seconds,
             )
@@ -155,12 +178,13 @@ class DockerSandboxProvider:
         """Список файлов через docker exec ls."""
         safe_path = self._resolve_path(path)
         full_path = f"{self._workspace}/{safe_path}" if safe_path else self._workspace
-        _exit_code, output = await self._exec(f"ls {full_path}")
+        _exit_code, output = await self._exec(["ls", full_path])
         raw = output.decode("utf-8", errors="replace") if isinstance(output, bytes) else str(output)
         return [f for f in raw.strip().split("\n") if f]
 
     async def glob_files(self, pattern: str) -> list[str]:
         """Glob через find в Docker."""
+        self._validate_glob_pattern(pattern)
         cmd = (
             f"cd {shlex.quote(self._workspace)} "
             f"&& find . -name {shlex.quote(pattern)} -type f | sed 's|^\\./||'"

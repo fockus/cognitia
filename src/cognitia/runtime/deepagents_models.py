@@ -144,9 +144,6 @@ def build_deepagents_chat_model(
 ) -> Any:
     """Создать provider-specific chat model для DeepAgents runtime."""
     resolved = resolve_deepagents_model(raw_model)
-    model_class = _load_provider_class(resolved.provider)
-
-    kwargs: dict[str, Any] = {"model": resolved.model_name}
 
     if resolved.provider == "google":
         if base_url is not None:
@@ -160,6 +157,10 @@ def build_deepagents_chat_model(
                     details={"provider": resolved.provider, "model": resolved.model_name},
                 )
             )
+    model_class = _load_provider_class(resolved.provider)
+    kwargs: dict[str, Any] = {"model": resolved.model_name}
+
+    if resolved.provider == "google":
         return model_class(**kwargs)
 
     if base_url is not None:

@@ -197,6 +197,7 @@ class TestConversationLifecycle:
     @pytest.mark.asyncio
     async def test_create_adapter_propagates_runtime_options(self) -> None:
         """_create_adapter пробрасывает remote MCP, max_turns, permission_mode и setting_sources."""
+        pytest.importorskip("claude_agent_sdk", reason="claude-agent-sdk не установлен")
         from cognitia.hooks.registry import HookRegistry
         from cognitia.skills.types import McpServerSpec
 

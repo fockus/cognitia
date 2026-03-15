@@ -221,8 +221,8 @@ class TestAgentClaudeSdkWiring:
 
     @pytest.mark.asyncio
     async def test_execute_claude_sdk_passes_hooks_and_native_options(self) -> None:
+        pytest.importorskip("claude_agent_sdk", reason="claude-agent-sdk не установлен")
         from cognitia.hooks.registry import HookRegistry
-        from cognitia.runtime.adapter import StreamEvent
         from cognitia.skills.types import McpServerSpec
 
         hooks = HookRegistry()
@@ -250,8 +250,8 @@ class TestAgentClaudeSdkWiring:
         async def fake_stream_one_shot_query(prompt: str, **kwargs: Any):
             captured["prompt"] = prompt
             captured.update(kwargs)
-            yield StreamEvent(type="text_delta", text="ok")
-            yield StreamEvent(type="done", text="ok", is_final=True, session_id="s1")
+            yield FakeStreamEvent("text_delta", text="ok")
+            yield FakeStreamEvent("done", text="ok", is_final=True, session_id="s1")
 
         with patch(
             "cognitia.runtime.sdk_query.stream_one_shot_query",
@@ -275,14 +275,14 @@ class TestAgentClaudeSdkWiring:
 
     @pytest.mark.asyncio
     async def test_execute_claude_sdk_true_streaming(self) -> None:
-        from cognitia.runtime.adapter import StreamEvent
+        pytest.importorskip("claude_agent_sdk", reason="claude-agent-sdk не установлен")
 
         agent = Agent(_make_config())
 
         async def fake_stream_query(prompt: str, **kwargs: Any):
-            yield StreamEvent(type="text_delta", text="Hello ")
-            yield StreamEvent(type="text_delta", text="World")
-            yield StreamEvent(type="done", text="Hello World", is_final=True)
+            yield FakeStreamEvent("text_delta", text="Hello ")
+            yield FakeStreamEvent("text_delta", text="World")
+            yield FakeStreamEvent("done", text="Hello World", is_final=True)
 
         with patch(
             "cognitia.runtime.sdk_query.stream_one_shot_query",
