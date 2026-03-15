@@ -56,3 +56,14 @@ class HookRegistry:
     def list_events(self) -> list[str]:
         """Все события с зарегистрированными хуками."""
         return list(self._hooks.keys())
+
+    def merge(self, other: HookRegistry) -> HookRegistry:
+        """Merge hooks from another registry into a new combined registry."""
+        merged = HookRegistry()
+        for _event, entries in self._hooks.items():
+            for entry in entries:
+                merged._add(entry.event, entry.callback, entry.matcher)
+        for _event, entries in other._hooks.items():
+            for entry in entries:
+                merged._add(entry.event, entry.callback, entry.matcher)
+        return merged

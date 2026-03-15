@@ -6,7 +6,7 @@ State machine: draft → approved → executing → completed/cancelled.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
 
@@ -24,34 +24,25 @@ class PlanStep:
     status: PlanStepStatus = "pending"
     result: str | None = None
     substeps: list[PlanStep] = field(default_factory=list)
+    dod_criteria: tuple[str, ...] = ()
+    dod_verified: bool = False
+    verification_log: str | None = None
 
     def start(self) -> PlanStep:
         """pending → in_progress."""
-        return PlanStep(
-            id=self.id, description=self.description,
-            status="in_progress", result=self.result, substeps=self.substeps,
-        )
+        return replace(self, status="in_progress")
 
     def complete(self, result: str) -> PlanStep:
         """* → completed с результатом."""
-        return PlanStep(
-            id=self.id, description=self.description,
-            status="completed", result=result, substeps=self.substeps,
-        )
+        return replace(self, status="completed", result=result)
 
     def fail(self, reason: str) -> PlanStep:
         """* → failed с причиной."""
-        return PlanStep(
-            id=self.id, description=self.description,
-            status="failed", result=reason, substeps=self.substeps,
-        )
+        return replace(self, status="failed", result=reason)
 
     def skip(self, reason: str) -> PlanStep:
         """* → skipped с причиной."""
-        return PlanStep(
-            id=self.id, description=self.description,
-            status="skipped", result=reason, substeps=self.substeps,
-        )
+        return replace(self, status="skipped", result=reason)
 
 
 @dataclass(frozen=True)
