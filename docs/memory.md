@@ -110,24 +110,62 @@ async def save_user_fact(store: FactStore, user_id: str):
     await store.upsert_fact(user_id, "onboarded", "true")
 ```
 
+## Data Types
+
+The memory module uses these core data types (`cognitia.memory.types`):
+
+| Type | Fields | Purpose |
+|------|--------|---------|
+| `MemoryMessage` | `role`, `content`, `tool_calls` | A single message in conversation history |
+| `UserProfile` | `user_id`, `facts`, `created_at` | User identity with extracted facts |
+| `GoalState` | `goal_id`, `title`, `target_amount`, `current_amount`, `phase`, `plan`, `is_main` | User goal tracking |
+| `PhaseState` | `user_id`, `phase`, `notes` | Current conversation phase |
+| `ToolEvent` | `topic_id`, `tool_name`, `input_json`, `output_json`, `latency_ms` | Tool usage audit entry |
+
 ## Summarization
 
-Cognitia includes a summarizer for managing conversation history:
+Cognitia includes two summarizers for managing conversation history.
+
+### TemplateSummaryGenerator
+
+Zero-dependency, formats recent messages as a bullet list:
 
 ```python
 from cognitia.memory.summarizer import TemplateSummaryGenerator
+from cognitia.memory.types import MemoryMessage
 
-summarizer = TemplateSummaryGenerator()
-summary = await summarizer.generate(messages, existing_summary="")
+summarizer = TemplateSummaryGenerator(max_messages=20, max_message_chars=200)
+
+messages = [
+    MemoryMessage(role="user", content="What's the weather?"),
+    MemoryMessage(role="assistant", content="It's sunny today."),
+]
+summary = summarizer.summarize(messages)
+# "- [user]: What's the weather?\n- [assistant]: It's sunny today."
 ```
 
-For LLM-powered summarization:
+### LlmSummaryGenerator
+
+Uses an LLM call for richer summaries with automatic fallback to `TemplateSummaryGenerator` on error:
 
 ```python
 from cognitia.memory.llm_summarizer import LlmSummaryGenerator
 
-summarizer = LlmSummaryGenerator(model="sonnet")
-summary = await summarizer.generate(messages)
+async def my_llm_call(prompt: str, text: str) -> str:
+    # Your LLM integration here
+    return await call_claude(prompt + "\n\n" + text)
+
+summarizer = LlmSummaryGenerator(llm_call=my_llm_call)
+
+# Sync (delegates to template fallback):
+summary = summarizer.summarize(messages)
+
+# Async (calls LLM, falls back on error):
+summary = await summarizer.asummarize(messages)
 ```
 
-History is automatically capped and summarized when it exceeds the configured limit.
+If the LLM returns a response shorter than 50 characters or raises an exception, the template fallback is used automatically.
+
+## Related: Memory Bank
+
+For **long-term project memory** that persists across sessions (plans, decisions, progress logs), see [Memory Bank](memory-bank.md). Memory Bank is a separate capability with its own protocol and file-based API.

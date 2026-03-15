@@ -206,10 +206,51 @@ Blocks prompts containing sensitive patterns:
 from cognitia.agent import SecurityGuard
 
 guard = SecurityGuard(
-    blocked_patterns=["password", "api_key", "secret"],
+    block_patterns=["password", "api_key", "secret"],
     on_blocked=lambda prompt, pattern: print(f"Blocked: {pattern}"),
 )
 ```
+
+### Built-in: ToolOutputCompressor
+
+Compresses large tool outputs between turns. Content-type aware: JSON arrays are truncated, HTML tags are stripped, plain text uses head+tail strategy.
+
+```python
+from cognitia.agent import ToolOutputCompressor
+
+compressor = ToolOutputCompressor(max_result_chars=10000)
+agent = Agent(AgentConfig(middleware=(compressor,)))
+```
+
+Integrates with `HookRegistry` via `on_post_tool_use` callback.
+
+### build_middleware_stack()
+
+Factory function for common middleware combinations:
+
+```python
+from cognitia.agent import build_middleware_stack
+
+stack = build_middleware_stack(
+    cost_tracker=True,
+    tool_compressor=True,
+    security_guard=True,
+    budget_usd=5.0,
+    blocked_patterns=["rm -rf"],
+    max_result_chars=10000,
+)
+
+agent = Agent(AgentConfig(middleware=stack))
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `cost_tracker` | `bool` | `False` | Enable CostTracker |
+| `tool_compressor` | `bool` | `True` | Enable ToolOutputCompressor |
+| `security_guard` | `bool` | `False` | Enable SecurityGuard |
+| `max_result_chars` | `int` | `10000` | Max chars for tool output |
+| `budget_usd` | `float` | `5.0` | Cost budget limit |
+| `blocked_patterns` | `list[str]` | `[]` | Patterns to block |
 
 ### Middleware chain order
 

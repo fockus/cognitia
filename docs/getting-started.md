@@ -155,7 +155,7 @@ Intercept requests and responses for cost tracking, security, logging:
 from cognitia.agent import CostTracker, SecurityGuard
 
 tracker = CostTracker(budget_usd=5.0)
-guard = SecurityGuard(blocked_patterns=["password", "secret", "api_key"])
+guard = SecurityGuard(block_patterns=["password", "secret", "api_key"])
 
 agent = Agent(AgentConfig(
     system_prompt="You are a helpful assistant.",
