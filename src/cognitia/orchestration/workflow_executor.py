@@ -82,25 +82,23 @@ class MixedRuntimeExecutor:
         self._runtime_map = runtime_map
 
     async def run(self, wf: WorkflowGraph, initial_state: State) -> State:
-        """Выполнить граф с per-node runtime routing."""
-        # Wraps each node: if mapped — can add runtime-specific instrumentation.
-        # Currently all runtimes execute node fns directly; routing is recorded in state.
-        original_execute = wf._execute_node
+        """Выполнить граф с per-node runtime routing.
 
-        async def _routed_execute(node_id: str, state: State) -> State:
+        Uses WorkflowGraph.execute(node_interceptor=...) to wrap each node
+        execution with runtime routing and observability metadata.
+        """
+
+        async def _routed_interceptor(node_id: str, state: State) -> State:
             runtime_name = self._runtime_map.get(node_id, "thin")
-            state = await original_execute(node_id, state)
+            # Execute node via the graph's default mechanism (no interceptor recursion)
+            state = await wf._execute_node(node_id, state)
             # Record which runtime handled this node (for observability)
             executions: dict[str, str] = state.get("__runtime_executions__", {})
             executions[node_id] = runtime_name
             state["__runtime_executions__"] = executions
             return state
 
-        wf._execute_node = _routed_execute  # type: ignore[assignment]
-        try:
-            return await wf.execute(initial_state)
-        finally:
-            wf._execute_node = original_execute  # type: ignore[assignment]
+        return await wf.execute(initial_state, node_interceptor=_routed_interceptor)
 
 
 def compile_to_langgraph_spec(wf: WorkflowGraph) -> dict[str, Any]:

@@ -5,7 +5,6 @@ CRP-5.1: Расширение CommandRegistry с сохранением backward
 
 from __future__ import annotations
 
-import pytest
 from cognitia.commands.registry import CommandRegistry
 
 
@@ -66,9 +65,9 @@ commands:
 
         commands = load_commands_from_yaml(str(yaml_file))
         assert len(commands) == 2
-        assert commands[0]["name"] == "deploy.staging"
-        assert commands[0]["category"] == "admin"
-        assert commands[1]["name"] == "status.check"
+        assert commands[0].name == "deploy.staging"
+        assert commands[0].category == "admin"
+        assert commands[1].name == "status.check"
 
 
 class TestCommandToToolDefinition:
@@ -97,9 +96,9 @@ class TestCommandToToolDefinition:
         tools = reg.to_tool_definitions()
         assert len(tools) == 1
         tool = tools[0]
-        assert tool["name"] == "topic.new"
-        assert tool["description"] == "Create a new topic"
-        assert "properties" in tool["parameters"]
+        assert tool.name == "topic.new"
+        assert tool.description == "Create a new topic"
+        assert "properties" in tool.parameters
 
 
 class TestCommandBackwardCompatible:

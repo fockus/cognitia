@@ -6,10 +6,49 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-import jsonschema
-
 # Тип обработчика команды
 CommandHandler = Callable[..., Awaitable[str]]
+
+_TYPE_MAP: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
+def _validate_params(params_schema: dict[str, Any], kwargs: dict[str, Any]) -> str | None:
+    """Валидировать kwargs по JSON Schema (required + properties.type).
+
+    Не использует внешних зависимостей.
+    Возвращает сообщение об ошибке или None если всё ок.
+    """
+    for field_name in params_schema.get("required", []):
+        if field_name not in kwargs:
+            return f"Error: required parameter '{field_name}' is missing"
+
+    for prop_name, prop_schema in params_schema.get("properties", {}).items():
+        if prop_name not in kwargs:
+            continue
+        expected_type_name: str = prop_schema.get("type", "")
+        expected_type = _TYPE_MAP.get(expected_type_name)
+        if expected_type is None:
+            continue
+        # integer is strict: bool is subclass of int but should not match
+        value = kwargs[prop_name]
+        if expected_type_name == "integer" and isinstance(value, bool):
+            return (
+                f"Error: parameter '{prop_name}' must be of type 'integer', "
+                f"got '{type(value).__name__}'"
+            )
+        if not isinstance(value, expected_type):
+            return (
+                f"Error: parameter '{prop_name}' must be of type '{expected_type_name}', "
+                f"got '{type(value).__name__}'"
+            )
+
+    return None
 
 
 @dataclass
@@ -23,14 +62,22 @@ class CommandDef:
     category: str = ""
     parameters: dict[str, Any] | None = None
 
+    def __getitem__(self, key: str) -> Any:
+        """Dict-like доступ для backward compatibility (cmd['name'])."""
+        return getattr(self, key)
 
-@dataclass(frozen=True)
+
+@dataclass
 class ToolDefinition:
-    """Tool definition для LLM — typed wrapper над dict."""
+    """Tool definition для LLM — поддерживает атрибутный и dict-подобный доступ."""
 
     name: str
     description: str
     parameters: dict[str, Any]
+
+    def __getitem__(self, key: str) -> Any:
+        """Dict-like доступ: tool['name'], tool['parameters']."""
+        return getattr(self, key)
 
 
 class CommandRegistry:
@@ -136,16 +183,16 @@ class CommandRegistry:
 
         Если у команды определена JSON Schema (parameters), params валидируются
         перед вызовом handler. При ошибке валидации возвращает сообщение об ошибке.
+        Не использует внешних зависимостей — встроенная валидация (required + types).
         """
         cmd = self.resolve(name_or_alias)
         if not cmd:
             return f"Неизвестная команда: {name_or_alias}"
         effective_params = params or {}
         if cmd.parameters:
-            try:
-                jsonschema.validate(instance=effective_params, schema=cmd.parameters)
-            except jsonschema.ValidationError as e:
-                return f"Error: validation failed — {e.message}"
+            error = _validate_params(cmd.parameters, effective_params)
+            if error:
+                return error
         try:
             return await cmd.handler(**effective_params)
         except Exception as e:

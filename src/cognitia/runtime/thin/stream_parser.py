@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from cognitia.runtime.thin.json_utils import find_json_object_boundaries
 from cognitia.runtime.thin.schemas import ActionEnvelope
 
 
@@ -155,35 +156,11 @@ class StreamParser:
             if not stripped:
                 return False
 
-        # Find JSON object boundaries
-        start = stripped.find("{")
-        if start == -1:
+        bounds = find_json_object_boundaries(stripped)
+        if bounds is None:
             return False
-
-        depth = 0
-        in_string = False
-        escape = False
-        for idx in range(start, len(stripped)):
-            ch = stripped[idx]
-            if in_string:
-                if escape:
-                    escape = False
-                elif ch == "\\":
-                    escape = True
-                elif ch == '"':
-                    in_string = False
-                continue
-            if ch == '"':
-                in_string = True
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    json_str = stripped[start : idx + 1]
-                    return self._validate_envelope(json_str)
-        return False
+        json_str = stripped[bounds[0] : bounds[1]]
+        return self._validate_envelope(json_str)
 
     def _validate_envelope(self, json_str: str) -> bool:
         """Validate parsed JSON as ActionEnvelope."""

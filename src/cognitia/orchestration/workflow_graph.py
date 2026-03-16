@@ -15,6 +15,7 @@ from typing import Any
 State = dict[str, Any]
 NodeFn = Callable[[State], Coroutine[Any, Any, State]]
 ConditionFn = Callable[[State], str]
+NodeInterceptor = Callable[[str, State], Coroutine[Any, Any, State]]
 
 END_NODE = "__end__"
 
@@ -140,8 +141,21 @@ class WorkflowGraph:
                 return edge.target
         return None
 
-    async def _execute_node(self, node_id: str, state: State) -> State:
-        """Execute a single node (function or subgraph)."""
+    async def _execute_node(
+        self,
+        node_id: str,
+        state: State,
+        interceptor: NodeInterceptor | None = None,
+    ) -> State:
+        """Execute a single node (function or subgraph).
+
+        If interceptor is provided, it wraps the node execution:
+        interceptor receives (node_id, state) and returns the modified state.
+        The interceptor is responsible for calling the original node if needed,
+        or it can delegate to the default execution and post-process.
+        """
+        if interceptor is not None:
+            return await interceptor(node_id, state)
         node = self._nodes[node_id]
         if isinstance(node, WorkflowGraph):
             return await node.execute(dict(state))
@@ -154,8 +168,19 @@ class WorkflowGraph:
         checkpoint: InMemoryCheckpoint | None = None,
         run_id: str | None = None,
         resume: bool = False,
+        node_interceptor: NodeInterceptor | None = None,
     ) -> State:
-        """Execute the workflow graph from entry to end."""
+        """Execute the workflow graph from entry to end.
+
+        Args:
+            initial_state: Starting state dict.
+            checkpoint: Optional checkpoint store for crash recovery.
+            run_id: Run identifier for checkpoint keying.
+            resume: Whether to resume from a previous checkpoint.
+            node_interceptor: Optional callable(node_id, state) -> state that
+                wraps each node execution. Used by runtime executors for
+                per-node instrumentation (e.g. runtime routing, observability).
+        """
         state = dict(initial_state)
         loop_counts: dict[str, int] = {}
 
@@ -180,7 +205,10 @@ class WorkflowGraph:
             if current in self._parallel_groups:
                 group = self._parallel_groups[current]
                 results = await asyncio.gather(
-                    *[self._execute_node(nid, dict(state)) for nid in group.node_ids]
+                    *[
+                        self._execute_node(nid, dict(state), interceptor=node_interceptor)
+                        for nid in group.node_ids
+                    ]
                 )
                 for r in results:
                     state.update(r)
@@ -200,7 +228,7 @@ class WorkflowGraph:
                 checkpoint.save(run_id, current, state)
 
             # Execute node
-            state = await self._execute_node(current, state)
+            state = await self._execute_node(current, state, interceptor=node_interceptor)
 
             # Track loops
             loop_counts[current] = loop_counts.get(current, 0) + 1

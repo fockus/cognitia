@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 
 class TestGenericWorkflowPassFirstTry:
     """execute → verify pass → done."""
@@ -187,10 +185,7 @@ class TestGenericWorkflowWithWorkflowGraphNode:
     """GenericWorkflowEngine as node in WorkflowGraph."""
 
     async def test_generic_workflow_with_workflow_graph_node(self) -> None:
-        from cognitia.orchestration.generic_workflow_engine import (
-            GenericWorkflowEngine,
-            GenericWorkflowStatus,
-        )
+        from cognitia.orchestration.generic_workflow_engine import GenericWorkflowEngine
         from cognitia.orchestration.workflow_graph import WorkflowGraph
 
         async def executor(task: str, context: dict[str, Any]) -> str:

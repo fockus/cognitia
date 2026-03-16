@@ -24,6 +24,7 @@ from cognitia.orchestration.workflow_executor import (
     ThinWorkflowExecutor,
     compile_to_langgraph_spec,
 )
+from cognitia.orchestration.workflow_graph import NodeInterceptor
 from cognitia.orchestration.workflow_langgraph import (
     check_langgraph_available,
     compile_to_langgraph,
@@ -51,6 +52,7 @@ __all__ = [
     "VerificationStatus",
     "WorkflowAutomationConfig",
     "MixedRuntimeExecutor",
+    "NodeInterceptor",
     "ThinRuntimeExecutor",
     "ThinWorkflowExecutor",
     "WorkflowPipeline",

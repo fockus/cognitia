@@ -18,7 +18,9 @@ from cognitia.runtime.structured_output import (
     append_structured_output_instruction,
     extract_structured_output,
 )
+from cognitia.runtime.thin.builtin_tools import create_thin_builtin_tools
 from cognitia.runtime.thin.executor import ToolExecutor
+from cognitia.runtime.thin.json_utils import find_json_object_boundaries
 from cognitia.runtime.thin.modes import detect_mode
 from cognitia.runtime.thin.prompts import (
     build_conversational_prompt,
@@ -62,13 +64,23 @@ class ThinRuntime:
         mcp_servers: dict[str, Any] | None = None,
         react_patterns: list[re.Pattern[str]] | None = None,
         planner_patterns: list[re.Pattern[str]] | None = None,
+        sandbox: Any | None = None,
     ) -> None:
         self._config = config or RuntimeConfig(runtime_name="thin")
         self._llm_call = llm_call or self._default_llm_call
         self._react_patterns = react_patterns
         self._planner_patterns = planner_patterns
+
+        # Merge user local_tools with sandbox built-in executors
+        merged_local_tools = dict(local_tools or {})
+        _builtin_specs, builtin_executors = create_thin_builtin_tools(sandbox)
+        for name, executor in builtin_executors.items():
+            # User tools take priority over built-ins
+            if name not in merged_local_tools:
+                merged_local_tools[name] = executor
+
         self._executor = ToolExecutor(
-            local_tools=local_tools,
+            local_tools=merged_local_tools,
             mcp_servers=mcp_servers,
         )
 
@@ -675,34 +687,10 @@ class ThinRuntime:
 
         Полезно, когда модель добавляет пояснения до/после JSON.
         """
-        start = text.find("{")
-        if start == -1:
+        bounds = find_json_object_boundaries(text)
+        if bounds is None:
             return None
-
-        depth = 0
-        in_string = False
-        escape = False
-        for idx in range(start, len(text)):
-            ch = text[idx]
-            if in_string:
-                if escape:
-                    escape = False
-                elif ch == "\\":
-                    escape = True
-                elif ch == '"':
-                    in_string = False
-                continue
-
-            if ch == '"':
-                in_string = True
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start : idx + 1]
-        return None
+        return text[bounds[0] : bounds[1]]
 
     @staticmethod
     def _parse_json_dict(raw: str) -> dict[str, Any] | None:
