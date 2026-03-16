@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-16
+
+### Added
+- **ThinRuntime Built-in Tools** (`cognitia.runtime.thin.builtin_tools`)
+  - 9 tools: `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep`, `execute`, `write_todos`, `task`
+  - `feature_mode` filtering (portable/hybrid/native_first)
+  - DeepAgents-compatible aliases (Read→read_file, Bash→execute, etc.)
+  - `merge_tools_with_builtins()` — user tools override built-ins by name
+- **Token-Level Streaming** (`cognitia.runtime.thin.stream_parser`)
+  - `IncrementalEnvelopeParser` — stateful incremental JSON brace-tracking parser
+  - `StreamParser` — high-level streaming parser with ActionEnvelope extraction
+  - React + Conversational + Planner modes all stream per-token via `_try_stream_llm_call()`
+  - Fallback to non-streaming on parse error
+- **ThinTeamOrchestrator** (`cognitia.orchestration.thin_team`)
+  - Full `TeamOrchestrator` + `ResumableTeamOrchestrator` protocol implementation
+  - Lead delegation: `_compose_worker_task()` personalizes task per worker
+  - MessageBus per-team with auto-registered `send_message` tool
+  - pause/resume via cancel + re-spawn
+- **ThinSubagent Full Implementation** (`cognitia.orchestration.thin_subagent`)
+  - `_create_runtime()` creates per-worker `_ThinWorkerRuntime` with ThinRuntime
+  - `register_tool()` public method for tool injection (replaces private access)
+  - Supports `llm_call`, `local_tools`, `mcp_servers`, `runtime_config` via constructor
+- **MessageBus Tools** (`cognitia.orchestration.message_tools`)
+  - `SEND_MESSAGE_TOOL_SPEC` — ToolSpec with JSON Schema (to_agent, content)
+  - `create_send_message_tool()` — factory for send/broadcast executor
+  - `send_message_tool_spec()` — accessor function
+- **McpBridge** (`cognitia.runtime.mcp_bridge`)
+  - Library-level MCP facade (runtime-agnostic, works with thin + deepagents)
+  - `discover_tools()` / `discover_all_tools()` — tool names prefixed as `mcp__{server}__{tool}`
+  - `create_tool_executor()` — async callable factory for LangChain integration
+  - Caching delegated to McpClient TTL (300s)
+- **DeepAgents MCP Integration** (`cognitia.runtime.deepagents`)
+  - `mcp_servers` parameter in `__init__()` — creates `McpBridge` automatically
+  - MCP tools injected into `selected_tools` with executor wiring
+  - Graceful degradation with `logging.warning` on discovery failure
+- **WorkflowGraph** (`cognitia.orchestration.workflow_graph`)
+  - Declarative graph execution: linear, conditional branching, loop with max, parallel, subgraph, interrupt/resume
+  - `InMemoryCheckpoint` for state persistence
+  - `to_mermaid()` — graph visualization export
+- **Workflow Executors** (`cognitia.orchestration.workflow_executor`)
+  - `ThinWorkflowExecutor` — LLM per-node via ThinRuntime
+  - `MixedRuntimeExecutor` — route nodes to different runtimes via `node_interceptor`
+  - `compile_to_langgraph()` — LangGraph StateGraph compiler for deepagents
+- **GenericWorkflowEngine** (`cognitia.orchestration.generic_workflow_engine`)
+  - Pluggable `ExecutorPort` + `VerifierPort` protocols
+  - Retry/verify loop with configurable `max_retries`
+- **CommandRegistry v2** (`cognitia.commands`)
+  - `CommandDef` with typed `parameters` (JSON Schema), `description`, `category`
+  - `to_tool_definitions()` — commands available as LLM tools
+  - `execute_validated()` — JSON Schema parameter validation before execute
+  - YAML auto-discovery via `loader.py` (`load_commands_from_yaml`, `auto_discover_commands`)
+  - Backward compatible with string-based API
+- **JSON Utilities** (`cognitia.runtime.thin.json_utils`)
+  - `find_json_object_boundaries()` — shared brace-tracking parser (DRY extraction)
+
+### Changed
+- `CodeWorkflowEngine` now delegates to `GenericWorkflowEngine` (thin wrapper with `_PlannerExecutor` + `_DoDVerifierAdapter`)
+- `MixedRuntimeExecutor` uses `node_interceptor` parameter instead of monkey-patching `_execute_node`
+- Runtime Feature Matrix added to README.md
+
+### Tests
+- 298 new tests (1085 → 1383 passed): builtin_tools (20), streaming (20), thin_subagent (9), thin_team (12), message_tools (7), mcp_bridge (4), deepagents_mcp (5), workflow_graph (8), workflow_executor (10), generic_workflow (6), commands_v2 (12), json_utils (18), code_workflow_delegation (3), and more
+
 ## [0.4.0] - 2026-03-15
 
 ### Added
@@ -94,6 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Memory** — `InMemoryMemoryProvider`, `PostgresMemoryProvider`
 - **Commands** — `CommandRegistry` with aliases
 
+[0.5.0]: https://github.com/fockus/cognitia/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fockus/cognitia/compare/v0.3.0b1...v0.4.0
 [0.3.0b1]: https://github.com/fockus/cognitia/compare/v0.2.0...v0.3.0b1
 [0.2.0]: https://github.com/fockus/cognitia/compare/v0.1.0...v0.2.0

@@ -50,15 +50,19 @@ class ThinTeamOrchestrator:
         mcp_servers: dict[str, Any] | None = None,
         runtime_config: RuntimeConfig | None = None,
         max_concurrent: int = 8,
+        sub_orchestrator: ThinSubagentOrchestrator | None = None,
     ) -> None:
-        effective_llm_call = llm_call if llm_call is not None else _default_llm_call
-        self._sub_orch = ThinSubagentOrchestrator(
-            max_concurrent=max_concurrent,
-            llm_call=effective_llm_call,
-            local_tools=local_tools,
-            mcp_servers=mcp_servers,
-            runtime_config=runtime_config,
-        )
+        if sub_orchestrator is not None:
+            self._sub_orch = sub_orchestrator
+        else:
+            effective_llm_call = llm_call if llm_call is not None else _default_llm_call
+            self._sub_orch = ThinSubagentOrchestrator(
+                max_concurrent=max_concurrent,
+                llm_call=effective_llm_call,
+                local_tools=local_tools,
+                mcp_servers=mcp_servers,
+                runtime_config=runtime_config,
+            )
         self._teams: dict[str, _TeamState] = {}
 
     async def start(self, config: TeamConfig, task: str) -> str:

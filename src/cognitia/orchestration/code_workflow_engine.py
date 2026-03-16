@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Protocol
 
 from cognitia.orchestration.code_verifier import CodeVerifier
-from cognitia.orchestration.dod_state_machine import DoDStateMachine, DoDStatus
+from cognitia.orchestration.dod_state_machine import DoDResult, DoDStatus
 from cognitia.orchestration.generic_workflow_engine import GenericWorkflowEngine
 
 
@@ -30,8 +31,33 @@ class WorkflowResult:
     loop_count: int = 0
 
 
+class CodePlannerPort(Protocol):
+    """Protocol for pluggable planner in CodeWorkflowEngine (DIP).
+
+    Implementations: PlannerMode (default), ThinPlannerMode, custom planners.
+    """
+
+    async def create_plan(self, goal: str) -> str: ...
+
+    async def execute_plan(self, plan: str) -> str: ...
+
+
+class DoDVerifierPort(Protocol):
+    """Protocol for DoD verification state machine (DIP).
+
+    Implementations: DoDStateMachine (default), custom DoD engines.
+    """
+
+    async def verify_dod(
+        self, criteria: tuple[str, ...], verifier: CodeVerifier
+    ) -> DoDResult: ...
+
+
 class PlannerMode:
-    """Pluggable planner — generates execution plan from goal."""
+    """Pluggable planner — generates execution plan from goal.
+
+    Default implementation. Satisfies CodePlannerPort Protocol.
+    """
 
     async def create_plan(self, goal: str) -> str:
         return f"Plan for: {goal}"
@@ -41,9 +67,9 @@ class PlannerMode:
 
 
 class _PlannerExecutor:
-    """Adapts PlannerMode to ExecutorPort (execute(goal) -> str)."""
+    """Adapts CodePlannerPort to ExecutorPort (execute(goal) -> str)."""
 
-    def __init__(self, planner: PlannerMode) -> None:
+    def __init__(self, planner: CodePlannerPort) -> None:
         self._planner = planner
 
     async def execute(self, goal: str) -> str:
@@ -52,7 +78,7 @@ class _PlannerExecutor:
 
 
 class _DoDVerifierAdapter:
-    """Adapts DoDStateMachine + CodeVerifier to VerifierPort (verify(output) -> (bool, str)).
+    """Adapts DoDVerifierPort + CodeVerifier to VerifierPort (verify(output) -> (bool, str)).
 
     DoD criteria are passed via context["dod_criteria"] at run time.
     When criteria are empty, verification is skipped (always passes).
@@ -60,7 +86,7 @@ class _DoDVerifierAdapter:
     so GenericWorkflowEngine uses max_retries=1.
     """
 
-    def __init__(self, dod: DoDStateMachine, verifier: CodeVerifier) -> None:
+    def __init__(self, dod: DoDVerifierPort, verifier: CodeVerifier) -> None:
         self._dod = dod
         self._verifier = verifier
         self._last_dod_status: DoDStatus = DoDStatus.PENDING
@@ -114,8 +140,8 @@ class CodeWorkflowEngine:
     def __init__(
         self,
         verifier: CodeVerifier,
-        dod: DoDStateMachine,
-        planner: PlannerMode,
+        dod: DoDVerifierPort,
+        planner: CodePlannerPort,
     ) -> None:
         self._verifier = verifier
         self._dod = dod

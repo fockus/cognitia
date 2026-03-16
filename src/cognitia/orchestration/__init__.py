@@ -1,7 +1,12 @@
 """Cognitia Orchestration — планирование, subagent'ы, team mode."""
 
 from cognitia.orchestration.code_verifier import CodeVerifier, CommandResult, CommandRunner
-from cognitia.orchestration.code_workflow_engine import CodeWorkflowEngine, WorkflowResult
+from cognitia.orchestration.code_workflow_engine import (
+    CodePlannerPort,
+    CodeWorkflowEngine,
+    DoDVerifierPort,
+    WorkflowResult,
+)
 from cognitia.orchestration.coding_standards import (
     AutonomousLoopConfig,
     CodePipelineConfig,
@@ -35,6 +40,7 @@ __all__ = [
     "AutonomousLoopConfig",
     "CheckDetail",
     "CodePipelineConfig",
+    "CodePlannerPort",
     "CodeVerifier",
     "CodeWorkflowEngine",
     "CodingStandardsConfig",
@@ -43,6 +49,7 @@ __all__ = [
     "DoDResult",
     "DoDStateMachine",
     "DoDStatus",
+    "DoDVerifierPort",
     "TeamAgentsConfig",
     "TddCodeVerifier",
     "ThinTeamOrchestrator",

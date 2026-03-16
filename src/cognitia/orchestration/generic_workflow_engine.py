@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from cognitia.orchestration.verifier_port import ExecutorPort, VerifierPort
+
 # Type aliases for pluggable executor and verifier
 ExecutorFn = Callable[[str, dict[str, Any]], Coroutine[Any, Any, str]]
 VerifierFn = Callable[[str, dict[str, Any]], Coroutine[Any, Any, tuple[bool, str]]]
@@ -48,8 +50,8 @@ class GenericWorkflowEngine:
 
     def __init__(
         self,
-        executor: Any,
-        verifier: Any,
+        executor: ExecutorPort | ExecutorFn,
+        verifier: VerifierPort | VerifierFn,
         max_retries: int = 3,
     ) -> None:
         self._executor = executor

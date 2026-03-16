@@ -258,8 +258,23 @@ class SessionFactory(Protocol):
     ) -> Any | None: ...
 
 
-class SessionManager(Protocol):
-    """Порт: управление активными сессиями."""
+class SessionLifecycle(Protocol):
+    """Порт: lifecycle управления сессиями (close/close_all).
+
+    Выделено из SessionManager для соблюдения ISP (≤5 методов на Protocol).
+    """
+
+    async def close(self, key: Any) -> None: ...
+
+    async def close_all(self) -> None: ...
+
+
+class SessionManager(SessionLifecycle, Protocol):
+    """Порт: управление активными сессиями.
+
+    Наследует SessionLifecycle (close/close_all).
+    Итого 4 собственных + 2 из SessionLifecycle = backward compatible.
+    """
 
     def get(self, key: Any) -> Any | None: ...
 
@@ -280,10 +295,6 @@ class SessionManager(Protocol):
         active_tools: list[Any],
         mode_hint: str | None = None,
     ) -> AsyncIterator[Any]: ...
-
-    async def close(self, key: Any) -> None: ...
-
-    async def close_all(self) -> None: ...
 
 
 class SessionRehydrator(Protocol):
