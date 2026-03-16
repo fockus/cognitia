@@ -1,10 +1,7 @@
 """Cognitia Orchestration — планирование, subagent'ы, team mode."""
 
-from cognitia.orchestration.verification_types import (
-    CheckDetail,
-    VerificationResult,
-    VerificationStatus,
-)
+from cognitia.orchestration.code_verifier import CodeVerifier, CommandResult, CommandRunner
+from cognitia.orchestration.code_workflow_engine import CodeWorkflowEngine, WorkflowResult
 from cognitia.orchestration.coding_standards import (
     AutonomousLoopConfig,
     CodePipelineConfig,
@@ -12,10 +9,15 @@ from cognitia.orchestration.coding_standards import (
     TeamAgentsConfig,
     WorkflowAutomationConfig,
 )
-from cognitia.orchestration.code_verifier import CodeVerifier, CommandResult, CommandRunner
-from cognitia.orchestration.tdd_code_verifier import TddCodeVerifier
 from cognitia.orchestration.dod_state_machine import DoDResult, DoDStateMachine, DoDStatus
-from cognitia.orchestration.code_workflow_engine import CodeWorkflowEngine, WorkflowResult
+from cognitia.orchestration.message_tools import SEND_MESSAGE_TOOL_SPEC, create_send_message_tool
+from cognitia.orchestration.tdd_code_verifier import TddCodeVerifier
+from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+from cognitia.orchestration.verification_types import (
+    CheckDetail,
+    VerificationResult,
+    VerificationStatus,
+)
 from cognitia.orchestration.workflow_pipeline import WorkflowPipeline
 
 __all__ = [
@@ -32,6 +34,9 @@ __all__ = [
     "DoDStatus",
     "TeamAgentsConfig",
     "TddCodeVerifier",
+    "ThinTeamOrchestrator",
+    "SEND_MESSAGE_TOOL_SPEC",
+    "create_send_message_tool",
     "VerificationResult",
     "VerificationStatus",
     "WorkflowAutomationConfig",

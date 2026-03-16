@@ -33,6 +33,7 @@ from cognitia.runtime.deepagents_native import (
     validate_native_backend_config,
 )
 from cognitia.runtime.deepagents_tools import create_langchain_tool
+from cognitia.runtime.mcp_bridge import McpBridge
 from cognitia.runtime.structured_output import (
     append_structured_output_instruction,
     extract_structured_output,
@@ -66,15 +67,19 @@ class DeepAgentsRuntime:
         self,
         config: RuntimeConfig | None = None,
         tool_executors: dict[str, Callable] | None = None,
+        mcp_servers: dict[str, Any] | None = None,
     ) -> None:
         """Инициализировать runtime.
 
         Args:
             config: Конфигурация runtime.
             tool_executors: Маппинг tool_name → async callable для local tools.
+            mcp_servers: Маппинг server_id → url/config для MCP серверов.
+                         Если передан, создается McpBridge для tool discovery и execution.
         """
         self._config = config or RuntimeConfig(runtime_name="deepagents")
         self._tool_executors = tool_executors or {}
+        self._mcp_bridge = McpBridge(mcp_servers) if mcp_servers else None
 
     async def run(
         self,
@@ -107,6 +112,23 @@ class DeepAgentsRuntime:
             feature_mode=effective_config.feature_mode,
             allow_native_features=effective_config.allow_native_features,
         )
+
+        # Discover MCP tools and merge
+        if self._mcp_bridge is not None:
+            try:
+                mcp_tools = await self._mcp_bridge.discover_all_tools()
+                selected_tools = list(selected_tools) + mcp_tools
+                # Register MCP executors
+                for spec in mcp_tools:
+                    # Parse mcp__server__tool -> (server_id, tool_name)
+                    parts = spec.name.split("__", 2)
+                    if len(parts) == 3:
+                        server_id, tool_name = parts[1], parts[2]
+                        self._tool_executors[spec.name] = self._mcp_bridge.create_tool_executor(
+                            server_id, tool_name
+                        )
+            except Exception:
+                pass  # Graceful degradation — MCP tools unavailable
 
         full_text = ""
         tool_calls: list[dict[str, Any]] = []

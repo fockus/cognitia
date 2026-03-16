@@ -194,6 +194,43 @@ export COGNITIA_RUNTIME=thin
 | `claude_sdk` | Full Claude ecosystem, native MCP, subagents | Claude only | Native | `cognitia[claude]` |
 | `deepagents` | DeepAgents graph runtime, LangGraph workflows | Anthropic baseline; OpenAI/Google via provider package | Not a portable guarantee | `cognitia[deepagents]` |
 
+### Runtime Feature Matrix
+
+Each runtime brings unique native strengths. Cognitia's library layer fills the gaps — so your code works the same regardless of which runtime is active.
+
+```
+┌──────────────────────────┬──────────┬───────────┬───────┬──────────────┐
+│ Feature                  │ claude   │ deep      │ thin  │ Cognitia     │
+│                          │ _sdk     │ agents    │       │ library      │
+├──────────────────────────┼──────────┼───────────┼───────┼──────────────┤
+│ MCP Servers              │ ✅ SDK   │ ❌        │ ✅    │ ✅ bridge    │
+│ Streaming (token-level)  │ ✅       │ ✅        │ ⚠️    │ ✅ portable  │
+│ Structured Output        │ ✅ SDK   │ ✅ both   │ ✅    │ ✅ portable  │
+│ Tool Masking             │ ✅ SDK   │ ✅ auto   │ ✅    │ ✅ config    │
+│ Hooks (PreToolUse etc)   │ ✅       │ ❌        │ ❌    │ ✅ middleware │
+│ Subagents                │ ✅       │ ✅        │ ✅    │ ✅ lib       │
+│ Team Mode                │ ✅ lead  │ ✅ super  │ ⚠️    │ ✅ lib       │
+│ Resume / Stateful        │ ✅ SDK   │ ✅ CP     │ ❌    │ ✅ lib       │
+│ HITL / Approvals         │ ✅ SDK   │ ✅ int    │ ❌    │ ✅ event     │
+│ Budget Enforcement       │ ✅ SDK   │ ❌        │ ✅    │ ✅ middleware │
+│ Provider Override        │ ❌       │ ✅        │ ✅    │ ✅ registry  │
+│ Built-in Planner Mode    │ ❌       │ ⚠️ LG     │ ✅    │ ✅ lib       │
+│ Native Built-in Tools    │ ✅ SDK   │ ✅ (9)    │ ❌    │ —            │
+│ State Persistence        │ ✅ SDK   │ ✅ CP     │ ❌    │ ✅ lib       │
+│ Graph Workflows          │ ❌       │ ✅ LG     │ ❌    │ —            │
+│ Multi-Provider           │ ❌       │ ✅        │ ✅    │ ✅ registry  │
+│ Memory Bank              │ —        │ —         │ —     │ ✅ FS/DB     │
+│ DoD Verification         │ —        │ —         │ —     │ ✅ lib       │
+│ Context Builder          │ —        │ —         │ —     │ ✅ budget    │
+│ Planning & Orchestration │ —        │ —         │ —     │ ✅ lib       │
+└──────────────────────────┴──────────┴───────────┴───────┴──────────────┘
+
+Legend: ✅ = Supported  ⚠️ = Partial  ❌ = Not supported  — = N/A
+CP = Checkpointer  LG = LangGraph  int = interrupt_on
+```
+
+The **Cognitia library** column shows what works with **any** runtime — memory bank, planning, DoD verification, context builder, middleware, and orchestration are all runtime-agnostic.
+
 ### Portable Matrix
 
 - `claude_sdk` and `deepagents` share an offline-tested portable baseline for `query()`, `stream()`, and `conversation()` when `feature_mode="portable"`.

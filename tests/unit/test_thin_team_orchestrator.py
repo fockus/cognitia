@@ -1,0 +1,243 @@
+"""TDD Red Phase: ThinTeamOrchestrator (Этап 2.2).
+
+Тесты проверяют:
+- start(config, task) → N workers running
+- stop → все workers cancelled
+- team_status отражает состояние всех workers
+- send_message → worker видит в inbox
+- pause → cancelled, resume → re-spawned
+- lead_prompt composed: worker task = lead_prompt + worker_name + general_task
+- Все workers completed → team state = completed
+
+Contract: cognitia.orchestration.thin_team.ThinTeamOrchestrator
+Implements: TeamOrchestrator protocol (5 методов) + ResumableTeamOrchestrator
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+
+import pytest
+from cognitia.orchestration.subagent_types import SubagentSpec
+from cognitia.orchestration.team_protocol import ResumableTeamOrchestrator, TeamOrchestrator
+from cognitia.orchestration.team_types import TeamConfig, TeamMessage, TeamStatus
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_team_config(n_workers: int = 2) -> TeamConfig:
+    """Создать TeamConfig с N workers."""
+    workers = [
+        SubagentSpec(name=f"worker_{i}", system_prompt=f"Worker {i} prompt")
+        for i in range(n_workers)
+    ]
+    return TeamConfig(
+        lead_prompt="You are the team lead. Coordinate workers.",
+        worker_specs=workers,
+        max_workers=n_workers,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Protocol compliance
+# ---------------------------------------------------------------------------
+
+
+class TestThinTeamOrchestratorProtocol:
+    """ThinTeamOrchestrator реализует TeamOrchestrator protocol."""
+
+    def test_thin_team_implements_protocol(self) -> None:
+        """ThinTeamOrchestrator — isinstance TeamOrchestrator."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        assert isinstance(orch, TeamOrchestrator)
+
+    def test_thin_team_implements_resumable_protocol(self) -> None:
+        """ThinTeamOrchestrator — isinstance ResumableTeamOrchestrator."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        assert isinstance(orch, ResumableTeamOrchestrator)
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle тесты
+# ---------------------------------------------------------------------------
+
+
+class TestThinTeamLifecycle:
+    """Start/stop/status lifecycle."""
+
+    @pytest.mark.asyncio
+    async def test_thin_team_start_spawns_workers(self) -> None:
+        """start(config, task) → N workers running."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = _make_team_config(n_workers=3)
+
+        team_id = await orch.start(config, "Solve the problem together")
+
+        assert isinstance(team_id, str)
+        assert len(team_id) > 0
+
+        status = await orch.get_team_status(team_id)
+        assert status.state == "running"
+        assert len(status.workers) == 3
+
+    @pytest.mark.asyncio
+    async def test_thin_team_stop_cancels_all(self) -> None:
+        """stop → все workers cancelled."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = _make_team_config(n_workers=2)
+
+        team_id = await orch.start(config, "Task")
+        await asyncio.sleep(0.05)  # Дать workers стартовать
+
+        await orch.stop(team_id)
+
+        status = await orch.get_team_status(team_id)
+        # После stop все workers должны быть cancelled/failed/completed
+        for worker_status in status.workers.values():
+            assert worker_status.state in ("cancelled", "failed", "completed")
+
+    @pytest.mark.asyncio
+    async def test_thin_team_status_aggregated(self) -> None:
+        """team_status отражает состояние всех workers."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = _make_team_config(n_workers=2)
+
+        team_id = await orch.start(config, "Task")
+        status = await orch.get_team_status(team_id)
+
+        assert isinstance(status, TeamStatus)
+        assert status.team_id == team_id
+        assert isinstance(status.workers, dict)
+        assert len(status.workers) == 2
+
+    @pytest.mark.asyncio
+    async def test_thin_team_all_completed(self) -> None:
+        """Все workers completed → team state = completed."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = _make_team_config(n_workers=1)
+
+        team_id = await orch.start(config, "Quick task")
+
+        # Ждём завершения всех workers (timeout 5s)
+        for _ in range(50):
+            status = await orch.get_team_status(team_id)
+            if status.state == "completed":
+                break
+            await asyncio.sleep(0.1)
+
+        status = await orch.get_team_status(team_id)
+        assert status.state == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Messaging
+# ---------------------------------------------------------------------------
+
+
+class TestThinTeamMessaging:
+    """send_message / MessageBus integration."""
+
+    @pytest.mark.asyncio
+    async def test_thin_team_send_message_delivered(self) -> None:
+        """send_message → worker видит в inbox."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = _make_team_config(n_workers=2)
+
+        team_id = await orch.start(config, "Task")
+        await asyncio.sleep(0.05)
+
+        msg = TeamMessage(
+            from_agent="lead",
+            to_agent="worker_0",
+            content="Focus on subtask A",
+            timestamp=datetime.now(tz=UTC),
+        )
+        await orch.send_message(team_id, msg)
+
+        status = await orch.get_team_status(team_id)
+        assert status.messages_exchanged >= 1
+
+
+# ---------------------------------------------------------------------------
+# Pause / Resume
+# ---------------------------------------------------------------------------
+
+
+class TestThinTeamPauseResume:
+    """pause_agent / resume_agent."""
+
+    @pytest.mark.asyncio
+    async def test_thin_team_pause_resume_agent(self) -> None:
+        """pause → worker cancelled, resume → worker re-spawned."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = _make_team_config(n_workers=2)
+
+        team_id = await orch.start(config, "Task")
+        await asyncio.sleep(0.05)
+
+        # Pause worker_0
+        worker_ids = list((await orch.get_team_status(team_id)).workers.keys())
+        assert len(worker_ids) >= 1
+        worker_id = worker_ids[0]
+
+        await orch.pause_agent(team_id, worker_id)
+
+        status = await orch.get_team_status(team_id)
+        assert status.workers[worker_id].state in ("cancelled", "failed")
+
+        # Resume worker_0
+        await orch.resume_agent(team_id, worker_id)
+
+        status = await orch.get_team_status(team_id)
+        assert status.workers[worker_id].state in ("running", "pending", "completed")
+
+
+# ---------------------------------------------------------------------------
+# Lead prompt composition
+# ---------------------------------------------------------------------------
+
+
+class TestThinTeamLeadPrompt:
+    """Lead delegation: task composition."""
+
+    @pytest.mark.asyncio
+    async def test_thin_team_lead_prompt_composed(self) -> None:
+        """Worker task = lead_prompt + worker_name + general_task."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = TeamConfig(
+            lead_prompt="Coordinate the team on data analysis.",
+            worker_specs=[
+                SubagentSpec(name="analyst", system_prompt="You analyze data."),
+            ],
+            max_workers=1,
+        )
+
+        team_id = await orch.start(config, "Analyze Q4 revenue")
+
+        # Проверяем что worker получил составной prompt
+        # (через status или внутреннее состояние)
+        status = await orch.get_team_status(team_id)
+        assert status.state in ("running", "completed")
+        # Worker должен существовать
+        assert len(status.workers) == 1

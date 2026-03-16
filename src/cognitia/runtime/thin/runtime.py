@@ -28,6 +28,7 @@ from cognitia.runtime.thin.prompts import (
     build_react_prompt,
 )
 from cognitia.runtime.thin.schemas import ActionEnvelope, PlanSchema
+from cognitia.runtime.thin.stream_parser import IncrementalEnvelopeParser
 from cognitia.runtime.types import (
     Message,
     RuntimeConfig,
@@ -143,6 +144,30 @@ class ThinRuntime:
     # Conversational mode
     # ------------------------------------------------------------------
 
+    async def _try_stream_llm_call(
+        self,
+        lm_messages: list[dict[str, str]],
+        prompt: str,
+    ) -> tuple[list[str], str] | None:
+        """Попробовать streaming LLM вызов.
+
+        Returns:
+            (chunks, full_text) если streaming поддерживается, None иначе.
+        """
+        try:
+            result = await self._llm_call(lm_messages, prompt, stream=True)
+        except TypeError:
+            # LLM не поддерживает stream kwarg
+            return None
+
+        if not hasattr(result, "__aiter__"):
+            return None
+
+        chunks: list[str] = []
+        async for chunk in result:
+            chunks.append(chunk)
+        return chunks, "".join(chunks)
+
     async def _run_conversational(
         self,
         messages: list[Message],
@@ -150,7 +175,7 @@ class ThinRuntime:
         config: RuntimeConfig,
         start_time: float,
     ) -> AsyncIterator[RuntimeEvent]:
-        """Single LLM call → final."""
+        """Single LLM call → final. С поддержкой token streaming."""
         prompt = build_conversational_prompt(
             append_structured_output_instruction(
                 system_prompt,
@@ -160,12 +185,52 @@ class ThinRuntime:
         )
         lm_messages = self._messages_to_lm(messages)
 
+        # Пробуем streaming
+        stream_result = await self._try_stream_llm_call(lm_messages, prompt)
+
+        if stream_result is not None:
+            chunks, raw = stream_result
+            parser = IncrementalEnvelopeParser()
+
+            # Emit per-chunk deltas
+            for chunk in chunks:
+                parser.feed(chunk)
+                yield RuntimeEvent.assistant_delta(chunk)
+
+            # Парсим envelope из собранного текста
+            envelope = self._parse_envelope(raw)
+            if envelope is not None and envelope.type == "final" and envelope.final_message:
+                text = envelope.final_message
+                new_messages = [Message(role="assistant", content=text)]
+                structured_output = extract_structured_output(text, config.output_format)
+                yield RuntimeEvent.final(
+                    text=text,
+                    new_messages=new_messages,
+                    metrics=self._build_metrics(start_time, config, iterations=1),
+                    structured_output=structured_output,
+                )
+                return
+
+            # Streaming завершился, но envelope некорректный — fallback
+            raw = await self._llm_call(lm_messages, prompt)
+            envelope = self._parse_envelope(raw)
+            if envelope is not None and envelope.type == "final" and envelope.final_message:
+                text = envelope.final_message
+                new_messages = [Message(role="assistant", content=text)]
+                structured_output = extract_structured_output(text, config.output_format)
+                yield RuntimeEvent.final(
+                    text=text,
+                    new_messages=new_messages,
+                    metrics=self._build_metrics(start_time, config, iterations=1),
+                    structured_output=structured_output,
+                )
+                return
+
+        # Non-streaming path
         raw = await self._llm_call(lm_messages, prompt)
 
-        # Парсим ответ
         envelope = self._parse_envelope(raw)
         if envelope is None:
-            # Retry
             raw = await self._llm_call(lm_messages, prompt)
             envelope = self._parse_envelope(raw)
 
@@ -179,11 +244,10 @@ class ThinRuntime:
             )
             return
 
-        # Извлекаем текст
         if envelope.type == "final" and envelope.final_message:
             text = envelope.final_message
         else:
-            text = raw  # fallback: используем raw ответ
+            text = raw
 
         new_messages = [Message(role="assistant", content=text)]
         structured_output = extract_structured_output(text, config.output_format)
@@ -466,12 +530,19 @@ class ThinRuntime:
                     config=step_config,
                     start_time=start_time,
                 ):
-                    # Пробрасываем tool events
-                    if event.type in ("tool_call_started", "tool_call_finished", "status"):
+                    # Пробрасываем tool + streaming events
+                    if event.type in (
+                        "tool_call_started",
+                        "tool_call_finished",
+                        "status",
+                        "assistant_delta",
+                    ):
                         yield event
                     elif event.type == "final":
                         step_text = event.data.get("text", "")
-                        total_tool_calls += event.data.get("metrics", {}).get("tool_calls_count", 0)
+                        total_tool_calls += event.data.get("metrics", {}).get(
+                            "tool_calls_count", 0
+                        )
                     elif event.type == "error":
                         yield event
                         return
@@ -488,7 +559,9 @@ class ThinRuntime:
                     config=step_config,
                     start_time=start_time,
                 ):
-                    if event.type == "final":
+                    if event.type == "assistant_delta":
+                        yield event
+                    elif event.type == "final":
                         step_text = event.data.get("text", "")
                     elif event.type == "error":
                         yield event
@@ -688,6 +761,7 @@ class ThinRuntime:
         self,
         messages: list[dict[str, str]],
         system_prompt: str,
+        **kwargs: Any,
     ) -> str:
         """Default LLM call через anthropic SDK.
 
