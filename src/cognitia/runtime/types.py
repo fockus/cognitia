@@ -449,3 +449,11 @@ class RuntimeConfig:
                     f"'{self.runtime_name}' не поддерживает требуемые capabilities: "
                     f"{', '.join(missing)}"
                 )
+
+    @property
+    def is_native_mode(self) -> bool:
+        """True если используется native upstream path."""
+        return self.allow_native_features or self.feature_mode in {
+            "hybrid",
+            "native_first",
+        }

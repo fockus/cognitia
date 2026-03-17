@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import pytest
+from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.runtime import ThinRuntime
-from cognitia.runtime.types import Message, RuntimeEvent, ToolSpec
+from cognitia.runtime.types import Message, RuntimeConfig, RuntimeErrorData, RuntimeEvent, ToolSpec
 
 # ---------------------------------------------------------------------------
 # Mock LLM — возвращает заранее заданные ответы
@@ -236,6 +238,51 @@ class TestThinRuntimeConversational:
         events = await collect(runtime, "test", mode_hint="conversational")
         final = next(e for e in events if e.type == "final")
         assert final.data["text"] == "Ок"
+
+    @pytest.mark.asyncio
+    async def test_stream_init_dependency_error_emits_runtime_error(self) -> None:
+        """Ошибка инициализации stream path не превращается в assistant_delta JSON."""
+        runtime = ThinRuntime(
+            config=RuntimeConfig(runtime_name="thin", model="google:gemini-2.5-pro")
+        )
+        thin_error = ThinLlmError(
+            RuntimeErrorData(
+                kind="dependency_missing",
+                message="google-genai SDK не установлен. Установите: pip install cognitia[thin]",
+                recoverable=False,
+            )
+        )
+        with patch(
+            "cognitia.runtime.thin.llm_client.get_cached_adapter",
+            side_effect=thin_error,
+        ):
+            events = await collect(runtime, "test", mode_hint="conversational")
+
+        errors = [e for e in events if e.type == "error"]
+        assert len(errors) == 1
+        assert errors[0].data["kind"] == "dependency_missing"
+        assert not [e for e in events if e.type == "assistant_delta"]
+
+    @pytest.mark.asyncio
+    async def test_non_stream_dependency_error_emits_runtime_error(self) -> None:
+        """Non-stream fallback path также отдаёт typed error event."""
+
+        async def failing_llm(messages: list[dict], system_prompt: str) -> str:
+            raise ThinLlmError(
+                RuntimeErrorData(
+                    kind="dependency_missing",
+                    message="openai SDK не установлен. Установите: pip install cognitia[thin]",
+                    recoverable=False,
+                )
+            )
+
+        runtime = ThinRuntime(llm_call=failing_llm)
+        events = await collect(runtime, "test", mode_hint="conversational")
+
+        errors = [e for e in events if e.type == "error"]
+        assert len(errors) == 1
+        assert errors[0].data["kind"] == "dependency_missing"
+        assert not [e for e in events if e.type == "assistant_delta"]
 
 
 class TestThinRuntimeReactFallback:

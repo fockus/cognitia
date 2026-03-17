@@ -24,7 +24,7 @@ Unlike monolithic agent frameworks, cognitia follows **Clean Architecture**: you
 
 ```bash
 pip install cognitia                # core (protocols, types, in-memory providers)
-pip install cognitia[thin]          # + lightweight built-in runtime (Anthropic API)
+pip install cognitia[thin]          # + lightweight built-in multi-provider runtime
 pip install cognitia[claude]        # + Claude Agent SDK runtime (subprocess + MCP)
 pip install cognitia[deepagents]    # + DeepAgents runtime baseline (native graph + Anthropic path)
 ```
@@ -126,7 +126,7 @@ print(tracker.total_cost_usd)  # 0.002
 | Feature | Description |
 |---------|-------------|
 | **Agent Facade** | High-level API: `query()`, `stream()`, `conversation()` — build agents in 3-5 lines |
-| **3 Pluggable Runtimes** | `thin` (built-in Anthropic loop), `claude_sdk` (Claude Agent SDK), `deepagents` (LangChain) |
+| **3 Pluggable Runtimes** | `thin` (built-in multi-provider loop), `claude_sdk` (Claude Agent SDK), `deepagents` (LangChain) |
 | **@tool Decorator** | Define tools with auto-inferred JSON Schema from Python type hints |
 | **Middleware Chain** | Pluggable request/response interceptors: `CostTracker`, `SecurityGuard`, custom |
 | **14 ISP Protocols** | Every interface has ≤5 methods. Depend on abstractions, swap implementations freely |
@@ -173,7 +173,7 @@ print(tracker.total_cost_usd)  # 0.002
 Cognitia supports 3 interchangeable runtimes. Switch with a single config change — your business code stays the same:
 
 ```python
-# Built-in lightweight loop (direct Anthropic API)
+# Built-in lightweight loop (direct multi-provider API)
 agent = Agent(AgentConfig(system_prompt="...", runtime="thin"))
 
 # Claude Agent SDK (subprocess with full MCP support)
@@ -190,7 +190,7 @@ export COGNITIA_RUNTIME=thin
 
 | Runtime | Best For | LLM Support | MCP | Install |
 | ------- | -------- | ----------- | --- | ------- |
-| `thin` | Fast prototyping, direct API, alternative LLMs | Any (via `base_url`) | Built-in client | `cognitia[thin]` |
+| `thin` | Fast prototyping, direct API, alternative LLMs | Anthropic, OpenAI-compatible, Google | Built-in client | `cognitia[thin]` |
 | `claude_sdk` | Full Claude ecosystem, native MCP, subagents | Claude only | Native | `cognitia[claude]` |
 | `deepagents` | DeepAgents graph runtime, LangGraph workflows | Anthropic baseline; OpenAI/Google via provider package | Not a portable guarantee | `cognitia[deepagents]` |
 

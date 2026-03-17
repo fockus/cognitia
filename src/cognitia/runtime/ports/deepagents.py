@@ -45,12 +45,33 @@ class DeepAgentsRuntimePort(BaseRuntimePort):
         active_tools: list[ToolSpec] | None = None,
         tool_executors: dict[str, Callable] | None = None,
         summarizer: Any | None = None,
+        memory_sources: list[str] | None = None,
     ) -> None:
+        from dataclasses import replace
+
+        effective_config = config or RuntimeConfig(runtime_name="deepagents")
+        prompt_memory_sources = memory_sources
+
+        # Для native mode: пробросить memory_sources в native_config
+        if memory_sources and effective_config.is_native_mode:
+            native = {**effective_config.native_config, "memory": list(memory_sources)}
+            prompt_memory_sources = None
+            # Auto-backend: memory без backend → FilesystemBackend(root_dir=".")
+            if "backend" not in native:
+                try:
+                    from deepagents.backends.filesystem import FilesystemBackend
+
+                    native["backend"] = FilesystemBackend(root_dir=".", virtual_mode=False)
+                except ImportError:
+                    logger.warning("deepagents FilesystemBackend недоступен, auto-backend пропущен")
+            effective_config = replace(effective_config, native_config=native)
+
         super().__init__(
             system_prompt=system_prompt,
-            config=config or RuntimeConfig(runtime_name="deepagents"),
+            config=effective_config,
             history_max=HISTORY_MAX,
             summarizer=summarizer,
+            memory_sources=prompt_memory_sources,
         )
         self._active_tools = active_tools or []
         self._tool_executors = tool_executors or {}
@@ -82,6 +103,16 @@ class DeepAgentsRuntimePort(BaseRuntimePort):
             await self._runtime.cleanup()
             self._runtime = None
         await super().disconnect()
+
+    def _is_native_mode(self) -> bool:
+        """True если используется native upstream path (compaction handled by upstream)."""
+        return self._config.is_native_mode
+
+    async def _maybe_summarize(self) -> None:
+        """Noop для native mode — upstream handles compaction."""
+        if self._is_native_mode():
+            return
+        await super()._maybe_summarize()
 
     async def _run_runtime(
         self,

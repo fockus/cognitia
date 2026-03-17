@@ -7,6 +7,7 @@ from cognitia.runtime.capabilities import (
     CapabilityRequirements,
     get_runtime_capabilities,
 )
+from cognitia.runtime.types import RuntimeConfig
 
 
 class TestCapabilityRequirements:
@@ -40,6 +41,8 @@ class TestRuntimeCapabilities:
         assert caps.supports_interrupt is False
         assert caps.supports_user_input is False
         assert caps.supports_hitl is False
+        assert caps.supports_builtin_memory is False
+        assert caps.supports_builtin_compaction is False
         assert caps.supports_builtin_todo is True
         assert caps.supports_native_subagents is True
         assert caps.supports_provider_override is True
@@ -68,3 +71,58 @@ class TestRuntimeCapabilities:
         req = CapabilityRequirements(flags=("mcp", "interrupt", "resume"))
         assert caps.supports(req) is True
         assert caps.missing(req) == ()
+
+    def test_deepagents_reports_hitl_as_missing(self) -> None:
+        caps = get_runtime_capabilities("deepagents")
+        req = CapabilityRequirements(flags=("hitl",))
+        assert caps.supports(req) is False
+        assert caps.missing(req) == ("hitl",)
+
+    def test_deepagents_reports_builtin_memory_as_missing(self) -> None:
+        caps = get_runtime_capabilities("deepagents")
+        req = CapabilityRequirements(flags=("builtin_memory",))
+        assert caps.supports(req) is False
+        assert caps.missing(req) == ("builtin_memory",)
+
+    def test_deepagents_reports_builtin_compaction_as_missing(self) -> None:
+        caps = get_runtime_capabilities("deepagents")
+        req = CapabilityRequirements(flags=("builtin_compaction",))
+        assert caps.supports(req) is False
+        assert caps.missing(req) == ("builtin_compaction",)
+
+
+class TestRuntimeConfigCapabilityValidation:
+    """RuntimeConfig fail-fast валидация capability requirements."""
+
+    def test_deepagents_portable_hitl_requirement_raises(self) -> None:
+        with pytest.raises(ValueError, match="hitl"):
+            RuntimeConfig(
+                runtime_name="deepagents",
+                feature_mode="portable",
+                required_capabilities=CapabilityRequirements(flags=("hitl",)),
+            )
+
+    def test_deepagents_builtin_memory_requirement_raises(self) -> None:
+        with pytest.raises(ValueError, match="builtin_memory"):
+            RuntimeConfig(
+                runtime_name="deepagents",
+                required_capabilities=CapabilityRequirements(flags=("builtin_memory",)),
+            )
+
+    def test_deepagents_builtin_compaction_requirement_raises(self) -> None:
+        with pytest.raises(ValueError, match="builtin_compaction"):
+            RuntimeConfig(
+                runtime_name="deepagents",
+                required_capabilities=CapabilityRequirements(
+                    flags=("builtin_compaction",)
+                ),
+            )
+
+    def test_deepagents_builtin_memory_and_compaction_requirement_raises(self) -> None:
+        with pytest.raises(ValueError, match="builtin_memory, builtin_compaction"):
+            RuntimeConfig(
+                runtime_name="deepagents",
+                required_capabilities=CapabilityRequirements(
+                    flags=("builtin_memory", "builtin_compaction")
+                ),
+            )

@@ -10,6 +10,7 @@ from cognitia.runtime.structured_output import (
     extract_structured_output,
 )
 from cognitia.runtime.thin.helpers import _build_metrics, _messages_to_lm
+from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.llm_client import try_stream_llm_call
 from cognitia.runtime.thin.parsers import parse_envelope
 from cognitia.runtime.thin.prompts import build_conversational_prompt
@@ -39,7 +40,11 @@ async def run_conversational(
     lm_messages = _messages_to_lm(messages)
 
     # Пробуем streaming
-    stream_result = await try_stream_llm_call(llm_call, lm_messages, prompt)
+    try:
+        stream_result = await try_stream_llm_call(llm_call, lm_messages, prompt)
+    except ThinLlmError as exc:
+        yield RuntimeEvent.error(exc.error)
+        return
 
     if stream_result is not None:
         chunks, raw = stream_result
@@ -63,7 +68,11 @@ async def run_conversational(
             return
 
         # Streaming завершился, но envelope некорректный -- fallback
-        raw = await llm_call(lm_messages, prompt)
+        try:
+            raw = await llm_call(lm_messages, prompt)
+        except ThinLlmError as exc:
+            yield RuntimeEvent.error(exc.error)
+            return
         envelope = parse_envelope(raw)
         if envelope is not None and envelope.type == "final" and envelope.final_message:
             text = envelope.final_message
@@ -78,11 +87,19 @@ async def run_conversational(
             return
 
     # Non-streaming path
-    raw = await llm_call(lm_messages, prompt)
+    try:
+        raw = await llm_call(lm_messages, prompt)
+    except ThinLlmError as exc:
+        yield RuntimeEvent.error(exc.error)
+        return
 
     envelope = parse_envelope(raw)
     if envelope is None:
-        raw = await llm_call(lm_messages, prompt)
+        try:
+            raw = await llm_call(lm_messages, prompt)
+        except ThinLlmError as exc:
+            yield RuntimeEvent.error(exc.error)
+            return
         envelope = parse_envelope(raw)
 
     if envelope is None:

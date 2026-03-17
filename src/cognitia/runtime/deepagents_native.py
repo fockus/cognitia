@@ -37,6 +37,11 @@ def build_deepagents_graph(
     checkpointer: Any = None,
     store: Any = None,
     backend: Any = None,
+    memory: list[str] | None = None,
+    subagents: list[dict[str, Any]] | None = None,
+    skills: list[dict[str, Any]] | None = None,
+    middleware: list[Any] | None = None,
+    agent_name: str | None = None,
 ) -> Any:
     """Собрать native DeepAgents graph через upstream create_deep_agent()."""
     from deepagents import create_deep_agent
@@ -60,6 +65,16 @@ def build_deepagents_graph(
         kwargs["store"] = store
     if backend is not None:
         kwargs["backend"] = backend
+    if memory is not None:
+        kwargs["memory"] = memory
+    if subagents is not None:
+        kwargs["subagents"] = subagents
+    if skills is not None:
+        kwargs["skills"] = skills
+    if middleware is not None:
+        kwargs["middleware"] = middleware
+    if agent_name is not None:
+        kwargs["name"] = agent_name
 
     return create_deep_agent(
         **kwargs,

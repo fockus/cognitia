@@ -18,6 +18,7 @@ RUNTIME_CAPABILITY_FLAGS = frozenset(
         "native_subagents",
         "builtin_memory",
         "builtin_todo",
+        "builtin_compaction",
         "hitl",
         "project_instructions",
         "provider_override",
@@ -69,6 +70,7 @@ class RuntimeCapabilities:
     supports_builtin_memory: bool = False
     supports_builtin_todo: bool = False
     supports_hitl: bool = False
+    supports_builtin_compaction: bool = False
     supports_project_instructions: bool = False
     supports_provider_override: bool = False
 
@@ -107,6 +109,7 @@ class RuntimeCapabilities:
             "native_subagents": self.supports_native_subagents,
             "builtin_memory": self.supports_builtin_memory,
             "builtin_todo": self.supports_builtin_todo,
+            "builtin_compaction": self.supports_builtin_compaction,
             "hitl": self.supports_hitl,
             "project_instructions": self.supports_project_instructions,
             "provider_override": self.supports_provider_override,

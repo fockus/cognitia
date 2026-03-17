@@ -1,16 +1,17 @@
-"""LLM client functions для ThinRuntime.
-
-default_llm_call     — вызов Anthropic SDK (production)
-try_stream_llm_call  — streaming wrapper с fallback
-"""
+"""LLM client functions для ThinRuntime."""
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
+import logging
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from cognitia.runtime.provider_resolver import resolve_provider
+from cognitia.runtime.thin.errors import ThinLlmError, provider_runtime_crash
+from cognitia.runtime.thin.llm_providers import get_cached_adapter
 from cognitia.runtime.types import RuntimeConfig
+
+logger = logging.getLogger(__name__)
 
 
 async def try_stream_llm_call(
@@ -45,96 +46,72 @@ async def try_stream_llm_call(
     return chunks, "".join(chunks)
 
 
+async def _stream_with_error_normalization(
+    adapter: Any,
+    provider: str,
+    messages: list[dict[str, str]],
+    system_prompt: str,
+    **kwargs: Any,
+) -> AsyncIterator[str]:
+    """Wrap adapter.stream() so iteration-time failures become typed errors."""
+    try:
+        async for chunk in adapter.stream(messages, system_prompt, **kwargs):
+            yield chunk
+    except ThinLlmError:
+        raise
+    except Exception as exc:
+        logger.error("Ошибка LLM API (%s)", provider, exc_info=True)
+        raise provider_runtime_crash(provider, exc) from exc
+
+
 async def default_llm_call(
     config: RuntimeConfig,
     messages: list[dict[str, str]],
     system_prompt: str,
     **kwargs: Any,
-) -> str:
-    """Default LLM call через anthropic SDK.
+) -> str | AsyncIterator[str]:
+    """Multi-provider LLM call через ProviderResolver + LlmAdapter.
 
-    Модель берётся из config.model (настраивается через
-    ANTHROPIC_MODEL env, CLI --model, или RuntimeConfig).
-    Base URL берётся из config.base_url или ANTHROPIC_BASE_URL env
-    (для OpenRouter, proxy и т.д.).
+    Модель берётся из config.model. ProviderResolver определяет провайдера,
+    SDK type и base_url. create_llm_adapter() создаёт подходящий адаптер.
+
+    При stream=True возвращает AsyncIterator[str] (через adapter.stream()).
+    Иначе — str (через adapter.call()).
+
+    Поддерживает: Anthropic, OpenAI, Google, OpenRouter, Ollama, Groq,
+    Together, Fireworks, DeepSeek, vLLM, любой OpenAI-compatible.
     """
-    import logging
-    import os
+    use_stream = kwargs.pop("stream", False)
 
-    logger = logging.getLogger(__name__)
-
-    try:
-        import anthropic
-    except ImportError:
-        return json.dumps(
-            {
-                "type": "final",
-                "final_message": (
-                    "anthropic SDK не установлен. Установите: pip install cognitia[thin]"
-                ),
-            }
-        )
-
-    # Base URL: config > env > стандартный Anthropic
-    base_url = config.base_url or os.getenv("ANTHROPIC_BASE_URL", "").strip() or None
-
-    client_kwargs: dict[str, Any] = {}
-    if base_url:
-        client_kwargs["base_url"] = base_url
-        logger.info("LLM base_url: %s", base_url)
-
-    client = anthropic.AsyncAnthropic(**client_kwargs)
-
-    # Конвертируем messages (убираем system из списка)
-    api_messages = [
-        {"role": m["role"], "content": m["content"]}
-        for m in messages
-        if m["role"] in ("user", "assistant")
-    ]
-
-    if not api_messages:
-        api_messages = [{"role": "user", "content": "Привет"}]
-
-    model = config.model
-    logger.info("LLM запрос: model=%s, messages=%d", model, len(api_messages))
-
-    try:
-        response = await client.messages.create(
-            model=model,
-            max_tokens=4096,
-            system=system_prompt,
-            messages=api_messages,  # type: ignore[arg-type]
-        )
-    except anthropic.AuthenticationError as e:
-        error_msg = (
-            f"Ошибка аутентификации LLM API: {e}. "
-            "Проверьте ANTHROPIC_API_KEY и ANTHROPIC_BASE_URL в .env"
-        )
-        logger.error(error_msg)
-        return json.dumps({"type": "final", "final_message": error_msg})
-    except anthropic.APIConnectionError as e:
-        error_msg = f"Не удалось подключиться к LLM API: {e}"
-        logger.error(error_msg)
-        return json.dumps({"type": "final", "final_message": error_msg})
-    except anthropic.APIStatusError as e:
-        error_msg = f"Ошибка LLM API (status={e.status_code}): {e.message}"
-        logger.error(error_msg)
-        return json.dumps({"type": "final", "final_message": error_msg})
-    except Exception as e:
-        error_msg = f"Неожиданная ошибка LLM API: {type(e).__name__}: {e}"
-        logger.error(error_msg, exc_info=True)
-        return json.dumps({"type": "final", "final_message": error_msg})
-
-    # Извлекаем текст из response
-    text_parts = []
-    for block in response.content:
-        if hasattr(block, "text"):
-            text_parts.append(block.text)
-
+    resolved = resolve_provider(config.model, base_url=config.base_url)
     logger.info(
-        "LLM ответ: model=%s, tokens_in=%s, tokens_out=%s",
-        getattr(response, "model", model),
-        getattr(response.usage, "input_tokens", "?"),
-        getattr(response.usage, "output_tokens", "?"),
+        "LLM запрос: model=%s, provider=%s, sdk=%s, stream=%s",
+        resolved.model_id,
+        resolved.provider,
+        resolved.sdk_type,
+        use_stream,
     )
-    return "".join(text_parts)
+
+    try:
+        adapter = get_cached_adapter(resolved)
+    except ThinLlmError:
+        raise
+    except Exception as exc:
+        logger.error("Ошибка инициализации LLM адаптера (%s)", resolved.provider, exc_info=True)
+        raise provider_runtime_crash(resolved.provider, exc) from exc
+
+    try:
+        if use_stream:
+            return _stream_with_error_normalization(
+                adapter,
+                resolved.provider,
+                messages,
+                system_prompt,
+                **kwargs,
+            )
+        return await adapter.call(messages, system_prompt, **kwargs)
+    except ThinLlmError:
+        raise
+    except Exception as exc:
+        logger.error("Ошибка LLM API (%s)", resolved.provider, exc_info=True)
+        raise provider_runtime_crash(resolved.provider, exc) from exc

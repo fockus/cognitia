@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from cognitia.runtime.thin.builtin_tools import create_thin_builtin_tools
+from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.executor import ToolExecutor
 from cognitia.runtime.thin.llm_client import default_llm_call
 from cognitia.runtime.thin.modes import detect_mode
@@ -149,6 +150,8 @@ class ThinRuntime:
                 ):
                     yield event
 
+        except ThinLlmError as exc:
+            yield RuntimeEvent.error(exc.error)
         except Exception as e:
             yield RuntimeEvent.error(
                 RuntimeErrorData(

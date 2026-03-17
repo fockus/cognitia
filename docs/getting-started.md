@@ -11,10 +11,12 @@ pip install cognitia
 ### With a runtime
 
 ```bash
-pip install cognitia[thin]          # Built-in lightweight runtime (Anthropic API)
+pip install cognitia[thin]          # Built-in lightweight multi-provider runtime
 pip install cognitia[claude]        # Claude Agent SDK runtime (subprocess + MCP)
 pip install cognitia[deepagents]    # DeepAgents runtime baseline (native graph + Anthropic path)
 ```
+
+`cognitia[thin]` bundles the Anthropic, OpenAI-compatible, and Google SDK paths used by ThinRuntime.
 
 DeepAgents provider overrides are installed separately:
 

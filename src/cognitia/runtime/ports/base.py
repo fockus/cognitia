@@ -95,6 +95,42 @@ def convert_event(event: RuntimeEvent) -> StreamEvent | None:
     return None
 
 
+CompactionTrigger = tuple[str, int]
+"""Trigger для compaction: ('messages', N) или ('tokens', N)."""
+
+
+def _estimate_tokens(messages: list[Message]) -> int:
+    """Приблизительный подсчёт токенов (~4 chars/token)."""
+    return sum(len(msg.content) for msg in messages) // 4
+
+
+_ARG_TRUNCATION_MAX = 2000
+"""Максимальная длина content для tool messages перед summarization."""
+
+
+_TRUNCATABLE_ROLES = frozenset({"tool", "function"})
+
+
+def truncate_long_args(
+    messages: list[dict[str, str]],
+    max_chars: int = _ARG_TRUNCATION_MAX,
+) -> list[dict[str, str]]:
+    """Обрезать слишком длинный content в tool/function messages.
+
+    Только tool и function роли обрезаются — user/assistant остаются нетронутыми.
+    Возвращает новый список (не мутирует оригинал).
+    """
+    result = []
+    for msg in messages:
+        content = msg["content"]
+        if msg["role"] in _TRUNCATABLE_ROLES and len(content) > max_chars:
+            truncated = content[:max_chars] + "... [truncated]"
+            result.append({**msg, "content": truncated})
+        else:
+            result.append(msg)
+    return result
+
+
 class BaseRuntimePort:
     """Базовый класс для runtime-адаптеров с общей логикой.
 
@@ -103,6 +139,8 @@ class BaseRuntimePort:
     - Управление in-memory историей со sliding window
     - Auto-summarization при overflow (если summarizer задан)
     - stream_reply шаблон с конвертацией событий
+    - Token-aware или message-based compaction trigger
+    - Memory injection из AGENTS.md файлов
     """
 
     def __init__(
@@ -111,6 +149,8 @@ class BaseRuntimePort:
         config: RuntimeConfig | None = None,
         history_max: int = HISTORY_MAX,
         summarizer: Any | None = None,
+        compaction_trigger: CompactionTrigger | None = None,
+        memory_sources: list[str] | None = None,
     ) -> None:
         self._system_prompt = system_prompt
         self._config = config or RuntimeConfig(runtime_name="thin")
@@ -119,6 +159,8 @@ class BaseRuntimePort:
         self._history_max = history_max
         self._summarizer = summarizer  # LlmSummaryGenerator или None
         self._rolling_summary: str = ""
+        self._compaction_trigger = compaction_trigger or ("messages", history_max)
+        self._memory_sources = memory_sources or []
 
     @property
     def is_connected(self) -> bool:
@@ -139,15 +181,29 @@ class BaseRuntimePort:
         if len(self._history) > self._history_max:
             self._history = self._history[-self._history_max :]
 
+    def _should_compact(self) -> bool:
+        """Проверить trigger для compaction."""
+        trigger_type, threshold = self._compaction_trigger
+        if trigger_type == "tokens":
+            return _estimate_tokens(self._history) >= threshold
+        if trigger_type == "messages":
+            return len(self._history) >= threshold
+        msg = f"Неизвестный compaction trigger type: {trigger_type!r}. Допустимые: 'tokens', 'messages'"
+        raise ValueError(msg)
+
     async def _maybe_summarize(self) -> None:
-        """Auto-summarize: если history > cap и есть summarizer — обновить rolling_summary."""
-        if not self._summarizer or len(self._history) < self._history_max:
+        """Auto-summarize: если trigger сработал и есть summarizer — обновить rolling_summary."""
+        if not self._summarizer or not self._should_compact():
             return
 
         from cognitia.memory.types import MemoryMessage
 
-        # Конвертируем Message → MemoryMessage для summarizer
-        mem_messages = [MemoryMessage(role=msg.role, content=msg.content) for msg in self._history]
+        # Truncate long args перед передачей в summarizer
+        raw = [{"role": msg.role, "content": msg.content} for msg in self._history]
+        truncated = truncate_long_args(raw)
+
+        # Конвертируем → MemoryMessage для summarizer
+        mem_messages = [MemoryMessage(role=m["role"], content=m["content"]) for m in truncated]
 
         try:
             if hasattr(self._summarizer, "asummarize"):
@@ -158,10 +214,21 @@ class BaseRuntimePort:
             logger.warning("Ошибка auto-summarization", exc_info=True)
 
     def _build_system_prompt(self) -> str:
-        """Собрать system_prompt с rolling summary (если есть)."""
-        if not self._rolling_summary:
-            return self._system_prompt
-        return f"{self._system_prompt}\n\n## Краткое содержание предыдущего диалога\n{self._rolling_summary}"
+        """Собрать system_prompt с memory injection и rolling summary."""
+        from cognitia.runtime.portable_memory import inject_memory_into_prompt, load_agents_md
+
+        prompt = self._system_prompt
+
+        # Inject memory from AGENTS.md
+        if self._memory_sources:
+            memory_content = load_agents_md(self._memory_sources)
+            prompt = inject_memory_into_prompt(prompt, memory_content)
+
+        # Add rolling summary
+        if self._rolling_summary:
+            prompt = f"{prompt}\n\n## Краткое содержание предыдущего диалога\n{self._rolling_summary}"
+
+        return prompt
 
     async def _run_runtime(
         self,

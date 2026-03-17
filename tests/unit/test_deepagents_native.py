@@ -116,6 +116,62 @@ class TestBuildDeepAgentsGraph:
         assert error is None
 
 
+class TestBuildDeepAgentsGraphUpstreamParams:
+    """Phase 1: Проброс upstream параметров memory/subagents/skills/middleware/name."""
+
+    def _build_with_mock(self, **extra_kwargs) -> MagicMock:
+        """Helper: вызвать build_deepagents_graph с mock'ами и вернуть mock_create."""
+        with (
+            patch(
+                "cognitia.runtime.deepagents_native.build_deepagents_chat_model",
+                return_value="llm",
+            ),
+            patch(
+                "cognitia.runtime.deepagents_native.create_langchain_tool",
+                side_effect=lambda spec, executor: f"tool:{spec.name}",
+            ),
+            patch("deepagents.create_deep_agent", return_value="graph") as mock_create,
+        ):
+            build_deepagents_graph(
+                model="sonnet",
+                system_prompt="sys",
+                tools=[],
+                tool_executors={},
+                **extra_kwargs,
+            )
+        return mock_create
+
+    def test_memory_passed_to_create_deep_agent(self) -> None:
+        mock_create = self._build_with_mock(memory=["./AGENTS.md"])
+        assert mock_create.call_args.kwargs["memory"] == ["./AGENTS.md"]
+
+    def test_subagents_passed_to_create_deep_agent(self) -> None:
+        sa = [{"name": "r", "description": "d", "system_prompt": "s"}]
+        mock_create = self._build_with_mock(subagents=sa)
+        assert mock_create.call_args.kwargs["subagents"] == sa
+
+    def test_skills_passed_to_create_deep_agent(self) -> None:
+        skills = [{"name": "search", "description": "Search web"}]
+        mock_create = self._build_with_mock(skills=skills)
+        assert mock_create.call_args.kwargs["skills"] == skills
+
+    def test_middleware_passed_to_create_deep_agent(self) -> None:
+        mw = [MagicMock()]
+        mock_create = self._build_with_mock(middleware=mw)
+        assert mock_create.call_args.kwargs["middleware"] == mw
+
+    def test_agent_name_passed_to_create_deep_agent(self) -> None:
+        mock_create = self._build_with_mock(agent_name="my-agent")
+        assert mock_create.call_args.kwargs["name"] == "my-agent"
+
+    def test_no_new_params_does_not_add_keys(self) -> None:
+        """Без новых параметров — kwargs не содержат новых ключей (регрессия)."""
+        mock_create = self._build_with_mock()
+        kwargs = mock_create.call_args.kwargs
+        for key in ("memory", "subagents", "skills", "middleware", "name"):
+            assert key not in kwargs
+
+
 class TestStreamDeepAgentsGraphEvents:
     """Нормализация upstream graph events в RuntimeEvent."""
 

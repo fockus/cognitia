@@ -42,6 +42,8 @@ Pluggable runtimes. Persistent memory. Secure by default.
 <code><span class="prompt">$</span> pip install cognitia[thin]</code>
 </div>
 
+ThinRuntime extra bundles Anthropic, OpenAI-compatible, and Google SDK paths out of the box.
+
 ---
 
 ## Build agents in 3 lines

@@ -11,6 +11,7 @@ from cognitia.runtime.structured_output import (
     extract_structured_output,
 )
 from cognitia.runtime.thin.executor import ToolExecutor
+from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.helpers import _build_metrics, _messages_to_lm
 from cognitia.runtime.thin.llm_client import try_stream_llm_call
 from cognitia.runtime.thin.parsers import extract_text_fallback, parse_envelope
@@ -55,12 +56,16 @@ async def run_react(  # noqa: C901
         iterations += 1
 
         # Пробуем streaming LLM вызов, fallback на non-streaming
-        stream_result = await try_stream_llm_call(llm_call, lm_messages, prompt)
-        if stream_result is not None:
-            stream_chunks, raw = stream_result
-        else:
-            raw = await llm_call(lm_messages, prompt)
-            stream_chunks = []
+        try:
+            stream_result = await try_stream_llm_call(llm_call, lm_messages, prompt)
+            if stream_result is not None:
+                stream_chunks, raw = stream_result
+            else:
+                raw = await llm_call(lm_messages, prompt)
+                stream_chunks = []
+        except ThinLlmError as exc:
+            yield RuntimeEvent.error(exc.error)
+            return
 
         last_raw = raw
         envelope = parse_envelope(raw)

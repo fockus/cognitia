@@ -256,10 +256,7 @@ class DeepAgentsRuntime:
 
     def _should_use_native_path(self, config: RuntimeConfig) -> bool:
         """Native upstream path включаем для hybrid/native_first."""
-        return config.allow_native_features or config.feature_mode in {
-            "hybrid",
-            "native_first",
-        }
+        return config.is_native_mode
 
     async def _stream_native(
         self,
@@ -284,6 +281,11 @@ class DeepAgentsRuntime:
             checkpointer=native_config.get("checkpointer"),
             store=native_config.get("store"),
             backend=native_config.get("backend"),
+            memory=native_config.get("memory"),
+            subagents=native_config.get("subagents"),
+            skills=native_config.get("skills"),
+            middleware=native_config.get("middleware"),
+            agent_name=native_config.get("agent_name"),
         )
         async for event in stream_deepagents_graph_events(
             graph=graph,

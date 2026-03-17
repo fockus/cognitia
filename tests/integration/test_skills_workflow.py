@@ -17,7 +17,7 @@ from cognitia.policy.tool_policy import (
 from cognitia.skills.loader import YamlSkillLoader
 from cognitia.skills.registry import SkillRegistry
 
-SKILLS_DIR = Path(__file__).parent.parent.parent.parent.parent / "skills"
+SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
 
 
 @pytest.fixture

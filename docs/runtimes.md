@@ -6,7 +6,7 @@ Cognitia поддерживает три runtime. Все реализуют ед
 
 | | Claude SDK | ThinRuntime | DeepAgents |
 |--|-----------|-------------|------------|
-| **LLM** | Claude (через SDK subprocess) | Anthropic + OpenAI-compatible `base_url` | Anthropic baseline; OpenAI/Google через provider package |
+| **LLM** | Claude (через SDK subprocess) | Anthropic + OpenAI-compatible + Google | Anthropic baseline; OpenAI/Google через provider package |
 | **MCP** | Нативная поддержка | Встроенный MCP client | Не входит в portable baseline |
 | **Sandbox** | Нативные Read/Write/Bash | Через SandboxProvider | Через SandboxProvider |
 | **Planning** | Нативный plan mode | ThinPlannerMode | DeepAgentsPlannerMode |
@@ -57,7 +57,7 @@ config = RuntimeConfig(runtime_name="thin", model="claude-sonnet-4-20250514")
 ### Когда использовать
 
 - Максимальный контроль над поведением
-- Альтернативные LLM (через `base_url`)
+- Multi-provider API path без отдельной provider-установки
 - Простые проекты без MCP
 
 ### Режимы
@@ -68,6 +68,7 @@ config = RuntimeConfig(runtime_name="thin", model="claude-sonnet-4-20250514")
 
 ### Особенности
 
+- `cognitia[thin]` включает Anthropic, OpenAI-compatible и Google SDK path
 - Встроенный MCP client (STDIO)
 - ToolExecutor для local/builtin tools
 - Streaming через `async for event in runtime.run(...)`

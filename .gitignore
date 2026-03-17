@@ -2,6 +2,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+.memory-bank/
+.claude/
+
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

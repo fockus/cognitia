@@ -10,6 +10,7 @@ from cognitia.runtime.structured_output import (
     extract_structured_output,
 )
 from cognitia.runtime.thin.conversational import run_conversational
+from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.executor import ToolExecutor
 from cognitia.runtime.thin.helpers import _build_metrics, _messages_to_lm
 from cognitia.runtime.thin.parsers import parse_envelope, parse_plan
@@ -42,12 +43,20 @@ async def run_planner(
     prompt = build_planner_prompt(system_prompt, tools)
     lm_messages = _messages_to_lm(messages)
 
-    raw = await llm_call(lm_messages, prompt)
+    try:
+        raw = await llm_call(lm_messages, prompt)
+    except ThinLlmError as exc:
+        yield RuntimeEvent.error(exc.error)
+        return
     plan = parse_plan(raw)
 
     if plan is None:
         # Retry
-        raw = await llm_call(lm_messages, prompt)
+        try:
+            raw = await llm_call(lm_messages, prompt)
+        except ThinLlmError as exc:
+            yield RuntimeEvent.error(exc.error)
+            return
         plan = parse_plan(raw)
 
     if plan is None:
@@ -156,7 +165,11 @@ async def run_planner(
         step_results,
         plan.final_format,
     )
-    raw = await llm_call(lm_messages, assembly_prompt)
+    try:
+        raw = await llm_call(lm_messages, assembly_prompt)
+    except ThinLlmError as exc:
+        yield RuntimeEvent.error(exc.error)
+        return
     envelope = parse_envelope(raw)
 
     if envelope and envelope.type == "final" and envelope.final_message:
