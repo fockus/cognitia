@@ -58,24 +58,8 @@ jobs:
           python -c "from cognitia import Agent, AgentConfig; print('OK:', AgentConfig.__name__)"
           python -c "import cognitia; print('version:', cognitia.__version__)"
 
-  publish-testpypi:
-    needs: test-install
-    runs-on: ubuntu-latest
-    environment: testpypi
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-
   publish-pypi:
-    needs: publish-testpypi
+    needs: test-install
     runs-on: ubuntu-latest
     environment: pypi
     steps:
