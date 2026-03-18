@@ -57,3 +57,25 @@ class TestBuildPortableRuntimePlan:
 
         assert plan.config.native_config["checkpointer"] is config.native_config["checkpointer"]
         assert plan.config.native_config["thread_id"] == "conv-thread-1"
+
+    def test_preserves_dict_style_mcp_servers_for_portable_runtime(self) -> None:
+        from cognitia.agent.runtime_wiring import build_portable_runtime_plan
+
+        mcp_servers = {"iss": {"type": "http", "url": "http://iss.test"}}
+        config = _make_config(runtime="thin", mcp_servers=mcp_servers)
+
+        plan = build_portable_runtime_plan(config, "thin")
+
+        assert plan.create_kwargs["mcp_servers"] == mcp_servers
+
+
+class TestResolveMcpServerUrl:
+    def test_resolves_plain_dict_server_config(self) -> None:
+        from cognitia.runtime.thin.mcp_client import resolve_mcp_server_url
+
+        url = resolve_mcp_server_url(
+            {"iss": {"type": "http", "url": "http://iss.test"}},
+            "iss",
+        )
+
+        assert url == "http://iss.test"

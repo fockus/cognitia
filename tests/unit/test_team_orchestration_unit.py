@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 from unittest.mock import AsyncMock
 
 import pytest
@@ -54,6 +55,22 @@ class TestDeepAgentsTeamOrchestrator:
         assert status.state == "completed"
         assert len(status.workers) == 2
 
+    async def test_get_status_all_terminal_failures_returns_failed(self, mock_sub_orch) -> None:
+        from cognitia.orchestration.deepagents_team import DeepAgentsTeamOrchestrator
+
+        mock_sub_orch.get_status.side_effect = [
+            SubagentStatus(state="failed"),
+            SubagentStatus(state="cancelled"),
+        ]
+        orch = DeepAgentsTeamOrchestrator(mock_sub_orch)
+        team_id = await orch.start(_config(), "t")
+
+        status = await orch.get_team_status(team_id)
+
+        assert status.state == "failed"
+        assert status.workers["w1"].state == "failed"
+        assert status.workers["w2"].state == "cancelled"
+
     async def test_send_message(self, mock_sub_orch) -> None:
         from cognitia.orchestration.deepagents_team import DeepAgentsTeamOrchestrator
 
@@ -77,6 +94,44 @@ class TestDeepAgentsTeamOrchestrator:
         await orch.resume_agent(team_id, "a1")
 
         assert orch._teams[team_id].worker_ids["w1"] == "a3"
+
+    async def test_start_composes_worker_tasks_and_advertises_send_message(
+        self,
+        mock_sub_orch,
+    ) -> None:
+        from cognitia.orchestration.deepagents_team import DeepAgentsTeamOrchestrator
+
+        mock_sub_orch.register_tool = MagicMock()
+        orch = DeepAgentsTeamOrchestrator(mock_sub_orch)
+
+        await orch.start(_config(), "investigate issue")
+
+        first_spec, first_task = mock_sub_orch.spawn.await_args_list[0].args
+        second_spec, second_task = mock_sub_orch.spawn.await_args_list[1].args
+
+        assert "send_message" in [tool.name for tool in first_spec.tools]
+        assert "send_message" in [tool.name for tool in second_spec.tools]
+        assert "lead" in first_task
+        assert "worker 'w1'" in first_task
+        assert "investigate issue" in first_task
+        assert "worker 'w2'" in second_task
+        mock_sub_orch.register_tool.assert_called_once()
+
+    async def test_resume_agent_reuses_composed_worker_task(self, mock_sub_orch) -> None:
+        from cognitia.orchestration.deepagents_team import DeepAgentsTeamOrchestrator
+
+        mock_sub_orch.register_tool = MagicMock()
+        orch = DeepAgentsTeamOrchestrator(mock_sub_orch)
+        team_id = await orch.start(_config(), "investigate issue")
+
+        await orch.pause_agent(team_id, "a1")
+        await orch.resume_agent(team_id, "a1")
+
+        resumed_spec, resumed_task = mock_sub_orch.spawn.await_args_list[-1].args
+        assert resumed_spec.name == "w1"
+        assert "lead" in resumed_task
+        assert "worker 'w1'" in resumed_task
+        assert "investigate issue" in resumed_task
 
     async def test_isinstance_protocol(self, mock_sub_orch) -> None:
         from cognitia.orchestration.deepagents_team import DeepAgentsTeamOrchestrator

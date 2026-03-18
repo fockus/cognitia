@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from cognitia.runtime.cli.parser import ClaudeNdjsonParser, GenericNdjsonParser
@@ -279,6 +280,61 @@ class TestCliRuntimeCancel:
         config = RuntimeConfig(runtime_name="cli")
         rt = CliAgentRuntime(config=config)
         rt.cancel()  # Should not raise
+
+    async def test_cli_runtime_cancel_running_process_yields_cancelled_error(self) -> None:
+        from cognitia.runtime.cli.runtime import CliAgentRuntime
+
+        config = RuntimeConfig(runtime_name="cli")
+        rt = CliAgentRuntime(config=config)
+
+        terminated = asyncio.Event()
+        mock_process = MagicMock()
+        mock_process.returncode = None
+        mock_process.stdin = MagicMock()
+        mock_process.stdin.write = MagicMock()
+        mock_process.stdin.drain = AsyncMock()
+        mock_process.stdin.close = MagicMock()
+
+        async def _stdout_iter():
+            await terminated.wait()
+            return
+            yield  # pragma: no cover
+
+        async def _wait():
+            await terminated.wait()
+            mock_process.returncode = -15
+            return -15
+
+        def _terminate() -> None:
+            terminated.set()
+
+        mock_process.stdout = _stdout_iter()
+        mock_process.stderr = AsyncMock()
+        mock_process.stderr.read = AsyncMock(return_value=b"")
+        mock_process.wait = AsyncMock(side_effect=_wait)
+        mock_process.terminate = MagicMock(side_effect=_terminate)
+        mock_process.kill = MagicMock()
+
+        async def _collect() -> list[Any]:
+            events = []
+            async for event in rt.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="",
+                active_tools=[],
+            ):
+                events.append(event)
+            return events
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            task = asyncio.create_task(_collect())
+            await asyncio.sleep(0)
+            rt.cancel()
+            events = await task
+
+        assert events[-1].type == "error"
+        assert events[-1].data["kind"] == "cancelled"
+        assert "cancelled" in events[-1].data["message"].lower()
+        mock_process.terminate.assert_called_once()
 
 
 class TestCliRuntimeContextManager:

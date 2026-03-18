@@ -21,7 +21,11 @@ class SessionKey:
     topic_id: str
 
     def __str__(self) -> str:
-        return f"{self.user_id}:{self.topic_id}"
+        return f"{self._escape_component(self.user_id)}:{self._escape_component(self.topic_id)}"
+
+    @staticmethod
+    def _escape_component(value: str) -> str:
+        return value.replace("%", "%25").replace(":", "%3A")
 
 
 @dataclass

@@ -18,6 +18,11 @@ from cognitia.runtime.thin.runtime import ThinRuntime
 from cognitia.runtime.types import Message, RuntimeConfig, ToolSpec
 
 
+async def _parallel_entry_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Synthetic no-op node used to preserve parallel entrypoints in specs."""
+    return state
+
+
 class ThinWorkflowExecutor:
     """Запускает ThinRuntime per-node для workflow execution."""
 
@@ -137,9 +142,21 @@ def compile_to_langgraph_spec(wf: WorkflowGraph) -> dict[str, Any]:
     for node_id, node_fn in wf._nodes.items():
         nodes[node_id] = node_fn
 
+    parallel_groups: dict[str, dict[str, Any]] = {}
+    for entry_id, group in wf._parallel_groups.items():
+        parallel_groups[entry_id] = {
+            "node_ids": list(group.node_ids),
+            "then": group.then,
+        }
+        nodes.setdefault(entry_id, _parallel_entry_node)
+
     edges: list[tuple[str, str]] = []
     for edge in wf._edges:
         edges.append((edge.source, edge.target))
+    for entry_id, group in wf._parallel_groups.items():
+        for node_id in group.node_ids:
+            edges.append((entry_id, node_id))
+            edges.append((node_id, group.then))
 
     conditional_edges: dict[str, Any] = {}
     for node_id, cond_edge in wf._conditional_edges.items():
@@ -151,4 +168,5 @@ def compile_to_langgraph_spec(wf: WorkflowGraph) -> dict[str, Any]:
         "nodes": nodes,
         "edges": edges,
         "conditional_edges": conditional_edges,
+        "parallel_groups": parallel_groups,
     }

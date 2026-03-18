@@ -172,6 +172,94 @@ class TestWorkflowCheckpointResume:
         # step1 should NOT re-run on resume (was checkpointed)
         assert call_count == 0 or result.get("count") is not None
 
+    async def test_workflow_resume_replays_checkpointed_node_instead_of_skipping_it(self) -> None:
+        from cognitia.orchestration.workflow_graph import InMemoryCheckpoint, WorkflowGraph
+
+        checkpoint = InMemoryCheckpoint()
+        step2_calls = 0
+
+        async def step1(state: dict) -> dict:
+            state.setdefault("execution_order", []).append("step1")
+            return state
+
+        async def step2(state: dict) -> dict:
+            nonlocal step2_calls
+            step2_calls += 1
+            if step2_calls == 1:
+                raise RuntimeError("step2 crashed")
+            state.setdefault("execution_order", []).append("step2")
+            return state
+
+        async def step3(state: dict) -> dict:
+            state.setdefault("execution_order", []).append("step3")
+            return state
+
+        wf = WorkflowGraph("checkpoint-replay")
+        wf.add_node("step1", step1)
+        wf.add_node("step2", step2)
+        wf.add_node("step3", step3)
+        wf.add_edge("step1", "step2")
+        wf.add_edge("step2", "step3")
+        wf.set_entry("step1")
+
+        with pytest.raises(RuntimeError, match="step2 crashed"):
+            await wf.execute({}, checkpoint=checkpoint, run_id="run-2")
+
+        result = await wf.execute({}, checkpoint=checkpoint, run_id="run-2", resume=True)
+
+        assert result["execution_order"] == ["step1", "step2", "step3"]
+        assert step2_calls == 2
+
+    async def test_workflow_checkpoint_resume_replays_checkpointed_node(self) -> None:
+        from cognitia.orchestration.workflow_graph import InMemoryCheckpoint, WorkflowGraph
+
+        checkpoint = InMemoryCheckpoint()
+        call_counts = {"a": 0, "b": 0, "c": 0}
+
+        async def step_a(state: dict) -> dict:
+            call_counts["a"] += 1
+            order = list(state.get("order", []))
+            order.append("a")
+            state["order"] = order
+            return state
+
+        async def step_b(state: dict) -> dict:
+            call_counts["b"] += 1
+            if not state.get("retry"):
+                raise RuntimeError("Simulated crash")
+            order = list(state.get("order", []))
+            order.append("b")
+            state["order"] = order
+            return state
+
+        async def step_c(state: dict) -> dict:
+            call_counts["c"] += 1
+            order = list(state.get("order", []))
+            order.append("c")
+            state["order"] = order
+            return state
+
+        wf = WorkflowGraph("checkpoint-replay-test")
+        wf.add_node("a", step_a)
+        wf.add_node("b", step_b)
+        wf.add_node("c", step_c)
+        wf.add_edge("a", "b")
+        wf.add_edge("b", "c")
+        wf.set_entry("a")
+
+        with pytest.raises(RuntimeError, match="crash"):
+            await wf.execute({}, checkpoint=checkpoint, run_id="run-2")
+
+        result = await wf.execute(
+            {"retry": True},
+            checkpoint=checkpoint,
+            run_id="run-2",
+            resume=True,
+        )
+
+        assert result["order"] == ["a", "b", "c"]
+        assert call_counts == {"a": 1, "b": 2, "c": 1}
+
 
 class TestWorkflowInterruptHITL:
     """pause at node → resume with input."""

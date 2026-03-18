@@ -87,7 +87,7 @@ class TestSessionManagerWithSqliteBackend:
         assert restored.active_skill_ids == ["skill-1"]
 
         await restored_mgr.close(SessionKey("u1", "t1"))
-        assert await backend.load("u1:t1") is None
+        assert await backend.load(str(SessionKey("u1", "t1"))) is None
         backend.close()
 
     @pytest.mark.asyncio
@@ -112,6 +112,30 @@ class TestSessionManagerWithSqliteBackend:
         assert restored.active_skill_ids == ["skill-1"]
 
         await restored_mgr.close(SessionKey("u1", "t1"))
+        backend.close()
+
+    @pytest.mark.asyncio
+    async def test_delimiter_containing_session_keys_do_not_collide(self, tmp_path: Any) -> None:
+        db = str(tmp_path / "collisions.db")
+        backend = SqliteSessionBackend(db_path=db)
+        mgr = InMemorySessionManager(backend=backend)
+
+        first = _make_state(user_id="a:b", topic_id="c", role_id="first")
+        second = _make_state(user_id="a", topic_id="b:c", role_id="second")
+        mgr.register(first)
+        mgr.register(second)
+
+        restored_first = mgr.get(SessionKey("a:b", "c"))
+        restored_second = mgr.get(SessionKey("a", "b:c"))
+
+        assert restored_first is not None
+        assert restored_second is not None
+        assert restored_first.role_id == "first"
+        assert restored_second.role_id == "second"
+        assert len(await backend.list_keys()) == 2
+
+        await mgr.close(SessionKey("a:b", "c"))
+        await mgr.close(SessionKey("a", "b:c"))
         backend.close()
 
 

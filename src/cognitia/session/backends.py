@@ -9,8 +9,10 @@ Provides pluggable persistence for session state:
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import sqlite3
+import threading
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
@@ -48,10 +50,11 @@ class InMemorySessionBackend:
         self._store: dict[str, dict[str, Any]] = {}
 
     async def save(self, key: str, state: dict[str, Any]) -> None:
-        self._store[key] = state
+        self._store[key] = copy.deepcopy(state)
 
     async def load(self, key: str) -> dict[str, Any] | None:
-        return self._store.get(key)
+        state = self._store.get(key)
+        return copy.deepcopy(state) if state is not None else None
 
     async def delete(self, key: str) -> bool:
         if key in self._store:
@@ -72,6 +75,7 @@ class SqliteSessionBackend:
     def __init__(self, db_path: str = "cognitia_sessions.db") -> None:
         self._db_path = db_path
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._lock = threading.Lock()
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS sessions "
             "(key TEXT PRIMARY KEY, state TEXT NOT NULL)"
@@ -79,29 +83,33 @@ class SqliteSessionBackend:
         self._conn.commit()
 
     def _save_sync(self, key: str, state_json: str) -> None:
-        self._conn.execute(
-            "INSERT OR REPLACE INTO sessions (key, state) VALUES (?, ?)",
-            (key, state_json),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO sessions (key, state) VALUES (?, ?)",
+                (key, state_json),
+            )
+            self._conn.commit()
 
     def _load_sync(self, key: str) -> str | None:
-        cursor = self._conn.execute(
-            "SELECT state FROM sessions WHERE key = ?", (key,)
-        )
-        row = cursor.fetchone()
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT state FROM sessions WHERE key = ?", (key,)
+            )
+            row = cursor.fetchone()
         return row[0] if row else None
 
     def _delete_sync(self, key: str) -> bool:
-        cursor = self._conn.execute(
-            "DELETE FROM sessions WHERE key = ?", (key,)
-        )
-        self._conn.commit()
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM sessions WHERE key = ?", (key,)
+            )
+            self._conn.commit()
         return cursor.rowcount > 0
 
     def _list_keys_sync(self) -> list[str]:
-        cursor = self._conn.execute("SELECT key FROM sessions")
-        return [row[0] for row in cursor.fetchall()]
+        with self._lock:
+            cursor = self._conn.execute("SELECT key FROM sessions")
+            return [row[0] for row in cursor.fetchall()]
 
     async def save(self, key: str, state: dict[str, Any]) -> None:
         state_json = json.dumps(state, ensure_ascii=False)
@@ -121,4 +129,5 @@ class SqliteSessionBackend:
 
     def close(self) -> None:
         """Close the SQLite connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()

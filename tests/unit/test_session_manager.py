@@ -117,7 +117,7 @@ class TestUpdateRole:
 
         assert mgr.update_role(SessionKey("u1", "t1"), "diagnostician", ["iss"]) is True
 
-        payload = await backend.load("u1:t1")
+        payload = await backend.load(str(SessionKey("u1", "t1")))
         assert payload is not None
         assert payload["role_id"] == "diagnostician"
         assert payload["active_skill_ids"] == ["iss"]
@@ -168,7 +168,7 @@ class TestClose:
 
         await mgr.close_all()
 
-        payload = await backend.load("u1:t1")
+        payload = await backend.load(str(SessionKey("u1", "t1")))
         assert payload is not None
         assert payload["role_id"] == "coach"
 
@@ -388,6 +388,34 @@ class TestStreamReply:
         assert restored.active_skill_ids == ["skill-1"]
         assert restored.active_tools[0].name == "calc"
 
+    @pytest.mark.asyncio
+    async def test_stream_runtime_exception_yields_error_without_persisting_partial_history(self) -> None:
+        class BrokenRuntime:
+            async def run(self, **kwargs: Any):
+                raise RuntimeError("boom-runtime")
+                yield  # pragma: no cover
+
+            async def cleanup(self) -> None:
+                return None
+
+        mgr = InMemorySessionManager()
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=BrokenRuntime(),
+            system_prompt="system",
+            active_tools=[],
+            role_id="coach",
+        )
+        mgr.register(state)
+
+        events = []
+        async for event in mgr.stream_reply(SessionKey("u1", "t1"), "привет"):
+            events.append(event)
+
+        assert [event.type for event in events] == ["error"]
+        assert "boom-runtime" in events[0].text
+        assert [m.role for m in state.runtime_messages] == ["user"]
+
 
 class TestRunTurn:
     """run_turn — новый контракт AgentRuntime v1."""
@@ -435,6 +463,98 @@ class TestRunTurn:
         assert [e.type for e in events] == ["assistant_delta", "final"]
         assert len(fake_runtime.calls) == 1
         assert fake_runtime.calls[0]["system_prompt"] == "system"
+
+    @pytest.mark.asyncio
+    async def test_run_turn_runtime_exception_without_partial_yields_error_event(self) -> None:
+        class BrokenRuntime:
+            async def run(self, **kwargs: Any):
+                raise RuntimeError("boom-runtime")
+                yield  # pragma: no cover
+
+            async def cleanup(self) -> None:
+                return None
+
+        mgr = InMemorySessionManager()
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=BrokenRuntime(),
+            role_id="coach",
+        )
+        mgr.register(state)
+
+        events = []
+        async for event in mgr.run_turn(
+            SessionKey("u1", "t1"),
+            messages=[Message(role="user", content="привет")],
+            system_prompt="system",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        assert [event.type for event in events] == ["error"]
+        assert events[0].data["kind"] == "runtime_crash"
+        assert "boom-runtime" in events[0].data["message"]
+
+    @pytest.mark.asyncio
+    async def test_run_turn_runtime_exception_yields_error_event(self) -> None:
+        mgr = InMemorySessionManager()
+
+        class BrokenRuntime:
+            def __init__(self) -> None:
+                self.cleanup = AsyncMock()
+
+            async def run(self, **kwargs: Any):
+                yield RuntimeEvent.assistant_delta("partial")
+                raise RuntimeError("boom-runtime")
+
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=BrokenRuntime(),
+            role_id="coach",
+        )
+        mgr.register(state)
+
+        events = []
+        async for event in mgr.run_turn(
+            SessionKey("u1", "t1"),
+            messages=[Message(role="user", content="привет")],
+            system_prompt="system",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        assert [event.type for event in events] == ["assistant_delta", "error"]
+        assert events[-1].data["kind"] == "runtime_crash"
+        assert "boom-runtime" in events[-1].data["message"]
+
+    @pytest.mark.asyncio
+    async def test_stream_runtime_exception_yields_error_without_persisting_partial_history(
+        self,
+    ) -> None:
+        mgr = InMemorySessionManager()
+
+        class BrokenRuntime:
+            async def run(self, **kwargs: Any):
+                yield RuntimeEvent.assistant_delta("partial")
+                raise RuntimeError("boom-runtime")
+
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=BrokenRuntime(),
+            system_prompt="system",
+            active_tools=[],
+            role_id="coach",
+        )
+        mgr.register(state)
+
+        events = []
+        async for event in mgr.stream_reply(SessionKey("u1", "t1"), "привет"):
+            events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "error"]
+        assert "boom-runtime" in events[-1].text
+        assert [message.role for message in state.runtime_messages] == ["user"]
+        assert state.runtime_messages[0].content == "привет"
 
 
 class TestSessionTTL:

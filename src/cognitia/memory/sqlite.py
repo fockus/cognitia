@@ -13,6 +13,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from cognitia.memory.types import GoalState, MemoryMessage, PhaseState, ToolEvent, UserProfile
 
 _USER_ID_SUB = "(SELECT id FROM users WHERE external_id = :user_id)"
+_SQLITE_EXISTING_SOURCE_PRIORITY = (
+    "CASE source "
+    "WHEN 'user' THEN 3 "
+    "WHEN 'ai_inferred' THEN 2 "
+    "WHEN 'mcp' THEN 1 "
+    "ELSE 0 END"
+)
+_SQLITE_INCOMING_SOURCE_PRIORITY = (
+    "CASE :source "
+    "WHEN 'user' THEN 3 "
+    "WHEN 'ai_inferred' THEN 2 "
+    "WHEN 'mcp' THEN 1 "
+    "ELSE 0 END"
+)
 
 
 class SQLiteMemoryProvider:
@@ -139,18 +153,19 @@ class SQLiteMemoryProvider:
         json_value = json.dumps(value)
         async with self._session(commit=True) as session:
             if topic_id is not None:
-                # Для topic-scoped фактов сохраняем правило приоритета source.
-                updated = await session.execute(
+                await session.execute(
                     text(
                         f"""
-                        UPDATE facts
-                        SET value = :value,
-                            source = :source,
+                        INSERT INTO facts (user_id, topic_id, key, value, source)
+                        VALUES ({_USER_ID_SUB}, :topic_id, :key, :value, :source)
+                        ON CONFLICT (user_id, topic_id, key)
+                            WHERE topic_id IS NOT NULL
+                        DO UPDATE SET
+                            value = excluded.value,
+                            source = excluded.source,
                             updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = {_USER_ID_SUB}
-                          AND topic_id = :topic_id
-                          AND key = :key
-                          AND (source != 'user' OR :source = 'user')
+                        WHERE {_SQLITE_EXISTING_SOURCE_PRIORITY}
+                              <= {_SQLITE_INCOMING_SOURCE_PRIORITY}
                     """
                     ),
                     {
@@ -161,34 +176,20 @@ class SQLiteMemoryProvider:
                         "source": source,
                     },
                 )
-                if int(getattr(updated, "rowcount", 0) or 0) == 0:
-                    await session.execute(
-                        text(
-                            f"""
-                            INSERT INTO facts (user_id, topic_id, key, value, source)
-                            VALUES ({_USER_ID_SUB}, :topic_id, :key, :value, :source)
-                        """
-                        ),
-                        {
-                            "user_id": user_id,
-                            "topic_id": topic_id,
-                            "key": key,
-                            "value": json_value,
-                            "source": source,
-                        },
-                    )
             else:
-                updated = await session.execute(
+                await session.execute(
                     text(
                         f"""
-                        UPDATE facts
-                        SET value = :value,
-                            source = :source,
+                        INSERT INTO facts (user_id, topic_id, key, value, source)
+                        VALUES ({_USER_ID_SUB}, NULL, :key, :value, :source)
+                        ON CONFLICT (user_id, key)
+                            WHERE topic_id IS NULL
+                        DO UPDATE SET
+                            value = excluded.value,
+                            source = excluded.source,
                             updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = {_USER_ID_SUB}
-                          AND topic_id IS NULL
-                          AND key = :key
-                          AND (source != 'user' OR :source = 'user')
+                        WHERE {_SQLITE_EXISTING_SOURCE_PRIORITY}
+                              <= {_SQLITE_INCOMING_SOURCE_PRIORITY}
                     """
                     ),
                     {
@@ -198,21 +199,6 @@ class SQLiteMemoryProvider:
                         "source": source,
                     },
                 )
-                if int(getattr(updated, "rowcount", 0) or 0) == 0:
-                    await session.execute(
-                        text(
-                            f"""
-                            INSERT INTO facts (user_id, topic_id, key, value, source)
-                            VALUES ({_USER_ID_SUB}, NULL, :key, :value, :source)
-                        """
-                        ),
-                        {
-                            "user_id": user_id,
-                            "key": key,
-                            "value": json_value,
-                            "source": source,
-                        },
-                    )
 
     async def get_facts(self, user_id: str, topic_id: str | None = None) -> dict[str, Any]:
         async with self._session() as session:

@@ -204,6 +204,32 @@ class TestWorkflowLangGraphCompile:
         assert "end" in spec["nodes"]
         assert ("start", "end") in spec["edges"]
 
+    def test_workflow_langgraph_spec_preserves_parallel_groups(self) -> None:
+        from cognitia.orchestration.workflow_executor import compile_to_langgraph_spec
+
+        async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
+            return state
+
+        wf = WorkflowGraph("parallel-spec")
+        wf.add_node("a", node_fn)
+        wf.add_node("b", node_fn)
+        wf.add_node("c", node_fn)
+        wf.add_node("d", node_fn)
+        wf.add_parallel(["a", "b", "c"], then="d")
+        wf.set_entry("__parallel_a_b_c")
+
+        spec = compile_to_langgraph_spec(wf)
+
+        assert spec["entry"] == "__parallel_a_b_c"
+        assert "__parallel_a_b_c" in spec["nodes"]
+        assert ("__parallel_a_b_c", "a") in spec["edges"]
+        assert ("__parallel_a_b_c", "b") in spec["edges"]
+        assert ("__parallel_a_b_c", "c") in spec["edges"]
+        assert spec["parallel_groups"]["__parallel_a_b_c"] == {
+            "node_ids": ["a", "b", "c"],
+            "then": "d",
+        }
+
 
 class TestWorkflowMixedRuntimes:
     """Mixed runtimes: observability metadata per node."""

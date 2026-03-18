@@ -47,6 +47,8 @@ class StreamEvent:
     tool_name: str = ""
     tool_input: dict[str, Any] | None = None
     tool_result: str = ""
+    correlation_id: str = ""
+    tool_error: bool = False
     is_final: bool = False
     # Метрики из ResultMessage (заполняются в done event)
     session_id: str | None = None
@@ -128,6 +130,7 @@ class RuntimeAdapter:
     def __init__(self, options: ClaudeAgentOptions) -> None:
         self._options = options
         self._client: ClaudeSDKClient | None = None
+        self._tool_names_by_id: dict[str, str] = {}
 
     async def connect(self) -> None:
         """Подключиться к SDK (запустить subprocess).
@@ -283,6 +286,7 @@ class RuntimeAdapter:
         result_meta: dict[str, Any] = {}
         saw_partial_text = False
         saw_result_message = False
+        self._tool_names_by_id.clear()
         try:
             async for message in self._client.receive_response():
                 msg_count += 1
@@ -383,16 +387,27 @@ class RuntimeAdapter:
                         len(block.thinking),
                     )
                 elif isinstance(block, ToolUseBlock):
+                    correlation_id = (
+                        getattr(block, "id", "") or getattr(block, "tool_use_id", "") or ""
+                    )
+                    if correlation_id:
+                        self._tool_names_by_id[correlation_id] = block.name
                     yield StreamEvent(
                         type="tool_use_start",
                         tool_name=block.name,
                         tool_input=block.input,
+                        correlation_id=correlation_id,
                     )
                 elif isinstance(block, ToolResultBlock):
                     result_text = str(block.content) if hasattr(block, "content") else ""
+                    correlation_id = getattr(block, "tool_use_id", "") or ""
+                    tool_name = self._tool_names_by_id.pop(correlation_id, "")
                     yield StreamEvent(
                         type="tool_use_result",
+                        tool_name=tool_name,
                         tool_result=result_text,
+                        correlation_id=correlation_id,
+                        tool_error=bool(getattr(block, "is_error", False)),
                     )
         elif isinstance(message, SystemMessage):
             status_text = _format_system_message(message)

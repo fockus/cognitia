@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from unittest.mock import patch
 
 from cognitia.orchestration.subagent_types import SubagentSpec
-from cognitia.runtime.types import RuntimeErrorData, RuntimeEvent
+from cognitia.runtime.types import RuntimeErrorData, RuntimeEvent, ToolSpec
 
 
 class TestDeepAgentsSubagentOrchestrator:
@@ -72,6 +73,81 @@ class TestDeepAgentsSubagentOrchestrator:
 
         orch = DeepAgentsSubagentOrchestrator()
         assert isinstance(orch, SubagentOrchestrator)
+
+    async def test_default_runtime_passes_registered_local_tool_executors(self) -> None:
+        from cognitia.orchestration.deepagents_subagent import DeepAgentsSubagentOrchestrator
+
+        captured_tool_executors = {}
+
+        class FakeRuntime:
+            def __init__(self, *, config=None, tool_executors=None, mcp_servers=None) -> None:
+                _ = (config, mcp_servers)
+                captured_tool_executors.update(tool_executors or {})
+
+            async def run(self, **kwargs) -> AsyncIterator[RuntimeEvent]:
+                active_tools = kwargs["active_tools"]
+                assert active_tools[0].name == "send_message"
+                yield RuntimeEvent.final("deepagent result")
+
+        orch = DeepAgentsSubagentOrchestrator()
+        orch.register_tool("send_message", lambda args: args)
+
+        spec = SubagentSpec(
+            name="w",
+            system_prompt="p",
+            tools=[
+                ToolSpec(
+                    name="send_message",
+                    description="message tool",
+                    parameters={},
+                    is_local=True,
+                )
+            ],
+        )
+
+        with patch("cognitia.orchestration.deepagents_subagent.DeepAgentsRuntime", FakeRuntime):
+            aid = await orch.spawn(spec, "task")
+            result = await orch.wait(aid)
+
+        assert result.status.state == "completed"
+        assert "send_message" in captured_tool_executors
+
+    async def test_unregistered_local_tool_fails_before_runtime_execution(self) -> None:
+        from cognitia.orchestration.deepagents_subagent import DeepAgentsSubagentOrchestrator
+
+        runtime_run_called = False
+
+        class FakeRuntime:
+            def __init__(self, *, config=None, tool_executors=None, mcp_servers=None) -> None:
+                _ = (config, tool_executors, mcp_servers)
+
+            async def run(self, **kwargs) -> AsyncIterator[RuntimeEvent]:
+                nonlocal runtime_run_called
+                runtime_run_called = True
+                _ = kwargs
+                yield RuntimeEvent.final("deepagent result")
+
+        orch = DeepAgentsSubagentOrchestrator()
+        spec = SubagentSpec(
+            name="w",
+            system_prompt="p",
+            tools=[
+                ToolSpec(
+                    name="send_message",
+                    description="message tool",
+                    parameters={},
+                    is_local=True,
+                )
+            ],
+        )
+
+        with patch("cognitia.orchestration.deepagents_subagent.DeepAgentsRuntime", FakeRuntime):
+            aid = await orch.spawn(spec, "task")
+            result = await orch.wait(aid)
+
+        assert result.status.state == "failed"
+        assert "send_message" in (result.status.error or "")
+        assert runtime_run_called is False
 
 
 class TestClaudeSubagentOrchestrator:

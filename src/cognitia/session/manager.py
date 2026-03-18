@@ -271,15 +271,25 @@ class InMemorySessionManager:
                 len(messages[-1].content) if messages else 0,
             )
             event_count = 0
-            async for event in state.runtime.run(
-                messages=messages,
-                system_prompt=system_prompt,
-                active_tools=active_tools,
-                config=state.runtime_config,
-                mode_hint=mode_hint,
-            ):
-                event_count += 1
-                yield event
+            try:
+                async for event in state.runtime.run(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    active_tools=active_tools,
+                    config=state.runtime_config,
+                    mode_hint=mode_hint,
+                ):
+                    event_count += 1
+                    yield event
+            except Exception as exc:
+                logger.exception("run_turn[%s]: runtime.run() failed", ks)
+                yield RuntimeEvent.error(
+                    RuntimeErrorData(
+                        kind="runtime_crash",
+                        message=f"Runtime execution failed: {exc}",
+                        recoverable=False,
+                    )
+                )
             logger.info("run_turn[%s]: completed, events=%d", ks, event_count)
         logger.info("run_turn[%s]: lock released", ks)
 
@@ -302,61 +312,68 @@ class InMemorySessionManager:
                 assistant_emitted = False
                 final_data: dict[str, Any] = {}
                 saw_terminal_event = False
-                async for runtime_event in state.runtime.run(
-                    messages=list(state.runtime_messages),
-                    system_prompt=state.system_prompt,
-                    active_tools=state.active_tools,
-                    config=state.runtime_config,
-                ):
-                    if runtime_event.type == "assistant_delta":
-                        text = str(runtime_event.data.get("text", ""))
-                        full_text += text
-                        assistant_emitted = True
-                        yield StreamEvent(type="text_delta", text=text)
-                    elif runtime_event.type == "tool_call_started":
-                        yield StreamEvent(
-                            type="tool_use_start",
-                            tool_name=str(runtime_event.data.get("name", "")),
-                            tool_input=runtime_event.data.get("args"),
-                        )
-                    elif runtime_event.type == "tool_call_finished":
-                        yield StreamEvent(
-                            type="tool_use_result",
-                            tool_name=str(runtime_event.data.get("name", "")),
-                            tool_result=str(runtime_event.data.get("result_summary", "")),
-                        )
-                    elif runtime_event.type == "error":
-                        saw_terminal_event = True
-                        yield StreamEvent(
-                            type="error",
-                            text=str(runtime_event.data.get("message", "Runtime error")),
-                        )
-                        return
-                    elif runtime_event.type == "final":
-                        saw_terminal_event = True
-                        final_data = runtime_event.data
-                        final_text = str(runtime_event.data.get("text", ""))
-                        if final_text and not full_text:
-                            full_text = final_text
-                            yield StreamEvent(type="text_delta", text=final_text)
+                try:
+                    async for runtime_event in state.runtime.run(
+                        messages=list(state.runtime_messages),
+                        system_prompt=state.system_prompt,
+                        active_tools=state.active_tools,
+                        config=state.runtime_config,
+                    ):
+                        if runtime_event.type == "assistant_delta":
+                            text = str(runtime_event.data.get("text", ""))
+                            full_text += text
                             assistant_emitted = True
-                        final_new_messages = _messages_from_payloads(
-                            runtime_event.data.get("new_messages")
-                        )
-                        if final_new_messages:
-                            state.runtime_messages.extend(final_new_messages)
-                            await self._persist_state(state)
-                        elif assistant_emitted and full_text:
-                            state.runtime_messages.append(Message(role="assistant", content=full_text))
-                            await self._persist_state(state)
-                        done_event = StreamEvent(type="done", text=full_text, is_final=True)
-                        done_event.session_id = final_data.get("session_id")
-                        done_event.total_cost_usd = final_data.get("total_cost_usd")
-                        done_event.usage = final_data.get("usage")
-                        done_event.structured_output = final_data.get("structured_output")
-                        done_event.native_metadata = final_data.get("native_metadata")
-                        yield done_event
-                        return
+                            yield StreamEvent(type="text_delta", text=text)
+                        elif runtime_event.type == "tool_call_started":
+                            yield StreamEvent(
+                                type="tool_use_start",
+                                tool_name=str(runtime_event.data.get("name", "")),
+                                tool_input=runtime_event.data.get("args"),
+                            )
+                        elif runtime_event.type == "tool_call_finished":
+                            yield StreamEvent(
+                                type="tool_use_result",
+                                tool_name=str(runtime_event.data.get("name", "")),
+                                tool_result=str(runtime_event.data.get("result_summary", "")),
+                            )
+                        elif runtime_event.type == "error":
+                            saw_terminal_event = True
+                            yield StreamEvent(
+                                type="error",
+                                text=str(runtime_event.data.get("message", "Runtime error")),
+                            )
+                            return
+                        elif runtime_event.type == "final":
+                            saw_terminal_event = True
+                            final_data = runtime_event.data
+                            final_text = str(runtime_event.data.get("text", ""))
+                            if final_text and not full_text:
+                                full_text = final_text
+                                yield StreamEvent(type="text_delta", text=final_text)
+                                assistant_emitted = True
+                            final_new_messages = _messages_from_payloads(
+                                runtime_event.data.get("new_messages")
+                            )
+                            if final_new_messages:
+                                state.runtime_messages.extend(final_new_messages)
+                                await self._persist_state(state)
+                            elif assistant_emitted and full_text:
+                                state.runtime_messages.append(
+                                    Message(role="assistant", content=full_text)
+                                )
+                                await self._persist_state(state)
+                            done_event = StreamEvent(type="done", text=full_text, is_final=True)
+                            done_event.session_id = final_data.get("session_id")
+                            done_event.total_cost_usd = final_data.get("total_cost_usd")
+                            done_event.usage = final_data.get("usage")
+                            done_event.structured_output = final_data.get("structured_output")
+                            done_event.native_metadata = final_data.get("native_metadata")
+                            yield done_event
+                            return
+                except Exception as exc:
+                    logger.exception("stream_reply[%s]: runtime.run() failed", self._key_str(key))
+                    yield StreamEvent(type="error", text=f"Runtime execution failed: {exc}")
+                    return
 
                 if not saw_terminal_event:
                     yield StreamEvent(

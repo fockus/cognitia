@@ -165,6 +165,24 @@ class TestSessionState:
         assert state["delegation_turn_count"] == 5
         assert state["delegation_summary"] == "Подбор вклада"
 
+    @pytest.mark.asyncio
+    async def test_session_state_uses_snapshot_semantics(
+        self,
+        provider: InMemoryMemoryProvider,
+    ) -> None:
+        active_skill_ids = ["finuslugi"]
+        await provider.save_session_state("u1", "t1", "coach", active_skill_ids)
+        active_skill_ids.append("iss")
+
+        state = await provider.get_session_state("u1", "t1")
+        assert state is not None
+        assert state["active_skill_ids"] == ["finuslugi"]
+
+        state["active_skill_ids"].append("calc")
+        reloaded = await provider.get_session_state("u1", "t1")
+        assert reloaded is not None
+        assert reloaded["active_skill_ids"] == ["finuslugi"]
+
 
 class TestProfile:
 

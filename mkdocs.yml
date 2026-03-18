@@ -71,6 +71,8 @@ nav:
     - CLI Runtime: cli-runtime.md
     - Production Safety: production-safety.md
     - Sessions: sessions.md
+    - Memory Bank: memory-bank.md
+    - Code Pipeline: code-pipeline.md
     - Observability: observability.md
     - UI Projection: ui-projection.md
     - RAG: rag.md

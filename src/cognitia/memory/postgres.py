@@ -14,6 +14,20 @@ from cognitia.memory.types import GoalState, MemoryMessage, PhaseState, ToolEven
 
 # Подзапрос для получения внутреннего id пользователя по external_id (DRY)
 _USER_ID_SUB = "(SELECT id FROM users WHERE external_id = :user_id)"
+_POSTGRES_EXISTING_SOURCE_PRIORITY = (
+    "CASE facts.source "
+    "WHEN 'user' THEN 3 "
+    "WHEN 'ai_inferred' THEN 2 "
+    "WHEN 'mcp' THEN 1 "
+    "ELSE 0 END"
+)
+_POSTGRES_INCOMING_SOURCE_PRIORITY = (
+    "CASE EXCLUDED.source "
+    "WHEN 'user' THEN 3 "
+    "WHEN 'ai_inferred' THEN 2 "
+    "WHEN 'mcp' THEN 1 "
+    "ELSE 0 END"
+)
 
 
 class PostgresMemoryProvider:
@@ -157,7 +171,8 @@ class PostgresMemoryProvider:
                             value = EXCLUDED.value,
                             source = EXCLUDED.source,
                             updated_at = now()
-                        WHERE facts.source != 'user' OR EXCLUDED.source = 'user'
+                        WHERE {_POSTGRES_EXISTING_SOURCE_PRIORITY}
+                              <= {_POSTGRES_INCOMING_SOURCE_PRIORITY}
                     """
                     ),
                     {
@@ -181,7 +196,8 @@ class PostgresMemoryProvider:
                             value = EXCLUDED.value,
                             source = EXCLUDED.source,
                             updated_at = now()
-                        WHERE facts.source != 'user' OR EXCLUDED.source = 'user'
+                        WHERE {_POSTGRES_EXISTING_SOURCE_PRIORITY}
+                              <= {_POSTGRES_INCOMING_SOURCE_PRIORITY}
                     """
                     ),
                     {

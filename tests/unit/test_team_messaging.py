@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from cognitia.orchestration.subagent_types import SubagentSpec, SubagentStatus
 from cognitia.orchestration.team_types import TeamConfig, TeamMessage
@@ -183,3 +183,21 @@ class TestTeamWithMessaging:
 
         status = await orch.get_team_status(team_id)
         assert status.messages_exchanged == 2
+
+    async def test_start_registers_send_message_executor_when_supported(self) -> None:
+        from cognitia.orchestration.deepagents_team import DeepAgentsTeamOrchestrator
+
+        mock_sub = AsyncMock()
+        mock_sub.spawn.side_effect = ["a1"]
+        mock_sub.get_status.return_value = SubagentStatus(state="running")
+        mock_sub.register_tool = MagicMock()
+
+        orch = DeepAgentsTeamOrchestrator(mock_sub)
+        config = TeamConfig(
+            lead_prompt="lead", worker_specs=[SubagentSpec(name="w1", system_prompt="p")]
+        )
+
+        await orch.start(config, "t")
+
+        mock_sub.register_tool.assert_called_once()
+        assert mock_sub.register_tool.call_args.args[0] == "send_message"

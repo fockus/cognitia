@@ -284,7 +284,7 @@ Unified streaming event from runtimes.
 | `final` | `text`, `new_messages`, `metrics`, `session_id`, `total_cost_usd`, `usage`, `structured_output` | Turn completed |
 | `error` | `kind`, `message`, `recoverable` | Error occurred |
 
-Static factory methods: `RuntimeEvent.assistant_delta(text)`, `RuntimeEvent.status(text)`, `RuntimeEvent.tool_call_started(name, args)`, `RuntimeEvent.tool_call_finished(name, cid, ok, summary)`, `RuntimeEvent.final(text, ...)`, `RuntimeEvent.error(error_data)`.
+Static factory methods: `RuntimeEvent.assistant_delta(text)`, `RuntimeEvent.status(text)`, `RuntimeEvent.tool_call_started(name, args)`, `RuntimeEvent.tool_call_finished(name, correlation_id, ok, summary)`, `RuntimeEvent.final(text, ...)`, `RuntimeEvent.error(error_data)`.
 
 ### RuntimeConfig
 

@@ -24,6 +24,8 @@ class FakeStreamEvent:
     tool_name: str = ""
     tool_input: dict[str, Any] | None = None
     tool_result: str = ""
+    correlation_id: str = ""
+    tool_error: bool = False
     is_final: bool = False
     session_id: str | None = None
     total_cost_usd: float | None = None
@@ -174,6 +176,8 @@ class TestClaudeCodeRuntimeStreaming:
                     type="tool_use_result",
                     tool_name="mcp__iss__get_bonds",
                     tool_result="found 5 bonds",
+                    correlation_id="tool-7",
+                    tool_error=True,
                 ),
                 FakeStreamEvent(type="text_delta", text="Результат"),
                 FakeStreamEvent(type="done", text="Результат", is_final=True),
@@ -191,6 +195,11 @@ class TestClaudeCodeRuntimeStreaming:
         started = next(e for e in events if e.type == "tool_call_started")
         assert started.data["name"] == "mcp__iss__get_bonds"
         assert started.data["args"] == {"q": "obligs"}
+        finished = next(e for e in events if e.type == "tool_call_finished")
+        assert finished.data["name"] == "mcp__iss__get_bonds"
+        assert finished.data["correlation_id"] == "tool-7"
+        assert finished.data["ok"] is False
+        assert finished.data["result_summary"] == "found 5 bonds"
 
         # metrics
         final = events[-1]

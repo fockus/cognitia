@@ -172,6 +172,48 @@ class TestConversationSay:
         assert conv.history[3].role == "assistant"
         assert conv.history[3].content == "Reply 2"
 
+    @pytest.mark.asyncio
+    async def test_say_runtime_error_does_not_persist_partial_assistant_history(self) -> None:
+        agent = _make_agent()
+        conv = Conversation(agent=agent)
+
+        async def fake_execute(prompt):
+            yield FakeStreamEvent("text_delta", text="partial")
+            yield FakeStreamEvent("error", text="runtime failed")
+
+        with patch.object(conv, "_execute", side_effect=fake_execute):
+            result = await conv.say("Hello")
+
+        assert result.ok is False
+        assert result.text == "partial"
+        assert result.error == "runtime failed"
+        assert [msg.role for msg in conv.history] == ["user"]
+        assert conv.history[0].content == "Hello"
+
+    @pytest.mark.asyncio
+    async def test_say_portable_runtime_exception_returns_error_result(self) -> None:
+        agent = _make_agent(runtime="thin")
+        conv = Conversation(agent=agent)
+
+        class BrokenRuntime:
+            async def run(self, **kwargs: Any):
+                raise RuntimeError("boom-runtime")
+                yield  # pragma: no cover
+
+            async def cleanup(self) -> None:
+                return None
+
+        fake_factory = MagicMock()
+        fake_factory.create.return_value = BrokenRuntime()
+
+        with patch("cognitia.runtime.factory.RuntimeFactory", return_value=fake_factory):
+            result = await conv.say("Hello")
+
+        assert result.ok is False
+        assert "boom-runtime" in (result.error or "")
+        assert [msg.role for msg in conv.history] == ["user"]
+        assert conv.history[0].content == "Hello"
+
 
 # ---------------------------------------------------------------------------
 # Conversation.stream()
@@ -264,6 +306,50 @@ class TestConversationStream:
         assert events[-1].type == "done"
         create_kwargs = fake_factory.create.call_args.kwargs
         assert create_kwargs["mcp_servers"] == agent.config.mcp_servers
+
+    @pytest.mark.asyncio
+    async def test_stream_runtime_error_does_not_persist_partial_assistant_history(self) -> None:
+        agent = _make_agent()
+        conv = Conversation(agent=agent)
+
+        async def fake_execute(prompt):
+            yield FakeStreamEvent("text_delta", text="partial")
+            yield FakeStreamEvent("error", text="runtime failed")
+
+        with patch.object(conv, "_execute", side_effect=fake_execute):
+            events = []
+            async for event in conv.stream("Hi"):
+                events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "error"]
+        assert [msg.role for msg in conv.history] == ["user"]
+        assert conv.history[0].content == "Hi"
+
+    @pytest.mark.asyncio
+    async def test_stream_portable_runtime_exception_yields_error_event(self) -> None:
+        agent = _make_agent(runtime="thin")
+        conv = Conversation(agent=agent)
+
+        class BrokenRuntime:
+            async def run(self, **kwargs: Any):
+                raise RuntimeError("boom-runtime")
+                yield  # pragma: no cover
+
+            async def cleanup(self) -> None:
+                return None
+
+        fake_factory = MagicMock()
+        fake_factory.create.return_value = BrokenRuntime()
+
+        with patch("cognitia.runtime.factory.RuntimeFactory", return_value=fake_factory):
+            events = []
+            async for event in conv.stream("Hi"):
+                events.append(event)
+
+        assert [event.type for event in events] == ["error"]
+        assert events[0].text == "boom-runtime"
+        assert [msg.role for msg in conv.history] == ["user"]
+        assert conv.history[0].content == "Hi"
 
 
 # ---------------------------------------------------------------------------

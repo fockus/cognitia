@@ -834,9 +834,10 @@ class TestRuntimeEventAdapter:
         from cognitia.agent.agent import _RuntimeEventAdapter
 
         adapted = _RuntimeEventAdapter(
-            self._make_event("tool_call_finished", {"result_summary": "42"})
+            self._make_event("tool_call_finished", {"name": "calc", "result_summary": "42"})
         )
         assert adapted.type == "tool_use_result"
+        assert adapted.tool_name == "calc"
         assert adapted.tool_result == "42"
         assert adapted.text == ""
 

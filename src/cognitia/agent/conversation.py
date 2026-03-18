@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, cast
@@ -11,6 +12,9 @@ from cognitia.runtime.types import Message
 
 if TYPE_CHECKING:
     from cognitia.agent.agent import Agent
+
+
+logger = logging.getLogger(__name__)
 
 
 class Conversation:
@@ -59,11 +63,12 @@ class Conversation:
         collected = await collect_stream_result(self._execute(effective_prompt))
         result_payload = dict(collected)
         new_messages_payload = result_payload.pop("new_messages", None)
+        has_error = result_payload["error"] is not None
 
         new_messages = _runtime_messages_from_payloads(new_messages_payload)
-        if new_messages:
+        if not has_error and new_messages:
             self._history.extend(new_messages)
-        elif result_payload["text"]:
+        elif not has_error and result_payload["text"]:
             self._history.append(Message(role="assistant", content=result_payload["text"]))
 
         # Conversation всегда заполняет session_id
@@ -95,9 +100,12 @@ class Conversation:
 
         full_text = ""
         final_new_messages: list[Message] = []
+        saw_error = False
         async for event in self._execute(effective_prompt):
             if event.type == "text_delta":
                 full_text += event.text
+            elif event.type == "error":
+                saw_error = True
             elif event.type in {"done", "final"}:
                 from cognitia.agent.agent import _runtime_messages_from_payloads
 
@@ -109,6 +117,9 @@ class Conversation:
                     payload_new_messages
                 )
             yield event
+
+        if saw_error:
+            return
 
         if final_new_messages:
             self._history.extend(final_new_messages)
@@ -154,7 +165,7 @@ class Conversation:
 
     async def _execute_agent_runtime(self, prompt: str, runtime_name: str) -> AsyncIterator[Any]:
         """Multi-turn через AgentRuntime (accumulated messages)."""
-        from cognitia.agent.agent import _RuntimeEventAdapter
+        from cognitia.agent.agent import _ErrorEvent, _RuntimeEventAdapter
         from cognitia.agent.runtime_wiring import build_portable_runtime_plan
         from cognitia.runtime.factory import RuntimeFactory
 
@@ -164,20 +175,25 @@ class Conversation:
             session_id=self._session_id,
         )
         factory = RuntimeFactory()
-        runtime = factory.create(
-            config=runtime_plan.config,
-            **runtime_plan.create_kwargs,
-        )
+        runtime: Any | None = None
 
         try:
+            runtime = factory.create(
+                config=runtime_plan.config,
+                **runtime_plan.create_kwargs,
+            )
             async for event in runtime.run(
                 messages=list(self._history),
                 system_prompt=self._agent.config.system_prompt,
                 active_tools=runtime_plan.active_tools,
             ):
                 yield _RuntimeEventAdapter(event)
+        except Exception as exc:
+            logger.exception("Conversation._execute_agent_runtime error")
+            yield _ErrorEvent(str(exc))
         finally:
-            await runtime.cleanup()
+            if runtime is not None:
+                await runtime.cleanup()
 
     async def _create_adapter(self) -> Any:
         """Создать и подключить RuntimeAdapter для claude_sdk."""

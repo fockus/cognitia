@@ -89,6 +89,63 @@ Tests mirror source: `tests/unit/`, `tests/integration/`, `tests/e2e/`, `tests/s
 - **Model registry**: aliases like `"sonnet"` → resolved via `runtime/models.yaml`.
 - **Contract-first**: Protocol/ABC → contract tests → implementation. Tests must pass for ANY correct implementation.
 
+## Git Workflow
+
+Two remotes: private development + public release.
+
+```
+origin  → github.com/fockus/cognitia-dev  (private, all branches)
+public  → github.com/fockus/cognitia      (public, stable main only)
+```
+
+### Branching (GitHub Flow + release branches)
+
+```
+main (stable, tested, releasable)
+  ├── feat/<name>       ← feature development
+  ├── fix/<name>        ← bug fixes
+  └── release/vX.Y.Z   ← version bump + changelog before tag
+```
+
+**Rules:**
+- `main` = always green (tests pass, lint clean, can `pip install`)
+- Development on feature branches → PR → merge to main
+- Push all branches to `origin` (private) freely
+- Push only stable `main` to `public`: `./scripts/sync-public.sh`
+- Release: branch `release/vX.Y.Z` → version bump + changelog → merge → tag → `sync-public.sh --tags`
+- Hotfix: branch from tag → fix → merge to main → new tag
+
+### Private vs Public
+
+| Content | Private (`origin`) | Public (`public`) |
+|---------|-------------------|-------------------|
+| Source code | all branches | main only |
+| `.memory-bank/` | local only (.gitignore) | excluded |
+| `.claude/` | local only (.gitignore) | excluded |
+| `RULES.md`, `CLAUDE.md` | local only (.gitignore) | excluded |
+| WIP / feature branches | pushed | never pushed |
+| Tags / releases | all | stable only |
+
+### Commands
+
+```bash
+# Daily development
+git checkout -b feat/my-feature       # new feature branch
+git push origin feat/my-feature       # push to private
+# ... PR → merge to main
+
+# Sync stable main to public
+./scripts/sync-public.sh              # tests + push main
+./scripts/sync-public.sh --tags       # + push tags
+
+# Release
+git checkout -b release/v1.0.0
+# ... version bump, changelog
+git checkout main && git merge release/v1.0.0
+git tag v1.0.0
+./scripts/sync-public.sh --tags
+```
+
 ## Memory Bank
 
 Active at `.memory-bank/`. Core files: `STATUS.md`, `checklist.md`, `plan.md`, `RESEARCH.md`. Use `/mb start` to load context, `/mb done` to close session.

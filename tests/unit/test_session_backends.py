@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from cognitia.session.backends import (
     SessionBackend,
     scoped_key,
 )
+from cognitia.session.types import SessionKey
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +124,25 @@ class TestInMemorySessionBackend:
         keys = await backend.list_keys()
         assert sorted(keys) == ["a", "b"]
 
+    @pytest.mark.asyncio
+    async def test_save_and_load_use_snapshot_semantics(self) -> None:
+        backend = InMemorySessionBackend()
+        original = {"nested": {"value": 1}, "items": ["a"]}
+
+        await backend.save("k1", original)
+        original["nested"]["value"] = 2
+        original["items"].append("b")
+
+        loaded = await backend.load("k1")
+        assert loaded == {"nested": {"value": 1}, "items": ["a"]}
+
+        assert loaded is not None
+        loaded["nested"]["value"] = 3
+        loaded["items"].append("c")
+
+        reloaded = await backend.load("k1")
+        assert reloaded == {"nested": {"value": 1}, "items": ["a"]}
+
 
 # ---------------------------------------------------------------------------
 # SqliteSessionBackend
@@ -195,6 +216,29 @@ class TestSqliteSessionBackend:
         loaded = await backend2.load("persist_key")
         assert loaded == {"data": "survives"}
         backend2.close()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_access_does_not_raise(self, db_path: str) -> None:
+        backend = SqliteSessionBackend(db_path=db_path)
+
+        async def worker(index: int) -> None:
+            key = f"k{index % 5}"
+            await backend.save(key, {"i": index})
+            await backend.load(key)
+            await backend.list_keys()
+            if index % 7 == 0:
+                await backend.delete(key)
+
+        await asyncio.gather(*(worker(index) for index in range(200)))
+        backend.close()
+
+
+class TestSessionKey:
+    def test_string_serialization_avoids_delimiter_collisions(self) -> None:
+        first = SessionKey(user_id="a:b", topic_id="c")
+        second = SessionKey(user_id="a", topic_id="b:c")
+
+        assert str(first) != str(second)
 
 
 # ---------------------------------------------------------------------------

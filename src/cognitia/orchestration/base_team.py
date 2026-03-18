@@ -52,10 +52,17 @@ class BaseTeamOrchestrator(abc.ABC):
         for name, agent_id in state.worker_ids.items():
             workers[name] = await self._sub_orch.get_status(agent_id)
 
-        all_done = all(
+        all_terminal = all(
             w.state in ("completed", "failed", "cancelled") for w in workers.values()
         )
-        team_state: TeamState = "completed" if all_done and workers else "running"
+        all_completed = all(w.state == "completed" for w in workers.values())
+        team_state: TeamState
+        if workers and all_completed:
+            team_state = "completed"
+        elif workers and all_terminal:
+            team_state = "failed"
+        else:
+            team_state = "running"
         history = await state.bus.get_history()
         return TeamStatus(
             team_id=team_id,

@@ -36,6 +36,12 @@ class InMemoryMemoryProvider:
         # tool_events: list
         self._tool_events: list[dict[str, Any]] = []
 
+    @staticmethod
+    def _copy_session_state(state: dict[str, Any]) -> dict[str, Any]:
+        copied = dict(state)
+        copied["active_skill_ids"] = list(state.get("active_skill_ids", []))
+        return copied
+
     # --- Сообщения ---
 
     async def save_message(
@@ -156,15 +162,16 @@ class InMemoryMemoryProvider:
         delegation_summary: str | None = None,
     ) -> None:
         """Сохранить состояние сессии."""
-        self._session_states[(user_id, topic_id)] = {
+        state = {
             "role_id": role_id,
-            "active_skill_ids": active_skill_ids,
+            "active_skill_ids": list(active_skill_ids),
             "prompt_hash": prompt_hash,
             "delegated_from": delegated_from,
             "delegation_turn_count": delegation_turn_count,
             "pending_delegation": pending_delegation,
             "delegation_summary": delegation_summary,
         }
+        self._session_states[(user_id, topic_id)] = self._copy_session_state(state)
 
     async def get_session_state(
         self,
@@ -172,7 +179,10 @@ class InMemoryMemoryProvider:
         topic_id: str,
     ) -> dict[str, Any] | None:
         """Получить состояние сессии."""
-        return self._session_states.get((user_id, topic_id))
+        state = self._session_states.get((user_id, topic_id))
+        if state is None:
+            return None
+        return self._copy_session_state(state)
 
     # --- Profile ---
 

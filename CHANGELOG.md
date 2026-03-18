@@ -7,9 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-core] - 2026-03-18
+
 ### Added
 
-- **Multi-Agent Coordination** (`cognitia.multi_agent`)
+- **Structured Output** (`cognitia.runtime`) — Phase 6A
+  - `output_type` in `RuntimeConfig` — auto-extracts JSON Schema from Pydantic models
+  - `validate_structured_output`, `try_resolve_structured_output`, `extract_structured_output` helpers
+  - Retry on validation failure with configurable `max_model_retries`
+- **Tool Decorator Enhancements** (`cognitia.agent.tool`) — Phase 6B
+  - `@tool` decorator: auto JSON Schema inference from type hints
+  - Docstring parsing for parameter descriptions
+  - `ToolDefinition.to_tool_spec()` bridge for runtime compatibility
+- **Runtime Registry** (`cognitia.runtime.registry`) — Phase 6C
+  - `RuntimeRegistry`: thread-safe extensible registry with plugin discovery via entry points
+- **Cancellation** (`cognitia.runtime`) — Phase 6D
+  - `CancellationToken`: cooperative cancellation with callbacks
+- **Runtime Events** (`cognitia.runtime.types`) — Phase 6D
+  - Typed `RuntimeEvent` accessors: `.text`, `.tool_name`, `.structured_output`, `.is_final`, `.is_error`
+  - Static factory methods: `RuntimeEvent.assistant_delta()`, `.final()`, `.error()`, etc.
+- **Runtime Context Manager** — `AgentRuntime` context manager (`async with runtime as r:`) — Phase 6D
+- **Protocols ISP Split** — `protocols.py` split into `protocols/memory.py`, `session.py`, `routing.py`, `tools.py`, `runtime.py` — Phase 6D
+- **Cost Budget Tracking** (`cognitia.runtime.cost`) — Phase 7A
+  - `CostBudget` and `CostTracker` for per-session budget enforcement
+  - Bundled `pricing.json` with pricing data for major models
+  - Budget enforcement in ThinRuntime with `action_on_exceed` ("error"/"warn")
+- **Guardrails** (`cognitia.guardrails`) — Phase 7B
+  - `Guardrail` Protocol, `InputGuardrail`/`OutputGuardrail` marker protocols
+  - Built-in guardrails: `ContentLengthGuardrail`, `RegexGuardrail`, `CallerAllowlistGuardrail`
+  - Parallel guardrail execution via `asyncio.gather`
+- **Input Filters** (`cognitia.filters`) — Phase 7C
+  - `InputFilter` Protocol for pre-processing user input
+  - `MaxTokensFilter` for token budget enforcement
+  - `SystemPromptInjector` for dynamic system prompt augmentation
+- **Retry and Fallback** (`cognitia.resilience`) — Phase 7D
+  - `RetryPolicy` Protocol, `ExponentialBackoff` with jitter
+  - `ModelFallbackChain` and `ProviderFallback` data objects for multi-model resilience
+- **Session Backends** (`cognitia.session.backends`) — Phase 8A
+  - `SessionBackend` Protocol for pluggable session persistence
+  - `InMemorySessionBackend` for development and testing
+  - `SqliteSessionBackend` with `asyncio.to_thread()` for non-blocking I/O
+- **Memory Scopes** (`cognitia.memory.scopes`) — Phase 8A
+  - `MemoryScope` enum (`GLOBAL`/`AGENT`/`SHARED`) with `scoped_key()` namespace isolation
+- **Event Bus** (`cognitia.observability.event_bus`) — Phase 8B
+  - `EventBus` Protocol with fire-and-forget pub-sub
+  - `InMemoryEventBus` implementation with topic-based subscription
+- **Tracing** (`cognitia.observability.tracing`) — Phase 8B
+  - `Tracer` Protocol, `NoopTracer`, `ConsoleTracer` (structlog-based)
+  - `TracingSubscriber` bridge connecting EventBus to Tracer
+  - ThinRuntime emits `llm_call_start/end`, `tool_call_start/end` events via EventBus
+- **UI Projection** (`cognitia.ui.projection`) — Phase 8C
+  - `EventProjection` Protocol, `ChatProjection` implementation
+  - `project_stream` async generator for real-time UI updates
+  - UI blocks: `TextBlock`, `ToolCallBlock`, `ToolResultBlock`, `ErrorBlock`
+  - `UIState.to_dict()`/`from_dict()` serialization for frontend transport
+- **RAG** (`cognitia.rag`) — Phase 8D
+  - `Retriever` Protocol, `Document` frozen dataclass
+  - `SimpleRetriever` (word-overlap scoring for development and testing)
+  - `RagInputFilter` implementing `InputFilter` — auto-wraps via `RuntimeConfig.retriever`
+- **Multi-Agent Coordination** (`cognitia.multi_agent`) — Phase 9 MVP
   - `AgentTool` Protocol — expose any runtime as a callable tool for other agents
   - `create_agent_tool_spec()` / `execute_agent_tool()` — agent-as-tool utility functions
   - `AgentToolResult` frozen dataclass with success/output/error/metrics
@@ -17,77 +73,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `TaskItem`, `TaskStatus`, `TaskPriority`, `TaskFilter` domain types
   - `AgentRegistry` Protocol (5 methods, ISP-compliant) with `InMemoryAgentRegistry`
   - `AgentRecord`, `AgentStatus`, `AgentFilter` domain types
-- **CLI Agent Runtime** (`cognitia.runtime.cli`)
+- **CLI Agent Runtime** (`cognitia.runtime.cli`) — Phase 10A
   - `CliAgentRuntime` — subprocess-based runtime for external CLI agents (Claude Code, custom)
   - `NdjsonParser` Protocol with `ClaudeNdjsonParser` and `GenericNdjsonParser`
   - `CliConfig` frozen dataclass (command, timeout, max_output_bytes, env)
   - Registered in `RuntimeRegistry` as `"cli"` with light tier capabilities
+- **27 Runnable Examples** (`examples/`)
+  - End-to-end examples covering all major features: agent basics, tool decorator, structured output, middleware, hooks, input filters, guardrails, RAG, memory providers, sessions, cost budget, retry/fallback, cancellation, thinking tool, event bus/tracing, UI projection, runtime switching, custom runtime, CLI runtime, workflow graph, agent-as-tool, task queue, agent registry, deep research, shopping agent, code project team, nano-claw
 
-## [1.0.0-core] - 2026-03-18
+### Changed
 
-### Added
-- **Session Backends** (`cognitia.session.backends`)
-  - `SessionBackend` Protocol for pluggable session persistence
-  - `InMemorySessionBackend` for development and testing
-  - `SqliteSessionBackend` with `asyncio.to_thread()` for non-blocking I/O
-- **Memory Scopes** (`cognitia.memory.scopes`)
-  - `MemoryScope` enum (`GLOBAL`/`AGENT`/`SHARED`) with `scoped_key()` namespace isolation
-- **Event Bus** (`cognitia.observability.event_bus`)
-  - `EventBus` Protocol with fire-and-forget pub-sub
-  - `InMemoryEventBus` implementation with topic-based subscription
-- **Tracing** (`cognitia.observability.tracing`)
-  - `Tracer` Protocol, `NoopTracer`, `ConsoleTracer` (structlog-based)
-  - `TracingSubscriber` bridge connecting EventBus to Tracer
-  - ThinRuntime emits `llm_call_start/end`, `tool_call_start/end` events via EventBus
-- **UI Projection** (`cognitia.ui.projection`)
-  - `EventProjection` Protocol, `ChatProjection` implementation
-  - `project_stream` async generator for real-time UI updates
-  - UI blocks: `TextBlock`, `ToolCallBlock`, `ToolResultBlock`, `ErrorBlock`
-  - `UIState.to_dict()`/`from_dict()` serialization for frontend transport
-- **RAG** (`cognitia.rag`)
-  - `Retriever` Protocol, `Document` frozen dataclass
-  - `SimpleRetriever` (word-overlap scoring for development and testing)
-  - `RagInputFilter` implementing `InputFilter` — auto-wraps via `RuntimeConfig.retriever`
+- Audit remediation Wave 1: portable `mcp_servers`, canonical `final.new_messages`, terminal contract hardening, port/session final metadata, thin-team `send_message`, single-layer retry
+- Audit remediation Wave 2: shared portable runtime wiring helper for `Agent`/`Conversation`, lazy fail-fast optional exports for `runtime`/`hooks`/`memory`/`skills`
+- Re-audit remediation: `SessionManager` keeps canonical `final.new_messages`, `BaseRuntimePort`/session runtime paths fail on silent EOF and preserve final metadata, `ClaudeCodeRuntime` stops after terminal error, DeepAgents portable path round-trips tool history, builtin `cli` works through registry and legacy fallback, workflow executor advertises tools, docs/runtime narrative synced
+- Review-fix batch 1: narrowed exceptions, `isinstance` test, `None` score fix
+- Review-fix batch 2: `assert` replaced with guard clauses, process leak fix, unused imports removed
+- P1 follow-up fixes: `runtime="cli"` ignores facade-only kwargs, CLI stdin includes `system_prompt`, `execute_agent_tool()` fails on `RuntimeEvent.error`/missing final, `TaskQueue.get()` atomically claims TODO tasks as `IN_PROGRESS`
+- P1 follow-up batch 2: SQLite `complete()`/`cancel()` use atomic CAS transition, CLI runtime emits `bad_model_output` when subprocess exits without final event, Claude autodetect uses basename, `execute_agent_tool()` catches arbitrary `Exception`
 
-## [0.7.0] - 2026-03-18
+### Fixed
 
-### Added
-- **Cost Budget Tracking** (`cognitia.runtime.cost`)
-  - `CostBudget` and `CostTracker` for per-session budget enforcement
-  - Bundled `pricing.json` with pricing data for major models
-  - Budget enforcement in ThinRuntime with `action_on_exceed` ("error"/"warn")
-- **Guardrails** (`cognitia.guardrails`)
-  - `Guardrail` Protocol, `InputGuardrail`/`OutputGuardrail` marker protocols
-  - Built-in guardrails: `ContentLengthGuardrail`, `RegexGuardrail`, `CallerAllowlistGuardrail`
-  - Parallel guardrail execution via `asyncio.gather`
-- **Input Filters** (`cognitia.filters`)
-  - `InputFilter` Protocol for pre-processing user input
-  - `MaxTokensFilter` for token budget enforcement
-  - `SystemPromptInjector` for dynamic system prompt augmentation
-- **Retry and Fallback** (`cognitia.resilience`)
-  - `RetryPolicy` Protocol, `ExponentialBackoff` with jitter
-  - `ModelFallbackChain` and `ProviderFallback` data objects for multi-model resilience
-
-## [0.6.0] - 2026-03-18
-
-### Added
-- **Structured Output** (`cognitia.runtime`)
-  - `output_type` in `RuntimeConfig` — auto-extracts JSON Schema from Pydantic models
-  - `validate_structured_output`, `try_resolve_structured_output`, `extract_structured_output` helpers
-  - Retry on validation failure with configurable `max_model_retries`
-- **Tool Decorator Enhancements** (`cognitia.agent.tool`)
-  - `@tool` decorator: auto JSON Schema inference from type hints
-  - Docstring parsing for parameter descriptions
-  - `ToolDefinition.to_tool_spec()` bridge for runtime compatibility
-- **Runtime Registry** (`cognitia.runtime.registry`)
-  - `RuntimeRegistry`: thread-safe extensible registry with plugin discovery via entry points
-- **Cancellation** (`cognitia.runtime`)
-  - `CancellationToken`: cooperative cancellation with callbacks
-- **Runtime Events** (`cognitia.runtime.types`)
-  - Typed `RuntimeEvent` accessors: `.text`, `.tool_name`, `.structured_output`, `.is_final`, `.is_error`
-  - Static factory methods: `RuntimeEvent.assistant_delta()`, `.final()`, `.error()`, etc.
-- **Runtime Context Manager** — `AgentRuntime` context manager (`async with runtime as r:`)
-- **Protocols ISP Split** — `protocols.py` split into `protocols/memory.py`, `session.py`, `routing.py`, `tools.py`, `runtime.py`
+- Repo-wide `ruff check` clean (60 errors in src/ and tests/ resolved)
+- Repo-wide `mypy` clean (27 errors in 17 files resolved)
+- Session/runtime migration cleanup (Wave 2 Phase 5)
+- Factory/registry hardening (Wave 2 Phase 6)
 
 ### Deprecated
 - `RuntimePort` protocol — use `AgentRuntime` from `cognitia.runtime.base`
@@ -245,9 +254,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Commands** — `CommandRegistry` with aliases
 
 [Unreleased]: https://github.com/fockus/cognitia/compare/v1.0.0-core...HEAD
-[1.0.0-core]: https://github.com/fockus/cognitia/compare/v0.7.0...v1.0.0-core
-[0.7.0]: https://github.com/fockus/cognitia/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/fockus/cognitia/compare/v0.5.0...v0.6.0
+[1.0.0-core]: https://github.com/fockus/cognitia/compare/v0.5.0...v1.0.0-core
 [0.5.0]: https://github.com/fockus/cognitia/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fockus/cognitia/compare/v0.3.0b1...v0.4.0
 [0.3.0b1]: https://github.com/fockus/cognitia/compare/v0.2.0...v0.3.0b1

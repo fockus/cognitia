@@ -6,6 +6,7 @@ __pycache__/
 .claude/
 RULES.md
 CLAUDE.md
+AGENTS.md
 
 .pytest_cache/
 .mypy_cache/

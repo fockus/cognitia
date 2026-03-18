@@ -167,6 +167,38 @@ class TestUpsertFact:
         assert json.loads(params["value"]) == 32
         session.commit.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_uses_source_priority_clause_for_ai_inferred_over_mcp(self) -> None:
+        factory, session = _mock_session_factory()
+        provider = PostgresMemoryProvider(factory)
+
+        await provider.upsert_fact(
+            "u1",
+            "recommendation",
+            "ai",
+            topic_id="t1",
+            source="ai_inferred",
+        )
+
+        query = str(session.execute.call_args[0][0])
+        assert "facts.source" in query
+        assert "EXCLUDED.source" in query
+        assert "ai_inferred" in query
+        assert "mcp" in query
+
+    @pytest.mark.asyncio
+    async def test_query_enforces_documented_source_precedence(self) -> None:
+        factory, session = _mock_session_factory()
+        provider = PostgresMemoryProvider(factory)
+
+        await provider.upsert_fact("u1", "status", "value", source="mcp")
+
+        statement = str(session.execute.call_args.args[0])
+        assert "ai_inferred" in statement
+        assert "mcp" in statement
+        assert "facts.source" in statement
+        assert "EXCLUDED.source" in statement
+
 
 class TestGetFacts:
     """get_facts — SELECT key, value."""

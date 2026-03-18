@@ -11,6 +11,11 @@ from typing import Any
 from cognitia.orchestration.workflow_graph import END_NODE, WorkflowGraph
 
 
+async def _parallel_entry_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Synthetic no-op node used to represent WorkflowGraph parallel entrypoints."""
+    return state
+
+
 def compile_to_langgraph(graph: WorkflowGraph) -> Any:
     """Compile WorkflowGraph → LangGraph StateGraph.
 
@@ -49,10 +54,20 @@ def compile_to_langgraph(graph: WorkflowGraph) -> Any:
         else:
             sg.add_node(node_id, node_fn)
 
+    for entry_id in graph._parallel_groups:
+        if entry_id not in graph._nodes:
+            sg.add_node(entry_id, _parallel_entry_node)
+
     # Add edges
     for edge in graph._edges:
         target = END if edge.target == END_NODE else edge.target
         sg.add_edge(edge.source, target)
+
+    for group in graph._parallel_groups.values():
+        for node_id in group.node_ids:
+            sg.add_edge(group.entry_id, node_id)
+            target = END if group.then == END_NODE else group.then
+            sg.add_edge(node_id, target)
 
     # Add conditional edges
     for node_id, cond_edge in graph._conditional_edges.items():
@@ -76,4 +91,3 @@ def compile_to_langgraph(graph: WorkflowGraph) -> Any:
         compile_kwargs["interrupt_before"] = list(graph._interrupts)
 
     return sg.compile(**compile_kwargs)
-

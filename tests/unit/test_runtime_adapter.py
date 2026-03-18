@@ -41,6 +41,7 @@ def _make_text_block(text: str = "Привет!") -> MagicMock:
 def _make_tool_use_block(
     name: str = "mcp__iss__search",
     input_data: dict | None = None,
+    tool_use_id: str = "tool-1",
 ) -> MagicMock:
     """Мок ToolUseBlock."""
     from cognitia.runtime.adapter import ToolUseBlock
@@ -48,15 +49,23 @@ def _make_tool_use_block(
     block = MagicMock(spec=ToolUseBlock)
     block.name = name
     block.input = input_data or {}
+    block.id = tool_use_id
     return block
 
 
-def _make_tool_result_block(content: str = "result") -> MagicMock:
+def _make_tool_result_block(
+    content: str = "result",
+    *,
+    tool_use_id: str = "tool-1",
+    is_error: bool = False,
+) -> MagicMock:
     """Мок ToolResultBlock."""
     from cognitia.runtime.adapter import ToolResultBlock
 
     block = MagicMock(spec=ToolResultBlock)
     block.content = content
+    block.tool_use_id = tool_use_id
+    block.is_error = is_error
     return block
 
 
@@ -405,6 +414,41 @@ class TestStreamReply:
         # tool_use_start содержит имя инструмента
         tool_event = next(e for e in events if e.type == "tool_use_start")
         assert tool_event.tool_name == "mcp__iss__search"
+        assert tool_event.correlation_id == "tool-1"
+        result_event = next(e for e in events if e.type == "tool_use_result")
+        assert result_event.tool_name == "mcp__iss__search"
+        assert result_event.correlation_id == "tool-1"
+        assert result_event.tool_error is False
+
+    @pytest.mark.asyncio
+    async def test_stream_tool_result_preserves_error_metadata(self) -> None:
+        mock_client = AsyncMock()
+
+        async def fake_receive_response():
+            yield _make_assistant_msg(
+                [
+                    _make_tool_use_block("mcp__iss__search", {"query": "SBER"}, tool_use_id="tool-9"),
+                    _make_tool_result_block(
+                        "failed: upstream timeout",
+                        tool_use_id="tool-9",
+                        is_error=True,
+                    ),
+                ]
+            )
+            yield _make_result_msg()
+
+        mock_client.receive_response = fake_receive_response
+        adapter, _ = _make_adapter_with_client(mock_client)
+
+        events = []
+        async for event in adapter.stream_reply("найди SBER"):
+            events.append(event)
+
+        result_event = next(e for e in events if e.type == "tool_use_result")
+        assert result_event.tool_name == "mcp__iss__search"
+        assert result_event.correlation_id == "tool-9"
+        assert result_event.tool_error is True
+        assert result_event.tool_result == "failed: upstream timeout"
 
     @pytest.mark.asyncio
     async def test_thinking_block_not_emitted_as_text(self) -> None:

@@ -230,6 +230,51 @@ class TestSQLiteFacts:
 
         assert topic_facts["status"] == "topic"
 
+    @pytest.mark.asyncio
+    async def test_topic_fact_source_priority_keeps_ai_inferred_over_mcp(
+        self, provider: SQLiteMemoryProvider
+    ) -> None:
+        await provider.upsert_fact(
+            "u1",
+            "recommendation",
+            "ai",
+            topic_id="t1",
+            source="ai_inferred",
+        )
+        await provider.upsert_fact(
+            "u1",
+            "recommendation",
+            "mcp",
+            topic_id="t1",
+            source="mcp",
+        )
+
+        topic_facts = await provider.get_facts("u1", topic_id="t1")
+
+        assert topic_facts["recommendation"] == "ai"
+
+    @pytest.mark.asyncio
+    async def test_source_precedence_prevents_mcp_from_overwriting_ai_inferred(
+        self, provider: SQLiteMemoryProvider
+    ) -> None:
+        await provider.upsert_fact("u1", "status", "ai", source="ai_inferred")
+        await provider.upsert_fact("u1", "status", "mcp", source="mcp")
+
+        facts = await provider.get_facts("u1")
+
+        assert facts["status"] == "ai"
+
+    @pytest.mark.asyncio
+    async def test_source_precedence_allows_ai_inferred_to_overwrite_mcp(
+        self, provider: SQLiteMemoryProvider
+    ) -> None:
+        await provider.upsert_fact("u1", "status", "mcp", source="mcp")
+        await provider.upsert_fact("u1", "status", "ai", source="ai_inferred")
+
+        facts = await provider.get_facts("u1")
+
+        assert facts["status"] == "ai"
+
 
 class TestSQLiteSummaryAndGoal:
     @pytest.mark.asyncio

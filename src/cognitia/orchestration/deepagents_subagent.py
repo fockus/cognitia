@@ -33,20 +33,45 @@ class DeepAgentsSubagentOrchestrator(ThinSubagentOrchestrator):
         runtime = (
             self._runtime_factory(spec)
             if self._runtime_factory is not None
-            else DeepAgentsRuntime(config=self._runtime_config, tool_executors={})
+            else DeepAgentsRuntime(
+                config=self._runtime_config,
+                tool_executors=dict(self._local_tools),
+            )
         )
-        return _DeepAgentsWorkerRuntime(spec=spec, runtime=runtime)
+        return _DeepAgentsWorkerRuntime(
+            spec=spec,
+            runtime=runtime,
+            tool_executors=dict(self._local_tools),
+        )
 
 
 class _DeepAgentsWorkerRuntime:
     """Адаптер subagent spec -> DeepAgentsRuntime.run()."""
 
-    def __init__(self, *, spec: SubagentSpec, runtime: DeepAgentsRuntime) -> None:
+    def __init__(
+        self,
+        *,
+        spec: SubagentSpec,
+        runtime: DeepAgentsRuntime,
+        tool_executors: dict[str, Callable[..., object]],
+    ) -> None:
         self._spec = spec
         self._runtime = runtime
+        self._tool_executors = tool_executors
 
     async def run(self, task: str) -> str:
         """Выполнить задачу через DeepAgentsRuntime и вернуть финальный текст."""
+        missing_local_tools = [
+            tool.name
+            for tool in self._spec.tools
+            if tool.is_local and tool.name not in self._tool_executors
+        ]
+        if missing_local_tools:
+            missing_str = ", ".join(sorted(missing_local_tools))
+            raise RuntimeError(
+                f"Missing local tool executors for DeepAgents subagent: {missing_str}"
+            )
+
         return await collect_runtime_output(
             self._runtime.run(
                 messages=[Message(role="user", content=task)],

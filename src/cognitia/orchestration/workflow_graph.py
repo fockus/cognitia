@@ -190,11 +190,9 @@ class WorkflowGraph:
             saved = checkpoint.load(run_id)
             if saved is not None:
                 last_node, saved_state = saved
-                # Find next node after the checkpointed one
-                next_node = self._get_next(last_node, state)
-                if next_node and next_node != END_NODE:
-                    start_node = next_node
-                    state.update(saved_state)
+                state = dict(saved_state)
+                state.update(initial_state)
+                start_node = last_node
 
         current = start_node
         if current is None:

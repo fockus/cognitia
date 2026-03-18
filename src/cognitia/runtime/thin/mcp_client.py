@@ -36,6 +36,10 @@ def resolve_mcp_server_url(
         return None
     if isinstance(server, str):
         return server
+    if isinstance(server, dict):
+        url = server.get("url")
+        if isinstance(url, str) and url:
+            return url
     url = getattr(server, "url", None)
     if isinstance(url, str) and url:
         return url

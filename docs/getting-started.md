@@ -103,13 +103,13 @@ Get tokens as they arrive from the model:
 agent = Agent(AgentConfig(system_prompt="You are a writer.", runtime="thin"))
 
 async for event in agent.stream("Write a haiku about Python"):
-    if event.is_text:
+    if event.type == "text_delta":
         print(event.text, end="", flush=True)
-    elif event.type == "tool_call_started":
-        print(f"\n[Using tool: {event.tool_name}]")
+    elif event.type == "tool_use_start":
+        print(f"\n[Tool: {event.tool_name}]")
 ```
 
-Event types: `assistant_delta`, `tool_call_started`, `tool_call_finished`, `final`, `error`, `status`. Use typed accessors like `event.is_text`, `event.is_final`, `event.text`, `event.tool_name`.
+Event types: `text_delta`, `tool_use_start`, `tool_use_result`, `done`, `error`. Use attributes like `event.type`, `event.text`, `event.tool_name`.
 
 ### 3. Multi-Turn Conversation
 
@@ -123,7 +123,7 @@ async with agent.conversation() as conv:
 
     # Streaming in conversation
     async for event in conv.stream("Tell me a joke"):
-        if event.type == "assistant_delta":
+        if event.type == "text_delta":
             print(event.text, end="", flush=True)
 ```
 
@@ -378,6 +378,11 @@ async for event in runtime.run(
         new_messages = event.data["new_messages"]
 ```
 
+> **Note:** When using `runtime.run()` directly, events have raw `RuntimeEvent` types
+> (`assistant_delta`, `tool_call_started`, `tool_call_finished`, `final`).
+> When using `Agent.stream()`, these are adapted to `text_delta`, `tool_use_start`,
+> `tool_use_result`, `done` — see the [Streaming](#2-streaming) section above.
+
 ### 9. Cost Budget
 
 Track LLM spending and enforce limits using the middleware API:
@@ -497,22 +502,30 @@ print(enriched_prompt)  # System prompt with relevant docs injected
 
 See [RAG](rag.md) for custom retrievers (Pinecone, pgvector) and filter chain integration.
 
+## What's New in v1.0.0
+
+- **CLI Runtime** — subprocess-based runtime with NDJSON protocol (`CliAgentRuntime`, see example `19_cli_runtime.py`)
+- **Multi-Agent** — agent-as-tool composition, priority task queues, agent registry with lifecycle management (examples `21`-`23`)
+- **Workflow Graphs** — declarative graphs with conditions, loops, parallel branches, and human-in-the-loop interrupts (`WorkflowGraph`, example `20_workflow_graph.py`)
+- **RAG** — retrieval-augmented generation with pluggable retrievers and `RagInputFilter` (example `08_rag.py`)
+- **27 runnable examples** — from basics to complex multi-agent scenarios, see [Examples](examples.md)
+
 ## Next Steps
 
 - [Agent Facade API](agent-facade.md) — full reference for Agent, AgentConfig, @tool, Result, Conversation, Middleware
-- [Runtimes](runtimes.md) — Claude SDK vs ThinRuntime vs DeepAgents: comparison, switching, capabilities
+- [Runtimes](runtimes.md) — Claude SDK vs ThinRuntime vs DeepAgents vs CLI: comparison, switching, capabilities
 - [Capabilities](capabilities.md) — sandbox, web, todo, memory bank, planning, thinking
 - [Memory Providers](memory.md) — InMemory, PostgreSQL, SQLite: 8 protocols, summarization
 - [Tools & Skills](tools-and-skills.md) — @tool decorator, MCP skills (YAML), tool policy
 - [Web Tools](web-tools.md) — search providers (DuckDuckGo, Brave, Tavily, SearXNG), fetch providers
 - [Configuration](configuration.md) — CognitiaStack, RuntimeConfig, ToolPolicy, environment variables
-- [Orchestration](orchestration.md) — planning mode, subagents, team mode
+- [Orchestration](orchestration.md) — planning mode, subagents, team mode, agent-as-tool, task queues, workflow graphs
 - [Structured Output](structured-output.md) — Pydantic validation, retry on failure, nested models
 - [Production Safety](production-safety.md) — cost budgets, guardrails, input filters, retry/fallback
 - [Sessions](sessions.md) — session backends, memory scopes, persistence
 - [Observability](observability.md) — event bus, tracing, custom tracers
 - [UI Projection](ui-projection.md) — RuntimeEvent to UIState for frontends
-- [RAG](rag.md) — retrieval-augmented generation, custom retrievers
+- [RAG](rag.md) — retrieval-augmented generation, custom retrievers, filter chains
 - [Runtime Registry](runtime-registry.md) — custom runtimes, entry point plugins
 - [Architecture](architecture.md) — Clean Architecture layers, protocols, design principles
-- [Examples](examples.md) — integration examples for different domains
+- [Examples](examples.md) — 27 runnable examples from basics to complex scenarios

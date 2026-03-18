@@ -213,13 +213,14 @@ class ClaudeCodeRuntime:
             return RuntimeEvent.tool_call_started(
                 name=stream_event.tool_name,
                 args=stream_event.tool_input,
+                correlation_id=stream_event.correlation_id or None,
             )
 
         if etype == "tool_use_result":
             return RuntimeEvent.tool_call_finished(
                 name=stream_event.tool_name or "",
-                correlation_id="",  # SDK не даёт correlation_id
-                ok=True,
+                correlation_id=stream_event.correlation_id or "",
+                ok=not bool(getattr(stream_event, "tool_error", False)),
                 result_summary=stream_event.tool_result,
             )
 

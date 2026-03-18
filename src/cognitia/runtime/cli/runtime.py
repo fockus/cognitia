@@ -65,6 +65,7 @@ class CliAgentRuntime:
         else:
             self._parser = GenericNdjsonParser()
         self._process: asyncio.subprocess.Process | None = None
+        self._cancel_requested = False
 
     async def run(  # noqa: C901
         self,
@@ -85,6 +86,7 @@ class CliAgentRuntime:
         max_bytes = self._cli_config.max_output_bytes
         timeout = self._cli_config.timeout_seconds
         final_seen = False
+        self._cancel_requested = False
 
         try:
             self._process = await asyncio.create_subprocess_exec(
@@ -140,7 +142,15 @@ class CliAgentRuntime:
                 return
 
             await self._process.wait()
-            if self._process.returncode and self._process.returncode != 0:
+            if self._cancel_requested:
+                yield RuntimeEvent.error(
+                    RuntimeErrorData(
+                        kind="cancelled",
+                        message="CLI process cancelled",
+                        recoverable=False,
+                    )
+                )
+            elif self._process.returncode and self._process.returncode != 0:
                 stderr_data = b""
                 if self._process.stderr:
                     stderr_data = await self._process.stderr.read()
@@ -169,6 +179,8 @@ class CliAgentRuntime:
 
     def cancel(self) -> None:
         """Request cooperative cancellation of the current subprocess."""
+        if self._process and self._process.returncode is None:
+            self._cancel_requested = True
         self._terminate_process()
 
     async def cleanup(self) -> None:
@@ -179,6 +191,7 @@ class CliAgentRuntime:
                 await asyncio.wait_for(self._process.wait(), timeout=5.0)
             except TimeoutError:
                 self._process.kill()
+        self._cancel_requested = False
 
     def _terminate_process(self) -> None:
         """Send SIGTERM to subprocess if still running."""

@@ -399,10 +399,14 @@ class _RuntimeEventAdapter:
             self.text = ""
             self.tool_name = data.get("name", "")
             self.tool_input = data.get("args")
+            self.correlation_id = data.get("correlation_id", "")
         elif etype == "tool_call_finished":
             self.type = "tool_use_result"
             self.text = ""
+            self.tool_name = data.get("name", "")
             self.tool_result = data.get("result_summary", "")
+            self.correlation_id = data.get("correlation_id", "")
+            self.tool_error = not data.get("ok", True)
         elif etype == "approval_required":
             self.type = "approval_required"
             self.text = data.get("description") or data.get("action_name", "")
@@ -430,6 +434,10 @@ class _RuntimeEventAdapter:
             self.tool_input = None
         if not hasattr(self, "tool_result"):
             self.tool_result = ""
+        if not hasattr(self, "correlation_id"):
+            self.correlation_id = ""
+        if not hasattr(self, "tool_error"):
+            self.tool_error = False
         if not hasattr(self, "allowed_decisions"):
             self.allowed_decisions = None
         if not hasattr(self, "interrupt_id"):
