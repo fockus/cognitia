@@ -24,6 +24,7 @@ from cognitia.protocols.routing import (
     RoleRouter,
     RoleSkillsProvider,
 )
+from cognitia.protocols.multi_agent import AgentTool
 from cognitia.protocols.runtime import RuntimePort
 from cognitia.protocols.session import (
     SessionFactory,
@@ -31,7 +32,6 @@ from cognitia.protocols.session import (
     SessionManager,
     SessionRehydrator,
 )
-from cognitia.protocols.multi_agent import AgentTool
 from cognitia.protocols.tools import LocalToolResolver, ToolIdCodec
 
 # Re-export AgentRuntime if available

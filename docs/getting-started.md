@@ -103,13 +103,13 @@ Get tokens as they arrive from the model:
 agent = Agent(AgentConfig(system_prompt="You are a writer.", runtime="thin"))
 
 async for event in agent.stream("Write a haiku about Python"):
-    if event.type == "text_delta":
+    if event.is_text:
         print(event.text, end="", flush=True)
-    elif event.type == "tool_use_start":
+    elif event.type == "tool_call_started":
         print(f"\n[Using tool: {event.tool_name}]")
 ```
 
-Event types: `text_delta`, `tool_use_start`, `tool_use_result`, `done`, `error`.
+Event types: `assistant_delta`, `tool_call_started`, `tool_call_finished`, `final`, `error`, `status`. Use typed accessors like `event.is_text`, `event.is_final`, `event.text`, `event.tool_name`.
 
 ### 3. Multi-Turn Conversation
 
@@ -129,25 +129,29 @@ async with agent.conversation() as conv:
 
 ### 4. Structured Output
 
-Force the model to return JSON matching a schema:
+Force the model to return validated data using a Pydantic model:
 
 ```python
+from pydantic import BaseModel
+
+class UserInfo(BaseModel):
+    name: str
+    age: int
+
 agent = Agent(AgentConfig(
     system_prompt="Extract user info from text.",
     runtime="thin",
-    output_format={
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "age": {"type": "integer"},
-        },
-        "required": ["name", "age"],
-    },
+    output_type=UserInfo,       # auto-extracts JSON Schema
+    max_model_retries=2,        # retry on validation failure
 ))
 
 result = await agent.query("John is 30 years old")
-print(result.structured_output)  # {"name": "John", "age": 30}
+print(result.structured_output)  # UserInfo(name='John', age=30)
 ```
+
+You can also use a raw JSON Schema dict via `output_format=` for simpler cases without Pydantic.
+
+See [Structured Output](structured-output.md) for nested models, retry logic, and low-level API.
 
 ### 5. Middleware
 
@@ -372,6 +376,96 @@ async for event in runtime.run(
     elif event.type == "final":
         new_messages = event.data["new_messages"]
 ```
+
+### 9. Cost Budget
+
+Track LLM spending and enforce limits:
+
+```python
+from cognitia.runtime.cost import CostBudget
+
+agent = Agent(AgentConfig(
+    system_prompt="You are a helpful assistant.",
+    runtime="thin",
+    cost_budget=CostBudget(max_cost_usd=5.0, action_on_exceed="warn"),
+))
+```
+
+See [Production Safety](production-safety.md) for details on cost tracking, guardrails, and retry policies.
+
+### 10. Guardrails
+
+Pre- and post-LLM content checks:
+
+```python
+from cognitia.guardrails import ContentLengthGuardrail, RegexGuardrail
+
+agent = Agent(AgentConfig(
+    system_prompt="...",
+    runtime="thin",
+    input_guardrails=[
+        ContentLengthGuardrail(max_length=8000),
+        RegexGuardrail(patterns=[r"ignore previous instructions"]),
+    ],
+))
+```
+
+### 11. Sessions
+
+Persist session state across restarts:
+
+```python
+from cognitia.session.backends import SqliteSessionBackend, MemoryScope, scoped_key
+
+backend = SqliteSessionBackend(db_path="sessions.db")
+key = scoped_key(MemoryScope.AGENT, "user:42:session:abc")
+await backend.save(key, {"turn": 7, "role": "coach"})
+```
+
+See [Sessions](sessions.md) for `InMemorySessionBackend`, custom backends, and `SessionManager` integration.
+
+### 12. Observability
+
+Event bus and tracing for runtime instrumentation:
+
+```python
+from cognitia.observability.event_bus import InMemoryEventBus
+from cognitia.observability.tracer import ConsoleTracer, TracingSubscriber
+
+bus = InMemoryEventBus()
+tracer = ConsoleTracer()
+TracingSubscriber(bus, tracer).attach()
+
+agent = Agent(AgentConfig(
+    system_prompt="...",
+    runtime="thin",
+    event_bus=bus,
+    tracer=tracer,
+))
+```
+
+See [Observability](observability.md) for custom tracers and event subscriptions.
+
+### 13. RAG
+
+Inject relevant documents into LLM context:
+
+```python
+from cognitia.rag import Document, SimpleRetriever
+
+docs = [
+    Document(content="Paris is the capital of France."),
+    Document(content="Python was created by Guido van Rossum."),
+]
+
+agent = Agent(AgentConfig(
+    system_prompt="Answer questions using provided context.",
+    runtime="thin",
+    retriever=SimpleRetriever(documents=docs),
+))
+```
+
+See [RAG](rag.md) for custom retrievers (Pinecone, pgvector) and filter chain integration.
 
 ## Next Steps
 

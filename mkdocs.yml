@@ -62,12 +62,19 @@ nav:
     - Architecture: architecture.md
   - Features:
     - Tools & Skills: tools-and-skills.md
+    - Structured Output: structured-output.md
     - Web Tools: web-tools.md
     - Memory Providers: memory.md
     - Capabilities: capabilities.md
     - Orchestration: orchestration.md
+    - Production Safety: production-safety.md
+    - Sessions: sessions.md
+    - Observability: observability.md
+    - UI Projection: ui-projection.md
+    - RAG: rag.md
   - Reference:
     - API Reference: api-reference.md
+    - Runtime Registry: runtime-registry.md
     - Configuration: configuration.md
     - Advanced Features: advanced.md
     - Examples: examples.md
