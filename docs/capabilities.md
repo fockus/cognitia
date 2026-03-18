@@ -1,45 +1,45 @@
 # Capabilities
 
-Cognitia предоставляет 6 независимых capability. Каждая включается отдельным toggle — подключай только нужное.
+Cognitia provides 6 independent capabilities. Each is enabled with a separate toggle -- include only what you need.
 
-## Статус готовности
+## Readiness Status
 
-| Capability | Статус | Комментарий |
-|-----------|--------|-------------|
-| Sandbox | ready | Local/Docker/E2B c timeout, denied commands, path isolation |
-| Web | partial | HTTPX provider реализует базовый fetch/search MVP |
+| Capability | Status | Notes |
+| ---------- | ------ | ----- |
+| Sandbox | ready | Local/Docker/E2B with timeout, denied commands, path isolation |
+| Web | partial | HTTPX provider implements basic fetch/search MVP |
 | Todo | ready | InMemory/Filesystem/Database (Postgres + SQLite) |
-| Memory Bank | ready | Filesystem + Database backend, auto-load `MEMORY.md` |
-| Planning | staged | Workflow стабилен, persistence пока только InMemory PlanStore |
-| Thinking | ready | standalone tool без внешних зависимостей |
+| Memory Bank | ready | Filesystem + Database backend, auto-loads `MEMORY.md` |
+| Planning | staged | Workflow is stable, persistence is InMemory PlanStore only |
+| Thinking | ready | Standalone tool with no external dependencies |
 
-## Обзор
+## Overview
 
 | Capability | Toggle | Tools | Extras |
-|-----------|--------|-------|--------|
-| **Sandbox** | `sandbox_provider=` | bash, read, write, edit, multi_edit, ls, glob, grep | — |
+| ---------- | ------ | ----- | ------ |
+| **Sandbox** | `sandbox_provider=` | bash, read, write, edit, multi_edit, ls, glob, grep | -- |
 | **Web** | `web_provider=` | web_fetch, web_search | `cognitia[web]` |
-| **Todo** | `todo_provider=` | todo_read, todo_write | — |
-| **Memory Bank** | `memory_bank_provider=` | memory_read, memory_write, memory_append, memory_list, memory_delete | — |
-| **Planning** | `plan_manager=` | plan_create, plan_status, plan_execute | — |
-| **Thinking** | `thinking_enabled=True` | thinking | — |
+| **Todo** | `todo_provider=` | todo_read, todo_write | -- |
+| **Memory Bank** | `memory_bank_provider=` | memory_read, memory_write, memory_append, memory_list, memory_delete | -- |
+| **Planning** | `plan_manager=` | plan_create, plan_status, plan_execute | -- |
+| **Thinking** | `thinking_enabled=True` | thinking | -- |
 
 ---
 
-## Sandbox — изоляция файлов и кода
+## Sandbox -- File and Code Isolation
 
-Агент читает/пишет файлы и выполняет команды только внутри изолированного workspace.
-Каждый пользователь + топик = отдельный namespace.
+The agent reads/writes files and executes commands only within an isolated workspace.
+Each user + topic combination gets a separate namespace: `{root_path}/{user_id}/{topic_id}/workspace/`.
 
-### Провайдеры
+### Sandbox Providers
 
-| Провайдер | Когда использовать | Extras |
-|-----------|-------------------|--------|
-| `LocalSandboxProvider` | Разработка, тесты | — |
-| `E2BSandboxProvider` | Продакшен (облако) | `cognitia[e2b]` |
-| `DockerSandboxProvider` | Продакшен (self-hosted) | `cognitia[docker]` |
+| Provider | Use case | Extras |
+| -------- | -------- | ------ |
+| `LocalSandboxProvider` | Development, testing | -- |
+| `E2BSandboxProvider` | Production (cloud) | `cognitia[e2b]` |
+| `DockerSandboxProvider` | Production (self-hosted) | `cognitia[docker]` |
 
-### Использование
+### Sandbox Usage
 
 ```python
 from cognitia.tools.sandbox_local import LocalSandboxProvider
@@ -55,29 +55,29 @@ sandbox = LocalSandboxProvider(SandboxConfig(
 ))
 ```
 
-### Безопасность
+### Security
 
-- Path traversal (`../`) блокируется через `Path.is_relative_to()`
-- Абсолютные пути запрещены
-- Denied commands: настраиваемый список запрещённых команд
-- Timeout: команда убивается через `timeout_seconds`
-- Size limit: файлы больше `max_file_size_bytes` отклоняются
+- Path traversal (`../`) is blocked via `Path.is_relative_to()`
+- Absolute paths are rejected
+- Denied commands: configurable blocklist of prohibited shell commands
+- Timeout: commands are killed after `timeout_seconds`
+- Size limit: files exceeding `max_file_size_bytes` are rejected
 
 ---
 
-## Todo — чек-листы и task tracking
+## Todo -- Checklists and Task Tracking
 
-Агент ведёт структурированный список задач. Работает **без sandbox** — отдельная capability.
+The agent maintains a structured task list. Operates **independently of Sandbox** -- it is a separate capability.
 
-### Провайдеры
+### Todo Providers
 
-| Провайдер | Хранение | Когда |
-|-----------|----------|-------|
-| `InMemoryTodoProvider` | Память процесса | Dev, session-scoped |
-| `FilesystemTodoProvider` | JSON-файл | Простые проекты |
-| `DatabaseTodoProvider` | Postgres/SQLite | Продакшен |
+| Provider | Storage | Use case |
+| -------- | ------- | -------- |
+| `InMemoryTodoProvider` | Process memory | Development, session-scoped |
+| `FilesystemTodoProvider` | JSON file | Simple projects |
+| `DatabaseTodoProvider` | Postgres/SQLite | Production |
 
-### Использование
+### Todo Usage
 
 ```python
 from cognitia.todo.inmemory_provider import InMemoryTodoProvider
@@ -85,28 +85,28 @@ from cognitia.todo.inmemory_provider import InMemoryTodoProvider
 todo = InMemoryTodoProvider(user_id="user-1", topic_id="task-1", max_todos=100)
 ```
 
-### API для агента
+### Agent API
 
-- `todo_read(status_filter?)` — прочитать задачи (опционально по статусу)
-- `todo_write(todos)` — записать задачи (bulk replace)
+- `todo_read(status_filter?)` -- read tasks (optionally filtered by status)
+- `todo_write(todos)` -- write tasks (bulk replace)
 
-Статусы: `pending`, `in_progress`, `completed`, `cancelled`.
+Statuses: `pending`, `in_progress`, `completed`, `cancelled`.
 
 ---
 
-## Memory Bank — долгосрочная память
+## Memory Bank -- Long-Term Memory
 
-Агент сохраняет знания между сессиями: решения, предпочтения, уроки.
-Структура — файловая с подпапками (2 уровня).
+The agent persists knowledge across sessions: decisions, preferences, lessons learned.
+Structure is file-based with subfolders (2 levels deep).
 
-### Структура
+### Directory Structure
 
-```
+```text
 {root}/{user_id}/{topic_id}/memory/
-├── MEMORY.md                    # Индекс (загружается в prompt)
-├── progress.md                  # Прогресс
-├── lessons.md                   # Уроки
-├── plans/                       # Подпапка
+├── MEMORY.md                    # Index (loaded into prompt)
+├── progress.md                  # Progress log
+├── lessons.md                   # Lessons learned
+├── plans/                       # Subfolder
 │   └── 2026-02-12_feature.md
 ├── reports/
 │   └── 2026-02-12_session.md
@@ -114,14 +114,14 @@ todo = InMemoryTodoProvider(user_id="user-1", topic_id="task-1", max_todos=100)
     └── 2026-02-12_15-30_topic.md
 ```
 
-### Провайдеры
+### Memory Bank Providers
 
-| Провайдер | Backend | Extras |
-|-----------|---------|--------|
-| `FilesystemMemoryBankProvider` | Файлы | — |
-| `DatabaseMemoryBankProvider` | Postgres/SQLite | `cognitia[postgres]` или `cognitia[sqlite]` |
+| Provider                       | Backend         | Extras                                     |
+| ------------------------------ | --------------- | ------------------------------------------ |
+| `FilesystemMemoryBankProvider` | Files           | --                                         |
+| `DatabaseMemoryBankProvider`   | Postgres/SQLite | `cognitia[postgres]` or `cognitia[sqlite]` |
 
-### Конфигурация
+### Configuration
 
 ```python
 from cognitia.memory_bank.types import MemoryBankConfig
@@ -131,47 +131,47 @@ config = MemoryBankConfig(
     backend="filesystem",
     root_path=Path("/data/memory"),
     max_file_size_bytes=100 * 1024,      # 100 KB per file
-    max_entries=200,                      # макс. файлов
+    max_entries=200,                      # max files
     max_depth=2,                          # root/subfolder/file
-    auto_load_on_turn=True,              # загружать MEMORY.md в prompt
+    auto_load_on_turn=True,              # load MEMORY.md into prompt
     auto_load_max_lines=200,
     default_folders=["plans", "reports", "notes"],
 )
 ```
 
-### Auto-load
+### Auto-Load
 
-Если `auto_load_on_turn=True`, содержимое `MEMORY.md` (первые N строк) автоматически инжектируется в system prompt через `ContextBuilder` — агент всегда «помнит» ключевой контекст.
+When `auto_load_on_turn=True`, the contents of `MEMORY.md` (first N lines) are automatically injected into the system prompt via `ContextBuilder`. This ensures the agent always "remembers" key context from previous sessions.
 
-### DDL для Database backend
+### DDL for Database Backend
 
-Библиотека экспортирует DDL, приложение использует в своих миграциях:
+The library exports DDL statements for use in your application's migrations:
 
 ```python
 from cognitia.memory_bank.schema import get_memory_bank_ddl
 
-# Для Postgres
+# For Postgres
 stmts = get_memory_bank_ddl(dialect="postgres")
 
-# Для SQLite
+# For SQLite
 stmts = get_memory_bank_ddl(dialect="sqlite")
 ```
 
 ---
 
-## Planning — пошаговое выполнение задач
+## Planning -- Step-by-Step Task Execution
 
-Агент создаёт план для сложных задач, выполняет по шагам, отслеживает прогресс.
+The agent creates plans for complex tasks, executes them step by step, and tracks progress.
 
 ### Workflow
 
-1. Агент решает что задача сложная → вызывает `plan_create(goal="...")`
-2. LLM генерирует план (список шагов)
-3. План одобряется (автоматически или пользователем)
-4. Шаги выполняются последовательно, каждый с доступом к tools
-5. Если шаг провалился — остановка или replan
+1. The agent determines a task is complex and calls `plan_create(goal="...")`
+2. The LLM generates a plan (list of steps)
+3. The plan is approved (automatically or by the user)
+4. Steps are executed sequentially, each with access to tools
+5. If a step fails -- execution stops or the plan is regenerated
 
-### Программное управление
+### Programmatic Control
 
 ```python
 from cognitia.orchestration.manager import PlanManager
@@ -182,8 +182,8 @@ store = InMemoryPlanStore()
 planner = ThinPlannerMode(llm=llm_client, plan_store=store)
 manager = PlanManager(planner=planner, plan_store=store)
 
-# Из бизнес-кода
-plan = await manager.create_plan("Анализ портфеля", user_id="u1", topic_id="t1")
+# From application code
+plan = await manager.create_plan("Portfolio analysis", user_id="u1", topic_id="t1")
 approved = await manager.approve_plan(plan.id, by="system")
 
 async for step in manager.execute_plan(plan.id):
@@ -192,36 +192,42 @@ async for step in manager.execute_plan(plan.id):
 
 ---
 
-## Thinking — структурированное рассуждение
+## Thinking -- Structured Reasoning
 
-Chain-of-Thought + ReAct: агент записывает ход мыслей и следующие шаги перед действием.
+Chain-of-Thought + ReAct: the agent records its reasoning and planned next steps before taking action.
 
+```python
+# Agent calls:
+thinking(thought="Need to find deposits with yield >15%",
+         next_steps=["Fetch deposit list", "Filter by rate"])
 ```
-Агент вызывает: thinking(thought="Нужно найти вклады с доходностью >15%", 
-                         next_steps=["Запросить список вкладов", "Отфильтровать по ставке"])
-```
 
-Thinking — standalone tool без зависимостей. Рекомендуется всегда включать.
+Thinking is a standalone tool with no external dependencies. Recommended to always enable.
 
 ---
 
-## Web — доступ в интернет
+## Web -- Internet Access
 
 ```python
 from cognitia.tools.web_httpx import HttpxWebProvider
 
 web = HttpxWebProvider(timeout=30)
-# Агент получает: web_fetch(url), web_search(query)
+# Agent receives: web_fetch(url), web_search(query)
 ```
+
+The `HttpxWebProvider` supports pluggable sub-providers:
+
+- **Fetch**: defaults to httpx GET + trafilatura/regex text extraction. Optionally delegates to a `WebFetchProvider` (e.g., Jina, Crawl4AI).
+- **Search**: delegates to a `WebSearchProvider` (DuckDuckGo, Tavily, SearXNG, Brave). Returns empty results if no search provider is configured.
 
 ---
 
-## Tool Budget — умное управление инструментами
+## Tool Budget -- Smart Tool Management
 
-Когда подключено много capability + MCP skills, общее количество инструментов может достигать 40+.
-Это занимает 5000-7000 токенов и путает модель.
+When multiple capabilities and MCP skills are active, the total number of tools can reach 40+.
+This consumes 5,000-7,000 tokens on schema alone and can confuse the model.
 
-`ToolSelector` отбирает инструменты по приоритету в рамках бюджета:
+`ToolSelector` picks tools by priority within a configurable budget:
 
 ```python
 from cognitia.policy.tool_selector import ToolBudgetConfig, ToolGroup
@@ -229,12 +235,12 @@ from cognitia.policy.tool_selector import ToolBudgetConfig, ToolGroup
 config = ToolBudgetConfig(
     max_tools=20,
     group_priority=[
-        ToolGroup.ALWAYS,     # thinking, todo (всегда)
-        ToolGroup.MCP,        # бизнес-инструменты
+        ToolGroup.ALWAYS,     # thinking, todo (always included)
+        ToolGroup.MCP,        # business tools
         ToolGroup.MEMORY,     # memory bank
-        ToolGroup.PLANNING,   # планирование
-        ToolGroup.SANDBOX,    # файловые операции
-        ToolGroup.WEB,        # веб-поиск
+        ToolGroup.PLANNING,   # planning
+        ToolGroup.SANDBOX,    # file operations
+        ToolGroup.WEB,        # web search
     ],
     group_limits={
         ToolGroup.MCP: 12,
@@ -243,9 +249,10 @@ config = ToolBudgetConfig(
 )
 ```
 
-Приоритет: ALWAYS → MCP → MEMORY → PLANNING → SANDBOX → WEB.
-Если бюджет исчерпан — низкоприоритетные группы обрезаются.
+Priority order: ALWAYS > MCP > MEMORY > PLANNING > SANDBOX > WEB.
+When the budget is exhausted, lower-priority groups are trimmed.
 
-`tool_budget_config` применяется в wiring:
-- на этапе `CognitiaStack.create()` для capability-инструментов;
-- в `SessionFactory` для итогового `active_tools` перед запуском runtime.
+`tool_budget_config` is applied during wiring:
+
+- At `CognitiaStack.create()` for capability tools;
+- In `SessionFactory` for the final `active_tools` set before runtime execution.

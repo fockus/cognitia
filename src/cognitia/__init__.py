@@ -8,6 +8,7 @@ except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
 from cognitia.agent import Agent, AgentConfig, Conversation, Result, tool
+from cognitia.bootstrap import CognitiaStack
 from cognitia.protocols import (
     ContextBuilder,
     FactStore,
@@ -45,6 +46,7 @@ __all__ = [
     "Agent",
     "AgentConfig",
     "AgentRuntime",
+    "CognitiaStack",
     "ContextBuilder",
     "ContextPack",
     "Conversation",

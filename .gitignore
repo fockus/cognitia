@@ -1,24 +1,47 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 
-.memory-bank/
-.claude/
-RULES.md
-CLAUDE.md
-AGENTS.md
+# Virtual environments
+.venv/
+venv/
 
+# Testing
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
 .coverage
 htmlcov/
 
+# Linting / Type checking
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
 dist/
 build/
 *.egg-info/
 
+# Docs site (mkdocs build output)
 site/
 
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+.envrc
+.direnv/
+
+# Claude Code (local config, hooks, session data)
+.claude/
+
+# Project-specific
 RELEASE.md

@@ -1,123 +1,196 @@
 # Runtimes
 
-Cognitia поддерживает четыре runtime. Все реализуют единый `AgentRuntime` Protocol — переключение без изменения бизнес-кода.
+Cognitia supports four runtimes. All implement the same `AgentRuntime` Protocol, so you can switch between them without changing business logic.
 
-## Сравнение
+For API keys, provider environment variables, and `base_url` patterns, see the canonical reference:
 
-| | Claude SDK | ThinRuntime | CLI Runtime | DeepAgents |
-|--|-----------|-------------|-------------|------------|
-| **LLM** | Claude (через SDK subprocess) | Anthropic + OpenAI-compatible + Google | Внешний CLI с NDJSON stream | Anthropic baseline; OpenAI/Google через provider package |
-| **MCP** | Нативная поддержка | Встроенный MCP client | Нет portable guarantee | Не входит в portable baseline |
-| **Sandbox** | Нативные Read/Write/Bash | Через SandboxProvider | Зависит от wrapped CLI | Через SandboxProvider |
-| **Planning** | Нативный plan mode | ThinPlannerMode | Зависит от wrapped CLI | DeepAgentsPlannerMode |
-| **Subagents** | Нативный Task tool | asyncio.Task | Нет portable guarantee | Native `task` / LangGraph |
-| **Team mode** | ClaudeTeamOrchestrator | (backlog) | Нет portable guarantee | DeepAgentsTeamOrchestrator |
+- [Credentials & Provider Setup](credentials.md)
+
+## Comparison
+
+| Feature | Claude SDK | ThinRuntime | CLI Runtime | DeepAgents |
+| ------- | ---------- | ----------- | ----------- | ---------- |
+| **LLM** | Claude (via SDK subprocess) | Anthropic + OpenAI-compatible + Google | External CLI with NDJSON stream | Anthropic baseline; OpenAI/Google via provider package |
+| **MCP** | Native support | Built-in MCP client | No portable guarantee | Not in portable baseline |
+| **Sandbox** | Native Read/Write/Bash | Via SandboxProvider | Depends on wrapped CLI | Via SandboxProvider |
+| **Planning** | Native plan mode | ThinPlannerMode | Depends on wrapped CLI | DeepAgentsPlannerMode |
+| **Subagents** | Native Task tool | asyncio.Task | No portable guarantee | Native `task` / LangGraph |
+| **Team mode** | ClaudeTeamOrchestrator | (backlog) | No portable guarantee | DeepAgentsTeamOrchestrator |
 | **Extras** | `cognitia[claude]` | `cognitia[thin]` | N/A | `cognitia[deepagents]` |
-| **Offline** | Нет | Да (через local/proxy `base_url`) | Depends on wrapped CLI | Зависит от provider/local endpoint, не гарантируется |
+| **Offline** | No | Yes (via local/proxy `base_url`) | Depends on wrapped CLI | Depends on provider/local endpoint; not guaranteed |
 
-## Portable matrix (текущее покрытие)
+## Portable Matrix (current coverage)
 
-- Offline portable baseline подтверждён integration-матрицей для `claude_sdk` и `deepagents`:
+- The offline portable baseline is confirmed by the integration matrix for `claude_sdk` and `deepagents`:
   - `Agent.query()`
   - `Agent.stream()`
   - `Conversation.say()`
-- `deepagents` native built-ins и store/resume surface покрыты offline graph-тестами отдельно от portable matrix.
-- `thin` остаётся `light` tier и не считается целью полной parity с `claude_sdk` / `deepagents`.
-- `cli` — light-tier subprocess NDJSON runtime для внешних CLI агентов; MCP/subagents parity не гарантируются.
-- Provider-specific risk, зафиксированный живым smoke:
-  - `Gemini + DeepAgents built-ins` на tool-heavy prompts пока остаётся нестабильным provider-specific path. Для минимального migration cost используйте `feature_mode="portable"`.
+- `deepagents` native built-ins and store/resume surface are covered by separate offline graph tests, outside the portable matrix.
+- `thin` remains a `light` tier runtime and is not a target for full parity with `claude_sdk` / `deepagents`.
+- `cli` is a light-tier subprocess NDJSON runtime for external CLI agents; MCP/subagents parity is not guaranteed.
+- Provider-specific risks confirmed by live smoke tests:
+  - `Gemini + DeepAgents built-ins` on tool-heavy prompts remains an unstable provider-specific path. For minimal migration cost, use `feature_mode="portable"`.
 
 ## Claude SDK Runtime
 
-Использует Claude Agent SDK subprocess. Нативная поддержка MCP, tools, subagents.
+Wraps the Claude Agent SDK subprocess. Provides native support for MCP, tools, and subagents.
 
 ```python
+from cognitia.runtime import RuntimeConfig
+
 config = RuntimeConfig(runtime_name="claude_sdk", model="claude-sonnet-4-20250514")
 ```
 
-### Когда использовать
+### Claude SDK -- when to use
 
-- Нужна полная интеграция с Claude ecosystem
-- Нативные MCP серверы
-- Subagents через Task tool
+- You need full integration with the Claude ecosystem
+- You need native MCP servers
+- You need subagents via the Task tool
 
-### Особенности
+### Claude SDK -- how it works
 
-- SDK управляет subprocess'ом — cognitia нормализует events
-- `permission_mode` конфигурируемый, default — `bypassPermissions`
-- `allowed_system_tools` whitelist разрешает нативные Read/Write для sandbox
+- The SDK manages a subprocess; Cognitia normalizes events into `RuntimeEvent`
+- `permission_mode` is configurable; default is `bypassPermissions`
+- `allowed_system_tools` whitelist enables native Read/Write for sandbox operations
+
+### Claude SDK -- capabilities
+
+Tier: **full**. Supports: `mcp`, `resume`, `interrupt`.
 
 ## ThinRuntime
 
-Собственная lightweight реализация. Прямые вызовы API без subprocess.
+Cognitia's own lightweight agent loop. Direct API calls without subprocess overhead.
 
 ```python
+from cognitia.runtime import RuntimeConfig
+
 config = RuntimeConfig(runtime_name="thin", model="claude-sonnet-4-20250514")
 ```
 
-### Когда использовать
+### ThinRuntime -- when to use
 
-- Максимальный контроль над поведением
-- Multi-provider API path без отдельной provider-установки
-- Простые проекты без MCP
+- You need maximum control over agent behavior
+- You need multi-provider API access without additional provider packages
+- Simple projects that do not require MCP
 
-### Режимы
+### ThinRuntime -- modes
 
-- `conversational` — обычный chat (без tools)
-- `react` — ReAct loop (tool calls → results → next iteration)
-- `planner` — plan-then-execute
+ThinRuntime automatically selects a mode based on keyword heuristics, or you can set `mode_hint` explicitly:
 
-### Особенности
+- `conversational` -- single LLM call, no tool use
+- `react` -- ReAct loop (LLM call -> tool calls -> results -> next iteration)
+- `planner` -- plan-then-execute (generate plan JSON -> execute steps -> assemble final answer)
 
-- `cognitia[thin]` включает Anthropic, OpenAI-compatible и Google SDK path
-- Встроенный MCP client (STDIO)
-- ToolExecutor для local/builtin tools
-- Streaming через `async for event in runtime.run(...)`
+### ThinRuntime -- how it works
+
+- `cognitia[thin]` extra includes Anthropic, OpenAI-compatible, and Google SDK paths
+- Built-in MCP client (STDIO transport)
+- `ToolExecutor` handles local/builtin tool invocation
+- Streaming via `async for event in runtime.run(...)`
+- Supports custom `llm_call`, `local_tools`, `mcp_servers`, and `sandbox` injection
+- Configurable budgets: `max_iterations`, `max_tool_calls`, `max_model_retries`
+
+### ThinRuntime -- capabilities
+
+Tier: **light**. Supports: `mcp`, `provider_override`.
 
 ## DeepAgents Runtime
 
-Интеграция через native DeepAgents graph path с portable facade поверх него.
+Integration via native DeepAgents graph path with a portable facade on top.
 
 ```python
+from cognitia.runtime import RuntimeConfig
+
 config = RuntimeConfig(runtime_name="deepagents", model="claude-sonnet-4-20250514")
 ```
 
-### Когда использовать
+### DeepAgents -- when to use
 
-- Нужны DeepAgents/LangGraph graphs, built-ins и store-backed sessions
+- You need DeepAgents/LangGraph graphs, built-ins, and store-backed sessions
 - Multi-agent workflows
-- Нужен full-tier runtime, но Claude-specific SDK path не подходит
+- You need a full-tier runtime but the Claude-specific SDK path is not an option
 
-### Особенности
+### DeepAgents -- feature modes
 
-- `feature_mode="portable"` — offline-tested parity baseline для `query/stream/conversation`
-- `feature_mode="hybrid"` — portable core + native built-ins/store seams
-- `feature_mode="native_first"` — native built-ins и graph semantics как primary path
-- Baseline extra `cognitia[deepagents]` покрывает runtime + Anthropic-ready provider path
-- OpenAI и Google provider path требуют отдельных bridge packages
-- Native metadata и resume surface отдаются приложению явно; native built-ins требуют явный `native_config["backend"]`
+The `feature_mode` parameter controls the balance between portability and native features:
 
-## Переключение runtime
+- `"portable"` -- offline-tested parity baseline for `query/stream/conversation`
+- `"hybrid"` -- portable core + native built-ins/store seams
+- `"native_first"` -- native built-ins and graph semantics as the primary path
 
-Runtime выбирается через конфиг — бизнес-код не меняется:
+### DeepAgents -- how it works
+
+- Baseline extra `cognitia[deepagents]` covers the runtime + Anthropic-ready provider path
+- OpenAI and Google provider paths require separate bridge packages
+- Native metadata and resume surface are exposed to the application explicitly
+- Native built-ins require an explicit `native_config["backend"]`
+
+### DeepAgents -- capabilities
+
+Tier: **full**. Supports: `resume`, `native_subagents`, `builtin_todo`, `provider_override`.
+
+## CLI Runtime
+
+Subprocess-based runtime for external CLI agents. Runs an external process, feeds it prompt via stdin, and parses NDJSON output from stdout into a `RuntimeEvent` stream.
 
 ```python
-# Разработка: ThinRuntime (быстрый, без subprocess)
+from cognitia.runtime import RuntimeConfig
+from cognitia.runtime.cli import CliConfig
+
+cli_config = CliConfig(
+    command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"],
+    output_format="stream-json",
+    timeout_seconds=300.0,
+)
+
+config = RuntimeConfig(runtime_name="cli")
+```
+
+### CLI -- when to use
+
+- Wrapping an external CLI agent (e.g., Claude CLI) as a Cognitia runtime
+- You need a lightweight subprocess bridge without full SDK integration
+
+### CLI -- how it works
+
+- Launches the configured command as a subprocess
+- Serializes system prompt and conversation history into stdin
+- Parses NDJSON output lines using pluggable parsers (`ClaudeNdjsonParser`, `GenericNdjsonParser`)
+- Auto-detects Claude CLI commands and normalizes flags for NDJSON contract
+
+### CLI -- capabilities
+
+Tier: **light**. No additional capability flags.
+
+## Switching Runtimes
+
+Runtime selection is configuration-driven -- business code stays the same:
+
+```python
+from cognitia.runtime import RuntimeConfig
+
+# Development: ThinRuntime (fast, no subprocess)
 config = RuntimeConfig(runtime_name="thin")
 
-# Продакшен: Claude SDK (полная интеграция)
+# Production: Claude SDK (full integration)
 config = RuntimeConfig(runtime_name="claude_sdk")
 
-# Эксперименты: DeepAgents (LangGraph)
+# Experiments: DeepAgents (LangGraph)
 config = RuntimeConfig(runtime_name="deepagents")
 
 # CLI subprocess runtime
 config = RuntimeConfig(runtime_name="cli")
 ```
 
+Resolution priority: `runtime_override` > `RuntimeConfig.runtime_name` > `COGNITIA_RUNTIME` env var > default (`claude_sdk`).
+
 ## AgentRuntime Protocol
 
 ```python
+from collections.abc import AsyncIterator
+from typing import Any, Protocol, runtime_checkable
+
+@runtime_checkable
 class AgentRuntime(Protocol):
     def run(
         self,
@@ -126,20 +199,73 @@ class AgentRuntime(Protocol):
         system_prompt: str,
         active_tools: list[ToolSpec],
         config: RuntimeConfig | None = None,
+        mode_hint: str | None = None,
     ) -> AsyncIterator[RuntimeEvent]: ...
 
     async def cleanup(self) -> None: ...
+
+    def cancel(self) -> None: ...
+
+    async def __aenter__(self) -> AgentRuntime: ...
+
+    async def __aexit__(self, *exc: Any) -> None: ...
 ```
 
-Runtime **не хранит состояние** — получает messages каждый turn, возвращает new_messages в final event. SessionManager — source of truth.
+Key design principle: the runtime **does not own state**. It receives `messages` each turn and returns `new_messages` in the final event. `SessionManager` is the source of truth for conversation history.
 
-## RuntimeEvent types
+## RuntimeEvent Types
 
-| Type | Данные | Когда |
-|------|--------|-------|
-| `assistant_delta` | `{"text": "..."}` | Streaming text |
-| `status` | `{"text": "..."}` | Статус (thinking, tool call) |
-| `tool_call_started` | `{"name": "...", "args": {...}}` | Начало tool call |
-| `tool_call_finished` | `{"name": "...", "result_summary": "..."}` | Конец tool call |
-| `final` | `{"text": "...", "new_messages": [...], "metrics": {...}}` | Завершение turn |
-| `error` | `{"kind": "...", "message": "..."}` | Ошибка |
+| Type | Data | When emitted |
+| ---- | ---- | ------------ |
+| `assistant_delta` | `{"text": "..."}` | Streaming text fragment |
+| `status` | `{"text": "..."}` | Status update (thinking, tool call in progress) |
+| `tool_call_started` | `{"name": "...", "correlation_id": "...", "args": {...}}` | Tool call begins |
+| `tool_call_finished` | `{"name": "...", "correlation_id": "...", "ok": bool, "result_summary": "..."}` | Tool call completes |
+| `approval_required` | `{"action_name": "...", "args": {...}, "allowed_decisions": [...], "interrupt_id": "..."}` | Human approval needed |
+| `user_input_requested` | `{"prompt": "...", "interrupt_id": "..."}` | Runtime requests human input |
+| `native_notice` | `{"text": "...", "metadata": {...}}` | Runtime-specific semantics notice |
+| `final` | `{"text": "...", "new_messages": [...], "metrics": {...}}` | Turn complete |
+| `error` | `{"kind": "...", "message": "...", "recoverable": bool}` | Error occurred |
+
+## Capability Negotiation
+
+You can declare required capabilities at configuration time. If the selected runtime does not support them, a `ValueError` is raised immediately:
+
+```python
+from cognitia.runtime import RuntimeConfig, CapabilityRequirements
+
+config = RuntimeConfig(
+    runtime_name="thin",
+    required_capabilities=CapabilityRequirements(
+        tier="full",
+        flags=("mcp", "resume"),
+    ),
+)
+# Raises ValueError: Runtime 'thin' does not support required capabilities: tier:full, resume
+```
+
+Available capability flags: `mcp`, `resume`, `interrupt`, `native_permissions`, `user_input`, `native_subagents`, `builtin_memory`, `builtin_todo`, `builtin_compaction`, `hitl`, `project_instructions`, `provider_override`.
+
+## Custom Runtimes
+
+Register a custom runtime via `RuntimeRegistry`:
+
+```python
+from cognitia.runtime import RuntimeRegistry, get_default_registry, RuntimeCapabilities
+
+def my_factory(config, **kwargs):
+    return MyCustomRuntime(config)
+
+registry = get_default_registry()
+registry.register(
+    "my_runtime",
+    factory_fn=my_factory,
+    capabilities=RuntimeCapabilities(
+        runtime_name="my_runtime",
+        tier="light",
+        supports_mcp=True,
+    ),
+)
+```
+
+Third-party runtimes can also be registered via entry points (group `cognitia.runtimes`).

@@ -165,3 +165,10 @@ class TestAgentConfigModelResolution:
     def test_full_name_passthrough(self) -> None:
         cfg = AgentConfig(system_prompt="test", model="claude-sonnet-4-20250514")
         assert cfg.resolved_model == "claude-sonnet-4-20250514"
+
+    def test_explicit_provider_prefix_passthrough(self) -> None:
+        cfg = AgentConfig(
+            system_prompt="test",
+            model="openrouter:anthropic/claude-3.5-haiku",
+        )
+        assert cfg.resolved_model == "openrouter:anthropic/claude-3.5-haiku"

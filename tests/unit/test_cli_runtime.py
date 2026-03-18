@@ -53,6 +53,45 @@ class TestCliRuntimeParserSelection:
         assert isinstance(rt._parser, ClaudeNdjsonParser)
 
 
+class TestCliRuntimeCommandNormalization:
+    """Claude CLI commands are normalized to the NDJSON-compatible shape."""
+
+    def test_legacy_claude_command_gets_output_format_and_verbose(self) -> None:
+        from cognitia.runtime.cli.runtime import _normalize_claude_command
+
+        assert _normalize_claude_command(["claude", "--print", "-"], "stream-json") == [
+            "claude",
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "-",
+        ]
+
+    def test_legacy_output_flag_is_upgraded(self) -> None:
+        from cognitia.runtime.cli.runtime import _normalize_claude_command
+
+        assert _normalize_claude_command(
+            ["claude", "--print", "--output", "stream-json", "-"],
+            "stream-json",
+        ) == [
+            "claude",
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "-",
+        ]
+
+    def test_non_claude_command_is_left_untouched(self) -> None:
+        from cognitia.runtime.cli.runtime import _normalize_claude_command
+
+        assert _normalize_claude_command(["my-agent", "--json"], "json") == [
+            "my-agent",
+            "--json",
+        ]
+
+
 class TestCliRuntimeProtocol:
     """CliAgentRuntime satisfies AgentRuntime protocol."""
 
@@ -169,6 +208,44 @@ class TestCliRuntimeRun:
         assert events[0].type == "assistant_delta"
         assert events[0].data["text"] == "hello"
         assert events[1].type == "final"
+
+    async def test_cli_runtime_run_normalizes_legacy_claude_command_before_exec(self) -> None:
+        """Legacy Claude command shape is upgraded before subprocess spawn."""
+        from cognitia.runtime.cli.runtime import CliAgentRuntime
+
+        config = RuntimeConfig(runtime_name="cli")
+        cli_config = CliConfig(command=["claude", "--print", "--output", "stream-json", "-"])
+        rt = CliAgentRuntime(config=config, cli_config=cli_config)
+
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_process.stdin = MagicMock()
+        mock_process.stdin.write = MagicMock()
+        mock_process.stdin.drain = AsyncMock()
+        mock_process.stdin.close = MagicMock()
+        mock_process.stdout = _make_async_lines(b'{"type":"result","result":"done"}\n')
+        mock_process.stderr = AsyncMock()
+        mock_process.stderr.read = AsyncMock(return_value=b"")
+        mock_process.wait = AsyncMock(return_value=0)
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process) as create_proc:
+            events = []
+            async for event in rt.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="",
+                active_tools=[],
+            ):
+                events.append(event)
+
+        assert [event.type for event in events] == ["final"]
+        assert create_proc.call_args.args == (
+            "claude",
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "-",
+        )
 
     async def test_cli_runtime_run_process_error_yields_error_event(self) -> None:
         """Non-zero exit code -> error event."""

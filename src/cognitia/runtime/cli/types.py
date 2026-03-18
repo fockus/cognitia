@@ -13,7 +13,7 @@ class CliConfig:
     and how to interpret its output.
     """
 
-    command: list[str]  # e.g. ["claude", "--print", "-"]
+    command: list[str]  # e.g. ["claude", "--print", "--verbose", "--output-format", "stream-json", "-"]
     output_format: str = "stream-json"
     timeout_seconds: float = 300.0
     max_output_bytes: int = 4_000_000

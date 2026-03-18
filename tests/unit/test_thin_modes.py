@@ -37,6 +37,9 @@ class TestDetectModePlanner:
     def test_road_keyword(self) -> None:
         assert detect_mode("Составь дорожную карту") == "planner"
 
+    def test_plan_keyword_in_english(self) -> None:
+        assert detect_mode("Create a step-by-step plan for deployment") == "planner"
+
 
 class TestDetectModeReact:
     """Keyword heuristics → react."""
@@ -49,6 +52,15 @@ class TestDetectModeReact:
 
     def test_compare_keyword(self) -> None:
         assert detect_mode("Сравни условия") == "react"
+
+    def test_list_files_keyword_in_english(self) -> None:
+        assert detect_mode("List the files in /project") == "react"
+
+    def test_read_file_keyword_in_english(self) -> None:
+        assert detect_mode("Read the file /project/main.py") == "react"
+
+    def test_write_file_keyword_in_english(self) -> None:
+        assert detect_mode("Write a new file /project/utils.py") == "react"
 
 
 class TestDetectModeConversational:

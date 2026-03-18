@@ -404,6 +404,13 @@ class TestResolveModelName:
         assert resolve_model_name("gemini") == "gemini-2.5-pro"
         assert resolve_model_name("r1") == "deepseek-reasoner"
 
+    def test_explicit_provider_prefix_passthrough(self) -> None:
+        """Explicit provider:model не должен схлопываться в registry default."""
+        assert (
+            resolve_model_name("openrouter:anthropic/claude-3.5-haiku")
+            == "openrouter:anthropic/claude-3.5-haiku"
+        )
+
     def test_whitespace_trimmed(self) -> None:
         assert resolve_model_name("  sonnet  ") == "claude-sonnet-4-20250514"
 

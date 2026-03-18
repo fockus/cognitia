@@ -28,6 +28,7 @@ __all__ = [
     "PhaseState",
     "PostgresMemoryProvider",
     "SQLiteMemoryProvider",
+    "SqliteMemoryProvider",
     "ToolEvent",
     "UserProfile",
 ]
@@ -42,6 +43,11 @@ _OPTIONAL_EXPORTS: dict[str, tuple[str, str, str]] = {
         "cognitia.memory.sqlite",
         "SQLiteMemoryProvider",
         "Install SQLAlchemy async dependencies to use SQLiteMemoryProvider.",
+    ),
+    "SqliteMemoryProvider": (
+        "cognitia.memory.sqlite",
+        "SQLiteMemoryProvider",
+        "Install SQLAlchemy async dependencies to use SqliteMemoryProvider.",
     ),
 }
 

@@ -43,6 +43,34 @@ def _is_claude_command(command: list[str]) -> bool:
     return os.path.basename(command[0]) == "claude"
 
 
+def _normalize_claude_command(command: list[str], output_format: str) -> list[str]:
+    """Нормализовать Claude CLI command под NDJSON runtime contract."""
+    if not _is_claude_command(command):
+        return list(command)
+
+    normalized = [
+        "--output-format" if token == "--output" else token
+        for token in command
+    ]
+
+    # Чаще всего stdin prompt передаётся через trailing "-" placeholder.
+    prompt_placeholder = normalized[-1] == "-" if normalized else False
+    core = normalized[:-1] if prompt_placeholder else normalized[:]
+
+    if "--print" not in core and "-p" not in core:
+        core.append("--print")
+
+    if "--output-format" not in core:
+        core.extend(["--output-format", output_format])
+
+    if output_format == "stream-json" and "--verbose" not in core and "-v" not in core:
+        core.append("--verbose")
+
+    if prompt_placeholder:
+        core.append("-")
+    return core
+
+
 class CliAgentRuntime:
     """Run external CLI agents via subprocess + NDJSON parsing.
 
@@ -57,7 +85,9 @@ class CliAgentRuntime:
         parser: NdjsonParser | None = None,
     ) -> None:
         self._config = config
-        self._cli_config = cli_config or CliConfig(command=["claude", "--print", "-"])
+        self._cli_config = cli_config or CliConfig(
+            command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"]
+        )
         if parser is not None:
             self._parser = parser
         elif _is_claude_command(self._cli_config.command):
@@ -78,7 +108,10 @@ class CliAgentRuntime:
     ) -> AsyncIterator[RuntimeEvent]:
         """Execute CLI agent and yield RuntimeEvents from its NDJSON output."""
         prompt = _build_stdin_payload(messages, system_prompt)
-        cmd = list(self._cli_config.command)
+        cmd = _normalize_claude_command(
+            self._cli_config.command,
+            self._cli_config.output_format,
+        )
         env = dict(os.environ)
         env.update(self._cli_config.env)
 

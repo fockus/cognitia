@@ -109,8 +109,7 @@ main (stable, tested, releasable)
 
 **Rules:**
 - `main` = always green (tests pass, lint clean, can `pip install`)
-- Development on feature branches → PR → merge to main
-- Push all branches to `origin` (private) freely
+- Private repo (`origin`): push directly to `main` or feature branches — **no PRs required**
 - Push only stable `main` to `public`: `./scripts/sync-public.sh`
 - Release: branch `release/vX.Y.Z` → version bump + changelog → merge → tag → `sync-public.sh --tags`
 - Hotfix: branch from tag → fix → merge to main → new tag
@@ -120,11 +119,14 @@ main (stable, tested, releasable)
 | Content | Private (`origin`) | Public (`public`) |
 |---------|-------------------|-------------------|
 | Source code | all branches | main only |
-| `.memory-bank/` | local only (.gitignore) | excluded |
+| `.memory-bank/` | tracked, all branches | **filtered out** by sync script |
+| `CLAUDE.md`, `RULES.md` | tracked, all branches | **filtered out** by sync script |
 | `.claude/` | local only (.gitignore) | excluded |
-| `RULES.md`, `CLAUDE.md` | local only (.gitignore) | excluded |
+| `AGENTS.md` | tracked, all branches | included (public-safe) |
 | WIP / feature branches | pushed | never pushed |
 | Tags / releases | all | stable only |
+
+`sync-public.sh` creates a temporary branch without private files, force-pushes it as `main` to public, then cleans up. Supports `--dry-run` to preview.
 
 ### Commands
 

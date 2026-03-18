@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sync stable main to public repo (github.com/fockus/cognitia)
 #
-# Usage: ./scripts/sync-public.sh [--tags]
+# Usage: ./scripts/sync-public.sh [--tags] [--dry-run]
 #
 # Prerequisites:
 #   - On main branch
@@ -10,8 +10,15 @@
 #
 # What it does:
 #   1. Verifies main is clean and tested
-#   2. Pushes main to public remote
-#   3. Optionally pushes tags (--tags)
+#   2. Creates a temporary branch without private files
+#   3. Pushes filtered branch as main to public remote
+#   4. Cleans up temporary branch
+#   5. Optionally pushes tags (--tags)
+#
+# Private files (excluded from public):
+#   - .memory-bank/    (project memory, plans, notes)
+#   - CLAUDE.md         (Claude Code instructions)
+#   - RULES.md          (development rules)
 
 set -euo pipefail
 
@@ -19,6 +26,32 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+
+DRY_RUN=false
+PUSH_TAGS=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --tags) PUSH_TAGS=true ;;
+        --dry-run) DRY_RUN=true ;;
+    esac
+done
+
+# Private files/dirs to exclude from public repo
+PRIVATE_PATHS=(
+    ".memory-bank"
+    "CLAUDE.md"
+    "RULES.md"
+)
+
+TEMP_BRANCH="_sync_public_temp"
+
+cleanup() {
+    # Return to main and delete temp branch
+    git checkout main --quiet 2>/dev/null || true
+    git branch -D "$TEMP_BRANCH" --quiet 2>/dev/null || true
+}
+trap cleanup EXIT
 
 # Check branch
 BRANCH=$(git branch --show-current)
@@ -48,17 +81,49 @@ if ! pytest -q 2>&1 | tail -3; then
     exit 1
 fi
 
-# Push main to public
-echo -e "${YELLOW}Pushing main to public...${NC}"
-git push public main
+# Create temporary branch from main
+echo -e "${YELLOW}Creating filtered branch (excluding private files)...${NC}"
+git checkout -b "$TEMP_BRANCH" --quiet
 
-# Push tags if requested
-if [ "${1:-}" = "--tags" ]; then
-    echo -e "${YELLOW}Pushing tags to public...${NC}"
-    git push public --tags
+# Remove private files from the temporary branch index
+REMOVED=()
+for path in "${PRIVATE_PATHS[@]}"; do
+    if git ls-files --error-unmatch "$path" &>/dev/null; then
+        git rm -r --cached --quiet "$path"
+        REMOVED+=("$path")
+    fi
+done
+
+if [ ${#REMOVED[@]} -gt 0 ]; then
+    echo -e "  Excluded: ${REMOVED[*]}"
+    git commit --quiet -m "sync: exclude private files for public repo"
+else
+    echo -e "  No private files to exclude"
 fi
 
+# Push to public
+if [ "$DRY_RUN" = true ]; then
+    echo -e "${YELLOW}[DRY RUN] Would push to public...${NC}"
+    echo "  git push public ${TEMP_BRANCH}:main --force"
+else
+    echo -e "${YELLOW}Pushing to public (filtered main)...${NC}"
+    git push public "${TEMP_BRANCH}:main" --force
+fi
+
+# Push tags if requested
+if [ "$PUSH_TAGS" = true ]; then
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${YELLOW}[DRY RUN] Would push tags to public...${NC}"
+    else
+        echo -e "${YELLOW}Pushing tags to public...${NC}"
+        git push public --tags
+    fi
+fi
+
+# Cleanup happens via trap
+
 echo -e "${GREEN}Synced to public repo.${NC}"
-echo "  Public: $(git remote get-url public)"
-echo "  Branch: main"
-echo "  Commit: $(git log --oneline -1)"
+echo "  Public:   $(git remote get-url public)"
+echo "  Branch:   main"
+echo "  Commit:   $(git log --oneline -1 main)"
+echo "  Excluded: ${REMOVED[*]:-none}"

@@ -38,10 +38,18 @@ config = RuntimeConfig(
 | gemini-2.0-flash | 0.10 | 0.40 |
 | `_default` | 3.00 | 15.00 |
 
+### CostBudget Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_cost_usd` | `float \| None` | `None` | Maximum total cost in USD. `None` disables cost limit. |
+| `max_total_tokens` | `int \| None` | `None` | Maximum total tokens (input + output). `None` disables token limit. |
+| `action_on_exceed` | `"error" \| "warn"` | `"error"` | `"error"` emits a `budget_exceeded` event and stops. `"warn"` continues with warning status. |
+
 ### Programmatic Access
 
 ```python
-from cognitia.runtime.cost import CostTracker, load_pricing
+from cognitia.runtime.cost import CostTracker, CostBudget, load_pricing
 
 tracker = CostTracker(budget=budget, pricing=load_pricing())
 tracker.record("gpt-4o", input_tokens=1000, output_tokens=500)
@@ -51,6 +59,28 @@ print(tracker.total_tokens)      # accumulated tokens
 print(tracker.check_budget())    # "ok" | "warning" | "exceeded"
 tracker.reset()                  # zero all counters
 ```
+
+### Custom Pricing
+
+Override bundled pricing by passing a custom `dict[str, ModelPricing]` to `CostTracker`:
+
+```python
+from cognitia.runtime.cost import CostTracker, CostBudget, ModelPricing
+
+custom_pricing = {
+    "my-fine-tuned-model": ModelPricing(input_per_1m=5.0, output_per_1m=20.0),
+    "_default": ModelPricing(input_per_1m=3.0, output_per_1m=15.0),
+}
+
+tracker = CostTracker(
+    budget=CostBudget(max_cost_usd=10.0),
+    pricing=custom_pricing,
+)
+```
+
+`ModelPricing` is a frozen dataclass with two fields: `input_per_1m` and `output_per_1m` (USD per 1 million tokens). When `CostTracker.record()` encounters an unknown model, it falls back to the `_default` key. If no `_default` is present and the model is unknown, the call is silently ignored (no cost recorded).
+
+The `load_pricing()` function loads the bundled `pricing.json` via `importlib.resources`, making it reliable inside installed packages.
 
 ---
 
@@ -138,16 +168,23 @@ config = RuntimeConfig(
 | `MaxTokensFilter` | Trims older messages to fit within `max_tokens` budget. Always preserves system prompt and the last message. Token estimation: `len(text) / chars_per_token` (default 4.0). |
 | `SystemPromptInjector` | Prepends or appends text to the system prompt. |
 
-### Custom Filters
+### InputFilter Protocol
 
-Implement the `InputFilter` protocol:
+All filters implement the `InputFilter` protocol from `cognitia.input_filters`:
 
 ```python
+from cognitia.input_filters import InputFilter
+from cognitia.runtime.types import Message
+
 class RedactFilter:
-    async def filter(self, messages, system_prompt):
+    async def filter(
+        self, messages: list[Message], system_prompt: str
+    ) -> tuple[list[Message], str]:
         cleaned = [redact_pii(m) for m in messages]
         return cleaned, system_prompt
 ```
+
+Filters are applied sequentially in list order. Each filter receives the output of the previous one, forming a pipeline. The final `(messages, system_prompt)` tuple is passed to the LLM call.
 
 ---
 
@@ -187,17 +224,35 @@ chain = ModelFallbackChain(models=["gpt-4o", "claude-sonnet-4-20250514", "gemini
 next_model = chain.next_model("gpt-4o")  # "claude-sonnet-4-20250514"
 ```
 
-### Custom Retry Policies
+### Provider Fallback
 
-Implement the `RetryPolicy` protocol:
+Switch to an entirely different provider when the primary is down:
 
 ```python
+from cognitia.retry import ProviderFallback
+
+fb = ProviderFallback(fallback_model="openai:gpt-4o")
+# Use fb.fallback_model as the target when the primary provider returns errors
+```
+
+`ProviderFallback` is a frozen dataclass with a single field (`fallback_model: str`). It is intended to be used alongside `ModelFallbackChain` for two-level resilience: first try alternative models within the same provider, then fail over to a different provider entirely.
+
+### RetryPolicy Protocol
+
+All retry strategies implement the `RetryPolicy` protocol:
+
+```python
+from cognitia.retry import RetryPolicy
+
 class MyRetryPolicy:
     def should_retry(self, error: Exception, attempt: int) -> tuple[bool, float]:
+        """Return (should_retry, delay_seconds). attempt is zero-based."""
         if attempt < 2 and "rate_limit" in str(error):
-            return True, 5.0  # retry after 5 seconds
+            return True, 5.0
         return False, 0.0
 ```
+
+The `attempt` parameter is zero-based (0 = first retry candidate). When `should_retry` returns `False`, the delay value is ignored.
 
 ---
 

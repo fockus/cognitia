@@ -8,6 +8,28 @@ from typing import Any
 from cognitia.runtime.types import RuntimeErrorData, RuntimeEvent, ToolSpec
 
 
+def build_deepagents_chat_model(
+    raw_model: str | None,
+    *,
+    base_url: str | None = None,
+) -> Any:
+    """Ленивая прокладка к provider-aware model builder."""
+    from cognitia.runtime.deepagents_models import (
+        build_deepagents_chat_model as _build_deepagents_chat_model,
+    )
+
+    return _build_deepagents_chat_model(raw_model, base_url=base_url)
+
+
+def create_langchain_tool(spec: ToolSpec, executor: Callable | None) -> Any:
+    """Ленивая прокладка к LangChain tool factory."""
+    from cognitia.runtime.deepagents_tools import (
+        create_langchain_tool as _create_langchain_tool,
+    )
+
+    return _create_langchain_tool(spec, executor)
+
+
 def _extract_chunk_text(content: Any) -> str:
     """Извлечь текст из LangChain/DeepAgents chunk content."""
     if isinstance(content, str):
@@ -41,8 +63,6 @@ def build_deepagents_graph(
 ) -> Any:
     """Собрать native DeepAgents graph через upstream create_deep_agent()."""
     from cognitia.runtime.deepagents_builtins import split_native_builtin_tools
-    from cognitia.runtime.deepagents_models import build_deepagents_chat_model
-    from cognitia.runtime.deepagents_tools import create_langchain_tool
     from deepagents import create_deep_agent  # type: ignore[import-not-found]
 
     llm = build_deepagents_chat_model(model, base_url=base_url)

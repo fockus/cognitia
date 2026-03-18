@@ -36,6 +36,35 @@ pip install cognitia[deepagents] langchain-openai openai
 pip install cognitia[deepagents] langchain-google-genai
 ```
 
+## Credentials & Provider Setup
+
+Provider credentials depend on the runtime and provider path you choose:
+
+- `thin` reads provider credentials from the current process environment
+- `claude_sdk` can use local Claude login state or explicit `ANTHROPIC_API_KEY`
+- `deepagents` uses provider-specific LangChain credentials
+- `cli` passes through whatever env the wrapped CLI expects
+
+Canonical reference:
+
+- [docs/credentials.md](docs/credentials.md)
+
+Common cases:
+
+```bash
+# Thin + Anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Thin + OpenRouter
+export OPENAI_API_KEY=sk-or-...
+
+# DeepAgents + OpenRouter (OpenAI-compatible path)
+export OPENAI_API_KEY=sk-or-...
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+```
+
+Important: `deepagents` does not use `openrouter:*` as a native provider prefix. Use the OpenAI-compatible path instead, for example `model="openai:anthropic/claude-3.5-haiku"`.
+
 ## Quick Start
 
 ### One-shot query (3 lines)
@@ -196,7 +225,7 @@ export COGNITIA_RUNTIME=thin
 | `thin` | Fast prototyping, direct API, alternative LLMs | Anthropic, OpenAI-compatible, Google | Built-in client | `cognitia[thin]` |
 | `claude_sdk` | Full Claude ecosystem, native MCP, subagents | Claude only | Native | `cognitia[claude]` |
 | `deepagents` | DeepAgents graph runtime, LangGraph workflows | Anthropic baseline; OpenAI/Google via provider package | Not a portable guarantee | `cognitia[deepagents]` |
-| `cli` | External CLI agents, NDJSON subprocess integrations | Whatever the wrapped CLI provides | No portable MCP guarantee | `cognitia[cli]` |
+| `cli` | External CLI agents, NDJSON subprocess integrations | Whatever the wrapped CLI provides | No portable MCP guarantee | `cognitia` |
 
 ### Runtime Feature Matrix
 

@@ -21,6 +21,11 @@ The runtime:
 4. Parses each line into a `RuntimeEvent` using a pluggable parser
 5. Handles timeouts, output size limits, and process errors
 
+For a full matrix of provider credentials and env-passing patterns across all runtimes,
+see [Credentials & Provider Setup](credentials.md). For `cli` specifically, the key point
+is that Cognitia passes credentials through to the wrapped command via shell env or
+`CliConfig.env`.
+
 ## CliConfig
 
 Configuration for the CLI subprocess:
@@ -29,7 +34,7 @@ Configuration for the CLI subprocess:
 from cognitia.runtime.cli.types import CliConfig
 
 config = CliConfig(
-    command=["claude", "--print", "-"],
+    command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"],
     output_format="stream-json",
     timeout_seconds=300.0,
     max_output_bytes=4_000_000,
@@ -64,7 +69,7 @@ class NdjsonParser(Protocol):
 
 ### ClaudeNdjsonParser
 
-Parses Claude Code `--output stream-json` format:
+Parses Claude Code `--verbose --output-format stream-json` format:
 
 ```python
 from cognitia.runtime.cli.parser import ClaudeNdjsonParser
@@ -108,7 +113,9 @@ from cognitia.runtime.types import RuntimeConfig
 
 runtime = CliAgentRuntime(
     config=RuntimeConfig(runtime_name="cli", model="sonnet"),
-    cli_config=CliConfig(command=["claude", "--print", "-"]),
+    cli_config=CliConfig(
+        command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"]
+    ),
 )
 ```
 
@@ -206,14 +213,16 @@ from cognitia.runtime.types import RuntimeConfig
 def create_cli_runtime(config: RuntimeConfig) -> CliAgentRuntime:
     return CliAgentRuntime(
         config=config,
-        cli_config=CliConfig(command=["claude", "--print", "-"]),
+        cli_config=CliConfig(
+            command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"]
+        ),
     )
 
 registry = RuntimeRegistry()
 registry.register("cli", create_cli_runtime)
 
 # Now usable via config
-runtime = registry.create("cli", RuntimeConfig(runtime_name="cli", model="sonnet"))
+runtime = registry.get("cli")(RuntimeConfig(runtime_name="cli", model="sonnet"))
 ```
 
 ## Example: Running Claude Code as Subprocess
@@ -229,7 +238,7 @@ from cognitia.runtime.types import Message, RuntimeConfig
 
 async def main() -> None:
     cli_config = CliConfig(
-        command=["claude", "--print", "--output", "stream-json", "-"],
+        command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"],
         timeout_seconds=120.0,
         max_output_bytes=2_000_000,
     )

@@ -143,10 +143,10 @@ config = MemoryBankConfig(
 
 ## Connecting Memory Bank to an Agent
 
-Memory Bank integrates via `AgentStack.create()` — pass the provider and an optional prompt:
+Memory Bank integrates via `CognitiaStack.create()` — pass the provider and an optional prompt:
 
 ```python
-from cognitia.bootstrap.stack import AgentStack
+from cognitia.bootstrap.stack import CognitiaStack
 from cognitia.memory_bank.fs_provider import FilesystemMemoryBankProvider
 from cognitia.memory_bank.types import MemoryBankConfig
 
@@ -155,7 +155,7 @@ mb_config = MemoryBankConfig(enabled=True, root_path=Path("./data/mb"))
 mb_provider = FilesystemMemoryBankProvider(mb_config, user_id="u1", topic_id="proj1")
 
 # 2. Wire into agent stack
-stack = AgentStack.create(
+stack = CognitiaStack.create(
     # ... other params ...
     memory_bank_provider=mb_provider,
     # Optional: custom prompt injected into system message

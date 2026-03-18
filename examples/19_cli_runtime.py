@@ -24,7 +24,9 @@ async def main() -> None:
 
     # 2. CliConfig -- configure the CLI subprocess
     print("\n=== CliConfig ===")
-    default_config = CliConfig(command=["claude", "--print", "-"])
+    default_config = CliConfig(
+        command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"]
+    )
     print(f"Command: {default_config.command}")
     print(f"Timeout: {default_config.timeout_seconds}s")
     print(f"Max output: {default_config.max_output_bytes} bytes")
@@ -80,7 +82,7 @@ async def main() -> None:
     print("#")
     print("# async with CliAgentRuntime(")
     print("#     config=RuntimeConfig(runtime_name='cli'),")
-    print("#     cli_config=CliConfig(command=['claude', '--print', '-']),")
+    print("#     cli_config=CliConfig(command=['claude', '--print', '--verbose', '--output-format', 'stream-json', '-']),")
     print("# ) as runtime:")
     print("#     async for event in runtime.run(")
     print("#         messages=[Message(role='user', content='Hello')],")

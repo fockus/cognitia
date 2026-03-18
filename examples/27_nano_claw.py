@@ -1,13 +1,15 @@
 """Nano Claw: a simple Claude Code-like CLI agent.
 
 Demonstrates: Agent, @tool, Conversation, streaming, middleware -- full CLI agent.
-Requires ANTHROPIC_API_KEY for live mode; demo mode runs without it.
+Requires ``ANTHROPIC_API_KEY`` or ``OPENROUTER_API_KEY`` for live mode;
+demo mode runs without it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import re
 import textwrap
 from collections.abc import AsyncIterator
 from typing import Any
@@ -132,6 +134,68 @@ _CANNED: list[tuple[str, str]] = [
 ]
 
 
+def _extract_path(user_input: str, default: str) -> str:
+    match = re.search(r"(/\S+)", user_input)
+    if not match:
+        return default
+    return match.group(1).rstrip(".,)")
+
+
+def _helper_file_content(path: str) -> str:
+    stem = path.rsplit("/", 1)[-1].split(".", 1)[0] or "helper"
+    fn_name = stem.replace("-", "_")
+    return textwrap.dedent(
+        f"""\
+        def {fn_name}_helper(name: str) -> str:
+            return f"Hello, {{name}}!"
+        """
+    )
+
+
+async def _demo_tool_turn(
+    user_input: str,
+) -> tuple[str, str, dict[str, Any], str, bool] | None:
+    lower = user_input.lower()
+
+    if "list" in lower and ("file" in lower or "/project" in lower):
+        path = _extract_path(user_input, "/project")
+        result = await list_directory(path=path)
+        text = f"Sure! Here are your project files:\n\n{result}"
+        return ("list_directory", text, {"path": path}, result, True)
+
+    if "read" in lower:
+        path = _extract_path(user_input, "/project/main.py")
+        result = await read_file(path=path)
+        ok = not result.startswith("[Error]")
+        if ok:
+            language = "python" if path.endswith(".py") else ""
+            fence = f"```{language}\n{result}\n```" if language else f"```\n{result}\n```"
+            text = f"I'll read {path} for you.\n\n{fence}\n\nLooks good!"
+        else:
+            text = result
+        return ("read_file", text, {"path": path}, result, ok)
+
+    if "write" in lower:
+        path = _extract_path(user_input, "/project/utils.py")
+        content = _helper_file_content(path)
+        result = await write_file(path=path, content=content)
+        text = f"I've written the new file to {path} with the helper functions."
+        return (
+            "write_file",
+            text,
+            {"path": path, "content": content},
+            result,
+            result.startswith("[OK]"),
+        )
+
+    if "execute" in lower or lower.startswith("run "):
+        command = user_input.split(" ", 1)[-1].strip()
+        result = await execute_command(command=command)
+        return ("execute_command", result, {"command": command}, result, True)
+
+    return None
+
+
 def _pick_response(user_input: str) -> str:
     lower = user_input.lower()
     for keyword, response in _CANNED:
@@ -156,18 +220,39 @@ class MockRuntime:
         config: RuntimeConfig | None = None,
         mode_hint: str | None = None,
     ) -> AsyncIterator[RuntimeEvent]:
+        _ = (system_prompt, active_tools, config, mode_hint)
         last = next(
             (m.content for m in reversed(messages) if m.role == "user"),
             "",
         )
-        text = _pick_response(last)
+
+        tool_turn = await _demo_tool_turn(last)
+        if tool_turn is not None:
+            tool_name, text, tool_input, tool_result, ok = tool_turn
+            started = RuntimeEvent.tool_call_started(tool_name, args=tool_input)
+            correlation_id = started.data["correlation_id"]
+            yield started
+            await asyncio.sleep(0.01)
+            yield RuntimeEvent.tool_call_finished(
+                tool_name,
+                correlation_id=correlation_id,
+                ok=ok,
+                result_summary=tool_result,
+            )
+        else:
+            text = _pick_response(last)
 
         # Stream word-by-word to show streaming path
         for word in text.split():
             yield RuntimeEvent.assistant_delta(text=word + " ")
             await asyncio.sleep(0.015)  # simulate token latency
 
-        yield RuntimeEvent.final(text=text, new_messages=[])
+        yield RuntimeEvent.final(
+            text=text,
+            new_messages=[],
+            total_cost_usd=0.0,
+            usage={"input_tokens": 0, "output_tokens": 0},
+        )
 
     def cancel(self) -> None:
         pass
@@ -225,12 +310,13 @@ _AGENT_TOOLS = (
 class NanoClaw:
     """Nano Claw agent: multi-turn conversation with streaming and cost tracking."""
 
-    def __init__(self, runtime: str = "mock") -> None:
+    def __init__(self, runtime: str = "mock", model: str = "sonnet") -> None:
         self._cost_tracker = CostTracker(budget_usd=10.0)
         self._turn_logger = TurnLogger()
         self._config = AgentConfig(
             system_prompt=_SYSTEM_PROMPT,
             runtime=runtime,
+            model=model,
             tools=_AGENT_TOOLS,
             middleware=(self._cost_tracker, self._turn_logger),
         )
@@ -266,10 +352,34 @@ class NanoClaw:
 
         # Stream the reply token-by-token
         full_text = ""
+        raw_stream_text = ""
+        final_text = ""
+        pending_chunks: list[str] = []
+        render_mode = "unknown"
+        total_cost_usd: float | None = None
+        usage: dict[str, Any] | None = None
         async for event in self._conv.stream(stripped):
             if event.type == "text_delta":
-                print(event.text, end="", flush=True)
-                full_text += event.text
+                chunk = event.text
+                raw_stream_text += chunk
+                if render_mode == "unknown":
+                    pending_chunks.append(chunk)
+                    probe = "".join(pending_chunks).lstrip()
+                    if not probe:
+                        continue
+                    if probe.startswith("{"):
+                        render_mode = "json"
+                        continue
+                    render_mode = "text"
+                    buffered = "".join(pending_chunks)
+                    print(buffered, end="", flush=True)
+                    full_text += buffered
+                    pending_chunks.clear()
+                    continue
+
+                if render_mode == "text":
+                    print(chunk, end="", flush=True)
+                    full_text += chunk
             elif event.type == "tool_use_start":
                 # _RuntimeEventAdapter always has tool_name and tool_input
                 print(f"\n  [tool] {event.tool_name}({event.tool_input})", flush=True)
@@ -279,6 +389,18 @@ class NanoClaw:
             elif event.type == "error":
                 # _RuntimeEventAdapter always has text (default "")
                 print(f"\n  [error] {event.text}", flush=True)
+            elif event.type in {"done", "final"}:
+                final_text = getattr(event, "text", "") or ""
+                total_cost_usd = getattr(event, "total_cost_usd", None)
+                usage = getattr(event, "usage", None)
+
+        if render_mode != "text" and final_text:
+            print(final_text, end="", flush=True)
+            full_text = final_text
+        elif not full_text and final_text:
+            full_text = final_text
+        elif not full_text and raw_stream_text:
+            full_text = raw_stream_text
 
         print()  # newline after streamed response
 
@@ -286,6 +408,8 @@ class NanoClaw:
         mock_result = Result(
             text=full_text,
             session_id=self._conv.session_id,
+            total_cost_usd=total_cost_usd,
+            usage=usage,
         )
         for mw in self._config.middleware:
             mock_result = await mw.after_result(mock_result)
@@ -331,22 +455,33 @@ async def demo() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Live REPL: real LLM via ANTHROPIC_API_KEY
+# Live REPL: real LLM via ANTHROPIC_API_KEY or OPENROUTER_API_KEY
 # ---------------------------------------------------------------------------
 
 
+def _resolve_live_model() -> str:
+    """Select live model/provider based on available credentials."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "sonnet"
+
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key:
+        os.environ["OPENAI_API_KEY"] = openrouter_key
+        return "openrouter:anthropic/claude-3.5-haiku"
+
+    raise SystemExit("Either ANTHROPIC_API_KEY or OPENROUTER_API_KEY is required for --live mode")
+
+
 async def live() -> None:
-    """Interactive REPL with real Anthropic model. Requires ANTHROPIC_API_KEY."""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("[error] ANTHROPIC_API_KEY not set. Run demo() instead.")
-        return
+    """Interactive REPL with a real model via Anthropic or OpenRouter."""
+    model = _resolve_live_model()
 
     print("=" * 60)
-    print("  Nano Claw — Live Mode (claude-sonnet-4-5)")
+    print(f"  Nano Claw — Live Mode ({model})")
     print("  Type /help for commands, /quit to exit.")
     print("=" * 60)
 
-    agent = NanoClaw(runtime="thin")
+    agent = NanoClaw(runtime="thin", model=model)
 
     try:
         while True:
@@ -373,7 +508,9 @@ async def live() -> None:
 
 if __name__ == "__main__":
     # Default: demo mode (no API key required).
-    # To run live:  ANTHROPIC_API_KEY=sk-... python 27_nano_claw.py --live
+    # To run live:
+    #   ANTHROPIC_API_KEY=sk-... python 27_nano_claw.py --live
+    #   OPENROUTER_API_KEY=sk-or-... python 27_nano_claw.py --live
     import sys
 
     if "--live" in sys.argv:

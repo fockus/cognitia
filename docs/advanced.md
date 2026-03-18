@@ -526,6 +526,102 @@ registry.get_provider("gpt-4o")                     # "openai"
 
 Models are defined in `cognitia/runtime/models.yaml` and support Anthropic, OpenAI, Google, and DeepSeek.
 
+### Resolution Priority
+
+1. **Exact alias** -- `"sonnet"` matches the alias list in `models.yaml`
+2. **Exact full name** -- `"gpt-4o"` matches the full model ID
+3. **Prefix match** -- `"claude-sonnet"` matches `"claude-sonnet-4-20250514"`
+4. **Default model** -- fallback to `default_model` from `models.yaml` (currently `claude-sonnet-4-20250514`)
+
+### Full Alias Table
+
+| Alias | Full Model ID | Provider |
+| ----- | ------------- | -------- |
+| `sonnet`, `sonnet-4`, `claude-sonnet` | claude-sonnet-4-20250514 | anthropic |
+| `opus`, `opus-4`, `claude-opus` | claude-opus-4-20250514 | anthropic |
+| `haiku`, `haiku-3`, `claude-haiku` | claude-haiku-3-20250307 | anthropic |
+| `4o`, `gpt4o` | gpt-4o | openai |
+| `4o-mini`, `gpt4o-mini`, `mini` | gpt-4o-mini | openai |
+| `o3-reasoning` | o3 | openai |
+| `o3m` | o3-mini | openai |
+| `gemini-pro`, `gemini` | gemini-2.5-pro | google |
+| `gemini-flash`, `flash` | gemini-2.5-flash | google |
+| `deepseek`, `ds-chat` | deepseek-chat | deepseek |
+| `deepseek-r1`, `ds-r1`, `r1` | deepseek-reasoner | deepseek |
+
+### Registry API
+
+```python
+from cognitia.runtime.model_registry import get_registry, reset_registry
+
+registry = get_registry()  # singleton, loads models.yaml once
+
+# Introspection
+registry.list_models()                # all model IDs (sorted)
+registry.list_models("openai")        # models for a specific provider
+registry.list_aliases()               # dict: alias -> full model ID
+registry.list_providers()             # ["anthropic", "deepseek", "google", "openai"]
+registry.get_description("sonnet")    # model description from YAML
+
+# Custom config path (useful for tests)
+custom = get_registry(config_path=Path("my_models.yaml"))
+reset_registry()  # clear singleton (for tests)
+```
+
+The registry does not support adding aliases at runtime. To add custom models or aliases, edit `models.yaml` directly.
+
+---
+
+## Cancellation
+
+### CancellationToken
+
+Cooperative cancellation for async agent runtime loops. Thread-safe.
+
+```python
+from cognitia.runtime.cancellation import CancellationToken
+
+token = CancellationToken()
+
+# Register cleanup callbacks (invoked on cancel)
+token.on_cancel(lambda: print("Cancelled, cleaning up"))
+
+# Check state from the runtime loop
+if token.is_cancelled:
+    return  # exit gracefully
+
+# Signal cancellation (idempotent, safe to call multiple times)
+token.cancel()
+```
+
+### Behavior
+
+- `cancel()` is idempotent -- calling it multiple times is safe; callbacks fire only on the first call.
+- Callbacks registered after `cancel()` has been called are invoked immediately.
+- Callback exceptions are caught and logged (never propagate).
+- Thread-safe: `cancel()` and `on_cancel()` can be called from any thread.
+
+### Integration with Agent Streaming
+
+Pass a `CancellationToken` to stop a running agent mid-stream:
+
+```python
+import asyncio
+from cognitia.runtime.cancellation import CancellationToken
+
+token = CancellationToken()
+
+# Cancel after 10 seconds from another task
+asyncio.get_event_loop().call_later(10.0, token.cancel)
+
+async for event in agent.stream("Long running task", cancel_token=token):
+    if token.is_cancelled:
+        break
+    print(event)
+```
+
+Runtime loops check `token.is_cancelled` between iterations and exit cleanly when cancellation is requested, allowing in-progress LLM calls to finish before stopping.
+
 ---
 
 ## Commands

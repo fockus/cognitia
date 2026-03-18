@@ -194,9 +194,11 @@ tracker = CostTracker(budget_usd=5.0)
 agent = Agent(AgentConfig(middleware=(tracker,)))
 
 result = await agent.query("Hello")
-print(tracker.total_cost)     # 0.002
-print(tracker.budget_exceeded) # False
+print(tracker.total_cost_usd)  # 0.002
 ```
+
+If a request pushes the cumulative spend above the configured budget,
+`CostTracker` raises `BudgetExceededError`.
 
 ### Built-in: SecurityGuard
 
@@ -207,7 +209,6 @@ from cognitia.agent import SecurityGuard
 
 guard = SecurityGuard(
     block_patterns=["password", "api_key", "secret"],
-    on_blocked=lambda prompt, pattern: print(f"Blocked: {pattern}"),
 )
 ```
 
@@ -249,16 +250,16 @@ agent = Agent(AgentConfig(middleware=stack))
 | `tool_compressor` | `bool` | `True` | Enable ToolOutputCompressor |
 | `security_guard` | `bool` | `False` | Enable SecurityGuard |
 | `max_result_chars` | `int` | `10000` | Max chars for tool output |
-| `budget_usd` | `float` | `5.0` | Cost budget limit |
+| `budget_usd` | `float` | `0.0` | Cost budget limit |
 | `blocked_patterns` | `list[str]` | `[]` | Patterns to block |
 
 ### Middleware chain order
 
-Middleware executes in order for `before_query` and reverse order for `after_result`:
+Middleware executes in declaration order for both `before_query` and `after_result`:
 
 ```python
 # before_query: mw1 -> mw2 -> mw3
-# after_result: mw3 -> mw2 -> mw1
+# after_result: mw1 -> mw2 -> mw3
 config = AgentConfig(middleware=(mw1, mw2, mw3))
 ```
 

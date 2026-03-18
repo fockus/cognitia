@@ -40,7 +40,7 @@ def compile_to_langgraph(graph: WorkflowGraph) -> Any:
         raise ImportError(msg) from e
 
     # Build StateGraph with dict state
-    sg = StateGraph(dict)
+    sg: Any = StateGraph(dict)  # type: ignore[type-var]
 
     # Add nodes (subgraphs are wrapped as regular nodes)
     for node_id, node_fn in graph._nodes.items():

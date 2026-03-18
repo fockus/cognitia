@@ -423,9 +423,30 @@ def resolve_model_name(raw: str | None) -> str:
     - "gpt-4o" → "gpt-4o"
     - "gemini" → "gemini-2.5-pro"
     - "r1" → "deepseek-reasoner"
+    - "openrouter:anthropic/claude-3.5-haiku" → "openrouter:anthropic/claude-3.5-haiku"
     - None → DEFAULT_MODEL
     """
     _ensure_model_constants()
+    if raw:
+        normalized = raw.strip()
+        if ":" in normalized:
+            prefix, model_part = normalized.split(":", 1)
+            provider = prefix.strip().lower()
+            if provider == "google_genai":
+                provider = "google"
+            if provider in {
+                "anthropic",
+                "google",
+                "openai",
+                "openrouter",
+                "ollama",
+                "local",
+                "together",
+                "groq",
+                "fireworks",
+                "deepseek",
+            }:
+                return f"{provider}:{model_part.strip()}"
     result: str = _get_registry().resolve(raw)
     return result
 

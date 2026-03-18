@@ -1,0 +1,481 @@
+# Migration Guide: v0.5.0 to v1.0.0
+
+This guide covers all breaking changes, new features, deprecations, and the
+step-by-step upgrade path from Cognitia 0.5.0 to 1.0.0-core.
+
+---
+
+## 1. Breaking Changes
+
+### 1.1 RuntimePort renamed to AgentRuntime
+
+The primary runtime protocol has been renamed. `RuntimePort` still exists but is
+deprecated and will be removed in v2.0.
+
+| v0.5.0 | v1.0.0 |
+|--------|--------|
+| `cognitia.protocols.RuntimePort` | `cognitia.runtime.base.AgentRuntime` |
+
+**Old code:**
+
+```python
+from cognitia.protocols import RuntimePort
+
+class MyRuntime:
+    """Implements RuntimePort."""
+    @property
+    def is_connected(self) -> bool: ...
+    async def connect(self) -> None: ...
+    async def disconnect(self) -> None: ...
+    def stream_reply(self, user_text: str) -> AsyncIterator[Any]: ...
+```
+
+**New code:**
+
+```python
+from cognitia.runtime.base import AgentRuntime
+# or: from cognitia import AgentRuntime
+
+class MyRuntime:
+    """Implements AgentRuntime."""
+    def run(
+        self,
+        *,
+        messages: list[Message],
+        system_prompt: str,
+        active_tools: list[ToolSpec],
+        config: RuntimeConfig | None = None,
+        mode_hint: str | None = None,
+    ) -> AsyncIterator[RuntimeEvent]: ...
+
+    async def cleanup(self) -> None: ...
+    def cancel(self) -> None: ...
+```
+
+Key differences in the new contract:
+
+- `AgentRuntime.run()` replaces `stream_reply()`. It accepts structured
+  `messages`, `system_prompt`, `active_tools`, and optional `config`/`mode_hint`.
+- `cleanup()` replaces `disconnect()`. There is no `connect()` -- runtimes
+  initialize on construction or on first `run()` call.
+- `cancel()` is new -- cooperative cancellation support.
+- `AgentRuntime` supports async context manager (`async with runtime as r:`).
+- The runtime no longer owns connection state (`is_connected` is removed).
+
+### 1.2 Protocols package restructured (ISP split)
+
+`protocols.py` (single file) has been split into a package with dedicated
+modules. All protocols are still re-exported from `cognitia.protocols` for
+backward compatibility.
+
+| Module | Protocols |
+|--------|-----------|
+| `cognitia.protocols.memory` | `MessageStore`, `FactStore`, `SummaryStore`, `GoalStore`, `SessionStateStore`, `UserStore`, `PhaseStore`, `ToolEventStore`, `SummaryGenerator` |
+| `cognitia.protocols.session` | `SessionFactory`, `SessionLifecycle`, `SessionManager`, `SessionRehydrator` |
+| `cognitia.protocols.routing` | `ContextBuilder`, `ModelSelector`, `RoleRouter`, `RoleSkillsProvider` |
+| `cognitia.protocols.tools` | `LocalToolResolver`, `ToolIdCodec` |
+| `cognitia.protocols.runtime` | `RuntimePort` (deprecated), re-exports `AgentRuntime` |
+| `cognitia.protocols.multi_agent` | `AgentTool`, `TaskQueue`, `AgentRegistry` |
+
+**Action required:** If you imported from `cognitia.protocols`, no changes are
+needed -- all names are re-exported from `cognitia.protocols.__init__`. If you
+imported directly from `cognitia.protocols` as a single-file module in a
+non-standard way, update to the package import.
+
+### 1.3 RuntimeEvent changes
+
+`RuntimeEvent` gains new static factory methods and typed accessors. The event
+type set has expanded:
+
+| New event type | Purpose |
+|---------------|---------|
+| `native_notice` | Runtime-specific semantics notice |
+| `user_input_requested` | Runtime requests human input |
+
+New `RuntimeEvent` properties (typed accessors, no need to dig into `.data`):
+
+- `.text` -- text content for `assistant_delta`, `status`, `final` events
+- `.tool_name` -- tool name for `tool_call_started`/`tool_call_finished`
+- `.is_final`, `.is_error`, `.is_text` -- type guards
+- `.structured_output` -- parsed structured output from `final` events
+
+New static factory methods:
+
+- `RuntimeEvent.assistant_delta(text)`, `.status(text)`, `.final(...)`,
+  `.error(error)`, `.tool_call_started(...)`, `.tool_call_finished(...)`,
+  `.approval_required(...)`, `.user_input_requested(...)`, `.native_notice(...)`
+
+**Action required:** If you constructed `RuntimeEvent` manually, switch to
+factory methods. If you read `event.data["text"]`, you can now use `event.text`.
+Existing `event.data` access still works.
+
+### 1.4 RuntimeConfig new fields
+
+`RuntimeConfig` has several new fields. Existing code using only the old fields
+will work without changes.
+
+| New field | Type | Default | Purpose |
+|-----------|------|---------|---------|
+| `output_type` | `type \| None` | `None` | Pydantic model for structured output |
+| `output_format` | `dict \| None` | `None` | JSON Schema (auto-generated from `output_type`) |
+| `cancellation_token` | `CancellationToken \| None` | `None` | Cooperative cancellation |
+| `cost_budget` | `CostBudget \| None` | `None` | Per-session cost limit |
+| `input_guardrails` | `list` | `[]` | Pre-LLM guardrail checks |
+| `output_guardrails` | `list` | `[]` | Post-LLM guardrail checks |
+| `input_filters` | `list` | `[]` | Pre-LLM input transformations |
+| `retry_policy` | `RetryPolicy \| None` | `None` | Retry with backoff |
+| `event_bus` | `EventBus \| None` | `None` | Pub-sub for runtime events |
+| `tracer` | `Tracer \| None` | `None` | Span-based tracing |
+| `retriever` | `Retriever \| None` | `None` | RAG context injection |
+
+### 1.5 RuntimeErrorData new error kinds
+
+New error kinds added to `RUNTIME_ERROR_KINDS`:
+
+- `cancelled` -- operation cancelled via `CancellationToken`
+- `guardrail_tripwire` -- guardrail check failed
+- `retry` -- retrying LLM call after transient failure
+
+Existing error handling code will still work; these are additive.
+
+---
+
+## 2. New Features
+
+### 2.1 Structured Output
+
+Extract typed responses from LLM output using Pydantic models.
+
+```python
+from pydantic import BaseModel
+from cognitia import Agent, AgentConfig
+
+class SentimentResult(BaseModel):
+    sentiment: str
+    confidence: float
+
+agent = Agent(AgentConfig(
+    system_prompt="Classify sentiment.",
+    runtime="thin",
+    output_format=SentimentResult.model_json_schema(),
+))
+result = await agent.query("I love this product!")
+# result.structured_output -> SentimentResult instance
+```
+
+See [Structured Output docs](structured-output.md) for details on `output_type`,
+validation retries, and `max_model_retries`.
+
+### 2.2 @tool Decorator
+
+Define tools with automatic JSON Schema inference from type hints and docstrings.
+
+```python
+from cognitia import tool
+
+@tool
+def get_weather(city: str, units: str = "celsius") -> str:
+    """Get current weather for a city.
+
+    Args:
+        city: The city name to look up.
+        units: Temperature units (celsius or fahrenheit).
+    """
+    return f"Weather in {city}: 22 {units}"
+```
+
+`ToolDefinition.to_tool_spec()` bridges decorator-defined tools to `ToolSpec`
+for runtime compatibility.
+
+See [Tools and Skills docs](tools-and-skills.md).
+
+### 2.3 Runtime Registry
+
+Thread-safe, extensible runtime registry with plugin discovery via entry points.
+
+```python
+from cognitia.runtime.registry import RuntimeRegistry
+
+# Register a custom runtime
+RuntimeRegistry.register("my_runtime", MyRuntimeFactory)
+
+# Use it
+agent = Agent(AgentConfig(system_prompt="...", runtime="my_runtime"))
+```
+
+See [Runtime Registry docs](runtime-registry.md).
+
+### 2.4 Cost Budget
+
+Per-session budget enforcement with bundled pricing data.
+
+```python
+from cognitia.runtime.cost import CostBudget, CostTracker
+from cognitia.runtime.types import RuntimeConfig
+
+budget = CostBudget(max_usd=1.0, action_on_exceed="error")
+config = RuntimeConfig(cost_budget=budget)
+```
+
+### 2.5 Guardrails and CallerPolicy
+
+Input/output guardrails with parallel execution. Built-in guards include
+`ContentLengthGuardrail`, `RegexGuardrail`, and `CallerAllowlistGuardrail`.
+
+```python
+from cognitia.guardrails import ContentLengthGuardrail, RegexGuardrail
+
+config = RuntimeConfig(
+    input_guardrails=[ContentLengthGuardrail(max_chars=10000)],
+    output_guardrails=[RegexGuardrail(deny_patterns=[r"(?i)password"])],
+)
+```
+
+### 2.6 Input Filters
+
+Pre-process user input before LLM calls. Built-in filters: `MaxTokensFilter`,
+`SystemPromptInjector`.
+
+```python
+from cognitia.filters import MaxTokensFilter, SystemPromptInjector
+
+config = RuntimeConfig(
+    input_filters=[
+        MaxTokensFilter(max_tokens=4096),
+        SystemPromptInjector(suffix="Always respond in JSON."),
+    ],
+)
+```
+
+### 2.7 Retry and Fallback
+
+Resilient LLM calls with configurable retry policies and model fallback chains.
+
+```python
+from cognitia.resilience import ExponentialBackoff, ModelFallbackChain
+
+config = RuntimeConfig(
+    retry_policy=ExponentialBackoff(max_retries=3, base_delay=1.0),
+)
+```
+
+### 2.8 Session Backends
+
+Pluggable session persistence with `SessionBackend` protocol. Built-in:
+`InMemorySessionBackend`, `SqliteSessionBackend`.
+
+See [Sessions docs](sessions.md).
+
+### 2.9 Event Bus and Tracing
+
+Pub-sub event bus for runtime observability and span-based tracing.
+
+```python
+from cognitia.observability.event_bus import InMemoryEventBus
+from cognitia.observability.tracing import ConsoleTracer, TracingSubscriber
+
+bus = InMemoryEventBus()
+tracer = ConsoleTracer()
+TracingSubscriber(bus, tracer)  # auto-subscribes
+
+config = RuntimeConfig(event_bus=bus, tracer=tracer)
+```
+
+ThinRuntime emits `llm_call_start/end` and `tool_call_start/end` events.
+
+See [Observability docs](observability.md).
+
+### 2.10 UI Projection
+
+Transform runtime event streams into UI-friendly blocks for frontend rendering.
+
+```python
+from cognitia.ui.projection import ChatProjection, project_stream
+
+projection = ChatProjection()
+async for ui_state in project_stream(event_stream, projection):
+    send_to_frontend(ui_state.to_dict())
+```
+
+Block types: `TextBlock`, `ToolCallBlock`, `ToolResultBlock`, `ErrorBlock`.
+
+See [UI Projection docs](ui-projection.md).
+
+### 2.11 RAG / Retriever
+
+Automatic context injection via `Retriever` protocol and `RagInputFilter`.
+
+```python
+from cognitia.rag import SimpleRetriever, Document
+
+retriever = SimpleRetriever(documents=[
+    Document(content="Cognitia supports 3 runtimes.", metadata={"source": "docs"}),
+])
+config = RuntimeConfig(retriever=retriever)
+```
+
+See [RAG docs](rag.md).
+
+### 2.12 Multi-Agent Coordination
+
+Agent-as-tool pattern, task queues, and agent registries for multi-agent systems.
+
+- `AgentTool` protocol -- expose any runtime as a callable tool
+- `create_agent_tool_spec()` / `execute_agent_tool()` utility functions
+- `TaskQueue` protocol with `InMemoryTaskQueue` and `SqliteTaskQueue`
+- `AgentRegistry` protocol with `InMemoryAgentRegistry`
+
+See [Multi-Agent docs](multi-agent.md).
+
+### 2.13 CLI Agent Runtime
+
+Subprocess-based runtime for external CLI agents (Claude Code, custom tools).
+
+```python
+agent = Agent(AgentConfig(system_prompt="...", runtime="cli"))
+```
+
+Registered in `RuntimeRegistry` as `"cli"`. Supports NDJSON parsing with
+`ClaudeNdjsonParser` and `GenericNdjsonParser`.
+
+See [CLI Runtime docs](cli-runtime.md).
+
+### 2.14 Cancellation
+
+Cooperative cancellation with callback support.
+
+```python
+from cognitia.runtime.cancellation import CancellationToken
+
+token = CancellationToken()
+config = RuntimeConfig(cancellation_token=token)
+
+# Later, from another task:
+token.cancel()
+```
+
+### 2.15 Memory Scopes
+
+Namespace isolation for memory operations.
+
+```python
+from cognitia.memory.scopes import MemoryScope
+
+key = MemoryScope.AGENT.scoped_key("agent-1", "preferences")
+# -> "agent:agent-1:preferences"
+```
+
+---
+
+## 3. Deprecations
+
+| Deprecated | Replacement | Removal target |
+|------------|-------------|----------------|
+| `RuntimePort` protocol (`cognitia.protocols.runtime`) | `AgentRuntime` (`cognitia.runtime.base`) | v2.0.0 |
+| `RuntimePort.stream_reply()` | `AgentRuntime.run()` | v2.0.0 |
+| `RuntimePort.connect()` / `disconnect()` | `AgentRuntime` context manager / `cleanup()` | v2.0.0 |
+| `RuntimePort.is_connected` property | Removed (no replacement) | v2.0.0 |
+| `protocols.py` single-file import path | `cognitia.protocols` package (backward-compatible re-exports remain) | v2.0.0 |
+
+---
+
+## 4. Quick Upgrade Checklist
+
+Follow these steps to upgrade from v0.5.0 to v1.0.0:
+
+### Step 1: Update the dependency
+
+```bash
+pip install cognitia>=1.0.0
+```
+
+### Step 2: Replace RuntimePort with AgentRuntime
+
+Search your codebase for `RuntimePort` references:
+
+```bash
+grep -rn "RuntimePort" src/
+```
+
+Replace with `AgentRuntime`:
+
+```python
+# Before
+from cognitia.protocols import RuntimePort
+
+# After
+from cognitia import AgentRuntime
+# or: from cognitia.runtime.base import AgentRuntime
+```
+
+If you have custom runtime implementations, update them to implement the
+`AgentRuntime` protocol (see section 1.1 above for the method signatures).
+
+### Step 3: Update custom runtime implementations
+
+If you implemented `RuntimePort`:
+
+1. Remove `is_connected` property, `connect()`, and `disconnect()`.
+2. Rename `stream_reply(user_text)` to `run(*, messages, system_prompt, active_tools, config, mode_hint)`.
+3. Return/yield `RuntimeEvent` objects (use factory methods).
+4. Add `cleanup()` and `cancel()` methods.
+5. Optionally implement `__aenter__`/`__aexit__` for context manager support.
+
+### Step 4: Update RuntimeEvent usage
+
+If you construct `RuntimeEvent` instances manually, switch to factory methods:
+
+```python
+# Before
+event = RuntimeEvent(type="assistant_delta", data={"text": chunk})
+
+# After
+event = RuntimeEvent.assistant_delta(chunk)
+```
+
+If you read event data:
+
+```python
+# Before
+text = event.data.get("text", "")
+
+# After (preferred)
+text = event.text
+```
+
+### Step 5: Update RuntimeConfig (if subclassed or extended)
+
+If you pass `RuntimeConfig` directly, review the new fields. No changes required
+if you only use the fields that existed in v0.5.0. New fields all have safe
+defaults.
+
+### Step 6: Adopt new features (optional)
+
+These are additive and do not require changes to existing code:
+
+- Add `output_type` to `RuntimeConfig` for structured output.
+- Add guardrails and input filters to `RuntimeConfig`.
+- Set up `CostBudget` for cost tracking.
+- Configure `EventBus` and `Tracer` for observability.
+- Use `RuntimeRegistry` to register custom runtimes.
+
+### Step 7: Run tests
+
+```bash
+pytest
+ruff check src/ tests/
+mypy src/cognitia/
+```
+
+Verify that all tests pass and there are no import errors or type check failures
+related to the renamed protocols.
+
+---
+
+## Need Help?
+
+- [Getting Started](getting-started.md)
+- [Architecture Overview](architecture.md)
+- [API Reference](api-reference.md)
+- [Examples](examples.md)
+- [Full Changelog](https://github.com/fockus/cognitia/blob/main/CHANGELOG.md)

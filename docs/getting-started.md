@@ -69,6 +69,35 @@ print(result.text)  # "The capital of France is Paris."
 
 That's it. No config files, no project structure — just an agent that works.
 
+## Credentials and Environment Variables
+
+Before using a live provider, decide which runtime/provider path you want and set credentials accordingly:
+
+- `thin` reads provider credentials from the current shell environment
+- `claude_sdk` can use either local Claude login state or explicit `ANTHROPIC_API_KEY`
+- `deepagents` uses provider-specific LangChain credentials
+- `cli` forwards credentials to the wrapped CLI via shell env or `CliConfig.env`
+
+Canonical reference:
+
+- [Credentials & Provider Setup](credentials.md)
+
+Fast examples:
+
+```bash
+# Thin + Anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Thin + OpenRouter
+export OPENAI_API_KEY=sk-or-...
+
+# DeepAgents + OpenRouter (OpenAI-compatible path)
+export OPENAI_API_KEY=sk-or-...
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+```
+
+If you use the high-level `AgentConfig` facade, portable runtimes (`thin`, `deepagents`) currently read credentials from process environment. `AgentConfig.env` is primarily for `claude_sdk`.
+
 ## Step-by-Step Guide
 
 ### 1. Custom Tools
@@ -172,8 +201,10 @@ agent = Agent(AgentConfig(
 
 result = await agent.query("Hello!")
 print(tracker.total_cost_usd)    # 0.002
-print(tracker.budget_exceeded)   # False
 ```
+
+If a turn pushes the cumulative spend above the configured budget,
+`CostTracker` raises `BudgetExceededError`.
 
 You can write custom middleware by extending the `Middleware` base class:
 

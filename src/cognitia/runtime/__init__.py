@@ -58,6 +58,7 @@ from cognitia.runtime.types import (
 
 __all__ = [
     "DEFAULT_MODEL",
+    "ThinRuntime",
     "RUNTIME_CAPABILITY_FLAGS",
     "RUNTIME_ERROR_KINDS",
     "RUNTIME_EVENT_TYPES",
@@ -93,6 +94,11 @@ __all__ = [
 ]
 
 _OPTIONAL_EXPORTS: dict[str, tuple[str, str, str]] = {
+    "ThinRuntime": (
+        "cognitia.runtime.thin.runtime",
+        "ThinRuntime",
+        "Install optional thin runtime dependencies to use ThinRuntime.",
+    ),
     "DeepAgentsRuntimePort": (
         "cognitia.runtime.ports",
         "DeepAgentsRuntimePort",

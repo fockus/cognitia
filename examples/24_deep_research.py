@@ -1,7 +1,8 @@
 """Deep Research agent: multi-step research with source aggregation.
 
 Demonstrates: WorkflowGraph, @tool, structured output, RAG pipeline.
-Requires ANTHROPIC_API_KEY for full execution; runs mock pipeline without it.
+Runs a mock pipeline by default and supports ``--live`` with
+``ANTHROPIC_API_KEY`` or ``OPENROUTER_API_KEY``.
 
 Pipeline:
   decompose → search → aggregate → synthesize → report
@@ -21,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import textwrap
 from typing import Any
 
@@ -433,29 +435,64 @@ async def main() -> None:
     final_state = await g.execute({"question": question})
     print(f"[done] Pipeline complete. State keys: {sorted(final_state.keys())}")
 
-    # ---------------------------------------------------------------------------
-    # Agent-based usage (uncomment + set ANTHROPIC_API_KEY to run live)
-    # ---------------------------------------------------------------------------
-    # from cognitia import Agent, AgentConfig
-    #
-    # agent = Agent(AgentConfig(
-    #     system_prompt=(
-    #         "You are a deep research agent. When asked a question, "
-    #         "break it into sub-queries, search multiple sources, and "
-    #         "synthesize a comprehensive report with citations."
-    #     ),
-    #     runtime="thin",
-    #     model="sonnet",
-    #     tools=(web_search, academic_search),
-    #     output_type=ResearchReport,   # enforces structured final output
-    # ))
-    #
-    # result = await agent.query(question)
-    # if result.structured_output:
-    #     report_obj = ResearchReport.model_validate(result.structured_output)
-    #     print(f"Confidence: {report_obj.confidence}")
-    #     print(f"Findings: {len(report_obj.key_findings)}")
+
+def _resolve_live_model() -> str:
+    """Select live model/provider based on available credentials."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "sonnet"
+
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key:
+        os.environ["OPENAI_API_KEY"] = openrouter_key
+        return "openrouter:anthropic/claude-3.5-haiku"
+
+    raise SystemExit("Either ANTHROPIC_API_KEY or OPENROUTER_API_KEY is required for --live mode")
+
+
+async def live(question: str) -> None:
+    """Run the same scenario through a real thin runtime."""
+    from cognitia import Agent, AgentConfig
+
+    model = _resolve_live_model()
+
+    print("Deep Research Agent — Live Mode")
+    print(f"Question: {question}")
+
+    agent = Agent(
+        AgentConfig(
+            system_prompt=(
+                "You are a deep research agent. When asked a question, "
+                "break it into sub-queries, search multiple sources, and "
+                "synthesize a comprehensive report with citations."
+            ),
+            runtime="thin",
+            model=model,
+            tools=(
+                web_search.__tool_definition__,
+                academic_search.__tool_definition__,
+            ),
+            output_format=extract_pydantic_schema(ResearchReport),
+        )
+    )
+
+    result = await agent.query(question)
+    if result.structured_output:
+        report_obj = ResearchReport.model_validate(result.structured_output)
+        print(f"Confidence: {report_obj.confidence}")
+        print(f"Findings: {len(report_obj.key_findings)}")
+        print("Executive summary:")
+        print(textwrap.fill(report_obj.executive_summary, width=70))
+        return
+
+    print(result.text)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    question = os.environ.get(
+        "RESEARCH_QUESTION",
+        "What are the causes and consequences of climate change?",
+    )
+    if "--live" in sys.argv:
+        asyncio.run(live(question))
+    else:
+        asyncio.run(main())

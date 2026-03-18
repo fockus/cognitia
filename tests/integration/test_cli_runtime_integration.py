@@ -72,7 +72,9 @@ def _runtime_config() -> RuntimeConfig:
 
 
 def _cli_config() -> CliConfig:
-    return CliConfig(command=["claude", "--print", "-"])
+    return CliConfig(
+        command=["claude", "--print", "--verbose", "--output-format", "stream-json", "-"]
+    )
 
 
 # ---------------------------------------------------------------------------
