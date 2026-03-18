@@ -31,6 +31,7 @@ from cognitia.protocols.session import (
     SessionManager,
     SessionRehydrator,
 )
+from cognitia.protocols.multi_agent import AgentTool
 from cognitia.protocols.tools import LocalToolResolver, ToolIdCodec
 
 # Re-export AgentRuntime if available
@@ -40,6 +41,7 @@ with contextlib.suppress(ImportError):
     from cognitia.runtime.base import AgentRuntime  # noqa: F401
 
 __all__ = [
+    "AgentTool",
     "ContextBuilder",
     "FactStore",
     "GoalStore",
