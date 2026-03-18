@@ -1,6 +1,11 @@
 """Cognitia — LLM-agnostic framework for building AI agents."""
 
-__version__ = "0.4.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("cognitia")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 from cognitia.agent import Agent, AgentConfig, Conversation, Result, tool
 from cognitia.protocols import (

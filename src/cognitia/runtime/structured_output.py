@@ -8,6 +8,69 @@ from typing import Any
 from cognitia.runtime.thin.parsers import strip_markdown_fences as _strip_markdown_fences
 
 
+def validate_structured_output(text: str, output_type: type) -> Any:
+    """Parse JSON from text and validate against a Pydantic model.
+
+    Strips markdown fences before parsing. Returns a validated model instance.
+
+    Raises:
+        ValueError: if text is not valid JSON.
+        pydantic.ValidationError: if JSON does not match the model schema.
+    """
+    cleaned = _strip_markdown_fences(text).strip()
+    try:
+        json.loads(cleaned)  # validate JSON syntax first
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON: {exc}") from exc
+    return output_type.model_validate_json(cleaned)
+
+
+def extract_pydantic_schema(output_type: type) -> dict[str, Any]:
+    """Extract JSON Schema dict from a Pydantic model class."""
+    return output_type.model_json_schema()
+
+
+def resolve_structured_output(
+    text: str,
+    output_format: dict[str, Any] | None,
+    output_type: type | None,
+) -> Any | None:
+    """Resolve structured output: validate via Pydantic if output_type set, else extract JSON.
+
+    Returns:
+        - Pydantic model instance if output_type is set and validation succeeds
+        - dict/list if output_format is set (no output_type) and JSON parses
+        - None if no structured output configured
+
+    Raises:
+        ValueError: if output_type is set but text is not valid JSON
+        pydantic.ValidationError: if output_type is set but JSON doesn't match schema
+    """
+    if output_type is not None:
+        return validate_structured_output(text, output_type)
+    return extract_structured_output(text, output_format)
+
+
+def try_resolve_structured_output(
+    text: str,
+    output_format: dict[str, Any] | None,
+    output_type: type | None,
+) -> tuple[Any | None, str | None]:
+    """Try to resolve structured output, returning (result, error_message).
+
+    If output_type is set and validation fails, returns (None, error_str).
+    If no output_type, falls back to extract_structured_output (never errors).
+    On success returns (parsed_output, None).
+    """
+    if output_type is not None:
+        try:
+            parsed = validate_structured_output(text, output_type)
+            return parsed, None
+        except (ValueError, Exception) as exc:
+            return None, str(exc)
+    return extract_structured_output(text, output_format), None
+
+
 def append_structured_output_instruction(
     system_prompt: str,
     output_format: dict[str, Any] | None,
@@ -23,15 +86,15 @@ def append_structured_output_instruction(
     if final_response_field is not None:
         instruction = (
             "\n\n## Structured output\n"
-            "Финальный ответ должен соответствовать JSON Schema ниже.\n"
-            f"Помести JSON целиком в поле `{final_response_field}` без markdown и пояснений.\n"
+            "Your final response must be valid JSON conforming to the schema below.\n"
+            f"Place the entire JSON in the `{final_response_field}` field, with no markdown or explanations.\n"
             f"Schema: {schema_json}"
         )
     else:
         instruction = (
             "\n\n## Structured output\n"
-            "Финальный ответ должен быть только валидным JSON, соответствующим JSON Schema ниже.\n"
-            "Без markdown-обёртки и без пояснений.\n"
+            "Your final response must be valid JSON only, conforming to the schema below.\n"
+            "No markdown wrapping and no explanations.\n"
             f"Schema: {schema_json}"
         )
     return f"{system_prompt}{instruction}"

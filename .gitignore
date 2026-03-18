@@ -4,6 +4,8 @@ __pycache__/
 
 .memory-bank/
 .claude/
+RULES.md
+CLAUDE.md
 
 .pytest_cache/
 .mypy_cache/

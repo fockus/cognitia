@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -223,6 +224,32 @@ class TestThinRuntimeConversational:
         final = [e for e in events if e.type == "final"]
         assert len(final) == 1
         assert final[0].data["text"] == "Повторный ответ"
+
+    @pytest.mark.asyncio
+    async def test_conversational_streaming_without_postprocessing_keeps_eager_deltas(self) -> None:
+        """Без guardrails/output_type/retry чанки стримятся eagerly как раньше."""
+
+        async def streaming_llm(
+            messages: list[dict[str, str]],
+            system_prompt: str,
+            **kwargs: Any,
+        ) -> Any:
+            if kwargs.get("stream"):
+                async def _stream():
+                    yield '{"type":"final","final_message":"Hel'
+                    yield 'lo"}'
+
+                return _stream()
+            raise AssertionError("non-stream fallback is not expected")
+
+        runtime = ThinRuntime(llm_call=streaming_llm)
+
+        events = await collect(runtime, "Привет", mode_hint="conversational")
+        deltas = [event.data["text"] for event in events if event.type == "assistant_delta"]
+        final = next(event for event in events if event.type == "final")
+
+        assert deltas == ['{"type":"final","final_message":"Hel', 'lo"}']
+        assert final.data["text"] == "Hello"
 
     @pytest.mark.asyncio
     async def test_parse_json_inside_wrapped_text(self) -> None:

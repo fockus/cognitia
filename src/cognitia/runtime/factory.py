@@ -7,13 +7,11 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from cognitia.runtime.base import AgentRuntime
 from cognitia.runtime.capabilities import (
     CapabilityRequirements,
     RuntimeCapabilities,
-    get_runtime_capabilities,
 )
 from cognitia.runtime.types import (
     VALID_RUNTIME_NAMES,
@@ -21,6 +19,9 @@ from cognitia.runtime.types import (
     RuntimeErrorData,
     RuntimeEvent,
 )
+
+if TYPE_CHECKING:
+    from cognitia.runtime.registry import RuntimeRegistry
 
 
 class RuntimeFactory:
@@ -30,11 +31,39 @@ class RuntimeFactory:
     - claude_sdk: ClaudeCodeRuntime (обёртка claude-agent-sdk)
     - deepagents: DeepAgentsRuntime (LangChain, optional dep)
     - thin: ThinRuntime (собственный loop)
+    - Любой кастомный runtime, зарегистрированный в RuntimeRegistry
 
     Использование:
         factory = RuntimeFactory()
         runtime = factory.create(config=RuntimeConfig(runtime_name="thin"))
+
+        # С кастомным registry:
+        factory = RuntimeFactory(registry=my_registry)
     """
+
+    def __init__(self, registry: RuntimeRegistry | None = None) -> None:
+        self._registry = registry
+
+    @property
+    def _effective_registry(self) -> RuntimeRegistry | None:
+        """Lazy resolve registry: explicit > default singleton."""
+        if self._registry is not None:
+            return self._registry
+        try:
+            from cognitia.runtime.registry import get_default_registry
+
+            return get_default_registry()
+        except Exception:
+            return None
+
+    def _is_valid_name(self, name: str) -> bool:
+        """Check if name is valid (static set + registry)."""
+        if name in VALID_RUNTIME_NAMES:
+            return True
+        registry = self._effective_registry
+        if registry is not None and registry.is_registered(name):
+            return True
+        return False
 
     def resolve_runtime_name(
         self,
@@ -46,16 +75,16 @@ class RuntimeFactory:
         Приоритет: runtime_override > config.runtime_name > env > default.
         """
         # 1. Явный override (CLI flag, per-request)
-        if runtime_override and runtime_override in VALID_RUNTIME_NAMES:
+        if runtime_override and self._is_valid_name(runtime_override):
             return runtime_override
 
         # 2. Из конфигурации
-        if config and config.runtime_name in VALID_RUNTIME_NAMES:
+        if config and self._is_valid_name(config.runtime_name):
             return config.runtime_name
 
         # 3. Из переменной окружения
         env_runtime = os.environ.get("COGNITIA_RUNTIME", "").strip().lower()
-        if env_runtime in VALID_RUNTIME_NAMES:
+        if self._is_valid_name(env_runtime):
             return env_runtime
 
         # 4. Default
@@ -67,8 +96,10 @@ class RuntimeFactory:
         runtime_override: str | None = None,
     ) -> RuntimeCapabilities:
         """Получить capability descriptor без запуска runtime."""
+        from cognitia.runtime.registry import resolve_runtime_capabilities
+
         name = self.resolve_runtime_name(config, runtime_override)
-        return get_runtime_capabilities(name)
+        return resolve_runtime_capabilities(name, registry=self._effective_registry)
 
     def validate_capabilities(
         self,
@@ -89,7 +120,7 @@ class RuntimeFactory:
         return RuntimeErrorData(
             kind="capability_unsupported",
             message=(
-                f"Runtime '{caps.runtime_name}' не поддерживает требуемые capabilities: "
+                f"Runtime '{caps.runtime_name}' does not support required capabilities: "
                 f"{', '.join(missing)}"
             ),
             recoverable=False,
@@ -104,7 +135,7 @@ class RuntimeFactory:
         config: RuntimeConfig | None = None,
         runtime_override: str | None = None,
         **kwargs: Any,
-    ) -> AgentRuntime:
+    ) -> Any:
         """Создать runtime по конфигурации.
 
         Args:
@@ -116,7 +147,7 @@ class RuntimeFactory:
             Экземпляр AgentRuntime.
 
         Raises:
-            ValueError: Неизвестный runtime.
+            ValueError: Unknown runtime.
         """
         name = self.resolve_runtime_name(config, runtime_override)
         effective_config = config or RuntimeConfig(runtime_name=name)
@@ -131,6 +162,23 @@ class RuntimeFactory:
             if cap_error is not None:
                 return _ErrorRuntime(cap_error)
 
+        # Try registry first (supports builtins + custom runtimes)
+        registry = self._effective_registry
+        if registry is not None:
+            factory_fn = registry.get(name)
+            if factory_fn is not None:
+                try:
+                    return factory_fn(effective_config, **kwargs)
+                except ImportError:
+                    return _ErrorRuntime(
+                        RuntimeErrorData(
+                            kind="dependency_missing",
+                            message=f"Dependencies for runtime '{name}' not installed.",
+                            recoverable=False,
+                        )
+                    )
+
+        # Fallback: legacy if/elif for backward compat (if registry unavailable)
         if name == "claude_sdk":
             return self._create_claude_code(effective_config, **kwargs)
         elif name == "deepagents":
@@ -139,15 +187,15 @@ class RuntimeFactory:
             return self._create_thin(effective_config, **kwargs)
         else:
             raise ValueError(
-                f"Неизвестный runtime: '{name}'. "
-                f"Допустимые: {', '.join(sorted(VALID_RUNTIME_NAMES))}"
+                f"Unknown runtime: '{name}'. "
+                f"Allowed: {', '.join(sorted(VALID_RUNTIME_NAMES))}"
             )
 
     def _create_claude_code(
         self,
         config: RuntimeConfig,
         **kwargs: Any,
-    ) -> AgentRuntime:
+    ) -> Any:
         """Создать ClaudeCodeRuntime."""
         try:
             from cognitia.runtime.claude_code import ClaudeCodeRuntime
@@ -157,7 +205,7 @@ class RuntimeFactory:
             return _ErrorRuntime(
                 RuntimeErrorData(
                     kind="dependency_missing",
-                    message="claude-agent-sdk не установлен. Установите: pip install cognitia",
+                    message="claude-agent-sdk is not installed. Install: pip install cognitia",
                     recoverable=False,
                 )
             )
@@ -166,7 +214,7 @@ class RuntimeFactory:
         self,
         config: RuntimeConfig,
         **kwargs: Any,
-    ) -> AgentRuntime:
+    ) -> Any:
         """Создать DeepAgentsRuntime."""
         try:
             from cognitia.runtime.deepagents import DeepAgentsRuntime
@@ -177,7 +225,7 @@ class RuntimeFactory:
                 RuntimeErrorData(
                     kind="dependency_missing",
                     message=(
-                        "langchain-core не установлен. Установите: pip install cognitia[deepagents]"
+                        "langchain-core is not installed. Install: pip install cognitia[deepagents]"
                     ),
                     recoverable=False,
                 )
@@ -187,7 +235,7 @@ class RuntimeFactory:
         self,
         config: RuntimeConfig,
         **kwargs: Any,
-    ) -> AgentRuntime:
+    ) -> Any:
         """Создать ThinRuntime."""
         try:
             from cognitia.runtime.thin import ThinRuntime
@@ -203,7 +251,7 @@ class RuntimeFactory:
             return _ErrorRuntime(
                 RuntimeErrorData(
                     kind="dependency_missing",
-                    message=("anthropic не установлен. Установите: pip install cognitia[thin]"),
+                    message=("anthropic is not installed. Install: pip install cognitia[thin]"),
                     recoverable=False,
                 )
             )

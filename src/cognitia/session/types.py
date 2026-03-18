@@ -1,8 +1,9 @@
-"""Типы для управления сессиями."""
+"""Session management types."""
 
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class SessionKey:
-    """Ключ сессии = (пользователь, тема)."""
+    """Session key = (user, topic)."""
 
     user_id: str
     topic_id: str
@@ -25,32 +26,41 @@ class SessionKey:
 
 @dataclass
 class SessionState:
-    """Состояние активной сессии."""
+    """Active session state."""
 
     key: SessionKey
     adapter: RuntimePort | None = None
-    # Новый runtime-контракт (AgentRuntime v1). SessionManager использует его в приоритете.
+    # AgentRuntime v1 contract. SessionManager uses this in priority.
     runtime: AgentRuntime | None = None
     runtime_config: RuntimeConfig | None = None
     system_prompt: str = ""
     active_tools: list[ToolSpec] = field(default_factory=list)
     role_id: str = "default"
     active_skill_ids: list[str] = field(default_factory=list)
-    # История для legacy stream_reply-path (runtime без adapter).
+    # History for legacy stream_reply-path (runtime without adapter).
     runtime_messages: list[Message] = field(default_factory=list)
     is_rehydrated: bool = False
     tool_failure_count: int = 0
 
     # --- Session TTL ---
-    # Время последней активности (monotonic clock). Используется SessionManager для eviction.
+    # Last activity time (monotonic clock). Used by SessionManager for eviction.
     last_activity_at: float = field(default_factory=time.monotonic)
 
     # --- Orchestrator delegation ---
-    # role_id из которого пришла делегация (None = нет активной делегации)
+    # role_id from which delegation originated (None = no active delegation)
     delegated_from: str | None = None
-    # Summary, переданный при делегировании / возврате
+    # Summary passed during delegation / return
     delegation_summary: str | None = None
-    # Счётчик turn'ов внутри делегированной роли (для автовозврата)
+    # Turn counter inside delegated role (for auto-return)
     delegation_turn_count: int = 0
-    # Отложенная делегация: role_id для следующего turn'а (установлен delegate_to_role)
+    # Deferred delegation: role_id for next turn (set by delegate_to_role)
     pending_delegation: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.adapter is not None:
+            warnings.warn(
+                "SessionState.adapter (RuntimePort) is deprecated. "
+                "Use SessionState.runtime (AgentRuntime) instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )

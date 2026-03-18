@@ -1,0 +1,470 @@
+"""Integration: ThinRuntime + Pydantic structured output (validate + retry)."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import pytest
+from pydantic import BaseModel
+
+from cognitia.runtime.thin.runtime import ThinRuntime
+from cognitia.runtime.types import Message, RuntimeConfig
+
+
+class WeatherReport(BaseModel):
+    city: str
+    temperature: float
+    summary: str
+
+
+class TestThinRuntimeStructuredOutputIntegration:
+    """ThinRuntime с output_type — validate, retry, backward compat."""
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_success(self) -> None:
+        """Mock LLM возвращает валидный JSON -> final event с parsed model."""
+        valid_json = json.dumps(
+            {"city": "Moscow", "temperature": -5.0, "summary": "Cold"}
+        )
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            return json.dumps(
+                {"type": "final", "final_message": valid_json}
+            )
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_iterations=3,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather in Moscow")],
+            system_prompt="You are a weather bot.",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        final_events = [e for e in events if e.type == "final"]
+        assert len(final_events) == 1
+
+        final = final_events[0]
+        structured = final.data.get("structured_output")
+        assert structured is not None
+        assert isinstance(structured, WeatherReport)
+        assert structured.city == "Moscow"
+        assert structured.temperature == -5.0
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_retry(self) -> None:
+        """Mock LLM: первый ответ невалидный, второй валидный -> retry works."""
+        call_count = 0
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                # Первый вызов — final с невалидным JSON
+                return json.dumps(
+                    {"type": "final", "final_message": "not a json"}
+                )
+            # Retry — валидный ответ
+            valid = json.dumps(
+                {"city": "SPb", "temperature": 2.0, "summary": "Cloudy"}
+            )
+            return json.dumps(
+                {"type": "final", "final_message": valid}
+            )
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_model_retries=2,
+            max_iterations=6,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather in SPb")],
+            system_prompt="You are a weather bot.",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        final_events = [e for e in events if e.type == "final"]
+        assert len(final_events) == 1
+
+        structured = final_events[0].data.get("structured_output")
+        assert isinstance(structured, WeatherReport)
+        assert structured.city == "SPb"
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_streaming_retry_buffers_invalid_first_reply(
+        self,
+    ) -> None:
+        """Streaming invalid reply is not emitted before structured-output retry succeeds."""
+        call_count = 0
+        valid = json.dumps(
+            {"city": "Paris", "temperature": 18.0, "summary": "Sunny"}
+        )
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> Any:
+            nonlocal call_count
+            call_count += 1
+
+            if kwargs.get("stream"):
+                async def _stream():
+                    yield '{"type":"final","final_message":"not json"}'
+
+                return _stream()
+
+            return json.dumps({"type": "final", "final_message": valid})
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_model_retries=1,
+            max_iterations=4,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather in Paris")],
+            system_prompt="Return JSON.",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        deltas = [event.data["text"] for event in events if event.type == "assistant_delta"]
+        final = next(event for event in events if event.type == "final")
+        assert call_count == 2
+        assert deltas == [valid]
+        assert final.data["text"] == valid
+        assert isinstance(final.data["structured_output"], WeatherReport)
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_backward_compat(self) -> None:
+        """output_format dict без output_type работает как раньше."""
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            return json.dumps(
+                {"type": "final", "final_message": '{"x": 42}'}
+            )
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_format={"type": "object", "properties": {"x": {"type": "integer"}}},
+            max_iterations=3,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Give me x")],
+            system_prompt="Return JSON.",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        final_events = [e for e in events if e.type == "final"]
+        assert len(final_events) == 1
+
+        structured = final_events[0].data.get("structured_output")
+        # С dict output_format (без output_type) — structured output это dict, не model
+        assert structured == {"x": 42}
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_retry_exhausted(self) -> None:
+        """Все retry-попытки исчерпаны -> error event."""
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            # Всегда возвращает final с невалидным JSON для output_type
+            return json.dumps(
+                {"type": "final", "final_message": "not valid json ever"}
+            )
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_model_retries=2,
+            max_iterations=6,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather?")],
+            system_prompt="Return JSON.",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        error_events = [e for e in events if e.type == "error"]
+        assert len(error_events) >= 1
+        assert error_events[0].data["kind"] == "bad_model_output"
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_nested_model(self) -> None:
+        """Nested Pydantic model as output_type — schema extracted, validation works."""
+        from pydantic import BaseModel as PydanticBaseModel
+
+        class Address(PydanticBaseModel):
+            city: str
+            country: str
+
+        class Person(PydanticBaseModel):
+            name: str
+            address: Address
+
+        valid_json = json.dumps(
+            {"name": "Alice", "address": {"city": "Berlin", "country": "DE"}}
+        )
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            return json.dumps({"type": "final", "final_message": valid_json})
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=Person,
+            max_iterations=3,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Who is Alice?")],
+            system_prompt="Return person info.",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        final_events = [e for e in events if e.type == "final"]
+        assert len(final_events) == 1
+        structured = final_events[0].data.get("structured_output")
+        assert isinstance(structured, Person)
+        assert structured.address.city == "Berlin"
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_no_output_type_no_validation(self) -> None:
+        """Without output_type, no validation occurs — raw text returned."""
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            return json.dumps(
+                {"type": "final", "final_message": "Hello, world!"}
+            )
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            max_iterations=3,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Say hi")],
+            system_prompt="Be friendly.",
+            active_tools=[],
+        ):
+            events.append(event)
+
+        final_events = [e for e in events if e.type == "final"]
+        assert len(final_events) == 1
+        assert final_events[0].data["text"] == "Hello, world!"
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_retry_in_react_mode(self) -> None:
+        """React mode validates output_type and retries instead of silently dropping errors."""
+        call_count = 0
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return json.dumps(
+                    {"type": "tool_call", "tool": {"name": "lookup", "args": {"city": "Kazan"}}}
+                )
+            if call_count == 2:
+                return json.dumps({"type": "final", "final_message": "not json"})
+            valid = json.dumps(
+                {"city": "Kazan", "temperature": 10.0, "summary": "Warm"}
+            )
+            return json.dumps({"type": "final", "final_message": valid})
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_model_retries=2,
+            max_iterations=6,
+        )
+        runtime = ThinRuntime(
+            config=config,
+            llm_call=fake_llm,
+            local_tools={"lookup": lambda city: city},
+        )
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather in Kazan")],
+            system_prompt="You are a weather bot.",
+            active_tools=[],
+            mode_hint="react",
+        ):
+            events.append(event)
+
+        final_events = [e for e in events if e.type == "final"]
+        assert len(final_events) == 1
+        structured = final_events[0].data.get("structured_output")
+        assert isinstance(structured, WeatherReport)
+        assert structured.city == "Kazan"
+        assert any(event.type == "tool_call_started" for event in events)
+        assert any(event.type == "tool_call_finished" for event in events)
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_streaming_retry_in_react_mode_buffers_delta(
+        self,
+    ) -> None:
+        """React mode does not emit invalid streaming payload before structured-output retry."""
+        call_count = 0
+        valid = json.dumps(
+            {"city": "Kazan", "temperature": 10.0, "summary": "Warm"}
+        )
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> Any:
+            nonlocal call_count
+            call_count += 1
+            if kwargs.get("stream"):
+                async def _stream():
+                    yield '{"type":"final","final_message":"not json"}'
+
+                return _stream()
+            return json.dumps({"type": "final", "final_message": valid})
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_model_retries=1,
+            max_iterations=4,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather in Kazan")],
+            system_prompt="Return JSON.",
+            active_tools=[],
+            mode_hint="react",
+        ):
+            events.append(event)
+
+        deltas = [event.data["text"] for event in events if event.type == "assistant_delta"]
+        final = next(event for event in events if event.type == "final")
+        assert call_count == 2
+        assert deltas == [valid]
+        assert final.data["text"] == valid
+        assert isinstance(final.data["structured_output"], WeatherReport)
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_retry_exhausted_in_react_mode(self) -> None:
+        """React mode returns bad_model_output when structured-output retries are exhausted."""
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            return json.dumps({"type": "final", "final_message": "still not json"})
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_model_retries=1,
+            max_iterations=4,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather?")],
+            system_prompt="Return JSON.",
+            active_tools=[],
+            mode_hint="react",
+        ):
+            events.append(event)
+
+        assert not any(event.type == "final" for event in events)
+        error_events = [event for event in events if event.type == "error"]
+        assert len(error_events) == 1
+        assert error_events[0].data["kind"] == "bad_model_output"
+
+    @pytest.mark.asyncio
+    async def test_thin_runtime_structured_output_retry_exhausted_in_planner_mode(self) -> None:
+        """Planner final assembly uses the same structured-output retry/error semantics."""
+        call_count = 0
+
+        async def fake_llm(
+            messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
+        ) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return json.dumps(
+                    {
+                        "type": "plan",
+                        "goal": "Prepare weather report",
+                        "steps": [
+                            {
+                                "id": "s1",
+                                "title": "Collect context",
+                                "mode": "conversational",
+                            }
+                        ],
+                        "final_format": "Return JSON",
+                    }
+                )
+            if call_count == 2:
+                return json.dumps({"type": "final", "final_message": "step complete"})
+            return json.dumps({"type": "final", "final_message": "not json"})
+
+        config = RuntimeConfig(
+            runtime_name="thin",
+            output_type=WeatherReport,
+            max_model_retries=1,
+            max_iterations=6,
+        )
+        runtime = ThinRuntime(config=config, llm_call=fake_llm)
+
+        events: list[Any] = []
+        async for event in runtime.run(
+            messages=[Message(role="user", content="Weather in Kazan")],
+            system_prompt="Return JSON.",
+            active_tools=[],
+            mode_hint="planner",
+        ):
+            events.append(event)
+
+        assert not any(event.type == "final" for event in events)
+        error_events = [event for event in events if event.type == "error"]
+        assert len(error_events) == 1
+        assert error_events[0].data["kind"] == "bad_model_output"

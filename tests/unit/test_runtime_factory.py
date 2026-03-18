@@ -104,7 +104,7 @@ class TestCreate:
 
     def test_invalid_name_in_create(self, factory: RuntimeFactory) -> None:
         """Невалидное имя в config → ValueError в RuntimeConfig.__post_init__."""
-        with pytest.raises(ValueError, match="Неизвестный runtime"):
+        with pytest.raises(ValueError, match="Unknown runtime"):
             RuntimeConfig(runtime_name="bad_name")
 
     def test_create_with_unsupported_override_returns_error_runtime(
@@ -159,6 +159,36 @@ class TestCapabilities:
         assert err is not None
         assert err.kind == "capability_unsupported"
         assert "tier:full" in err.details["missing"]
+
+    def test_get_capabilities_for_custom_runtime(self) -> None:
+        from cognitia.runtime.capabilities import RuntimeCapabilities
+        from cognitia.runtime.registry import RuntimeRegistry
+
+        registry = RuntimeRegistry()
+        custom_caps = RuntimeCapabilities(runtime_name="custom_factory_rt", tier="light")
+        registry.register(
+            "custom_factory_rt",
+            lambda config, **kwargs: object(),
+            capabilities=custom_caps,
+        )
+
+        factory = RuntimeFactory(registry=registry)
+        cfg = RuntimeConfig.__new__(RuntimeConfig)
+        object.__setattr__(cfg, "runtime_name", "custom_factory_rt")
+        object.__setattr__(cfg, "feature_mode", "portable")
+        object.__setattr__(cfg, "required_capabilities", None)
+        object.__setattr__(cfg, "output_type", None)
+        object.__setattr__(cfg, "output_format", None)
+        object.__setattr__(cfg, "max_iterations", 6)
+        object.__setattr__(cfg, "max_tool_calls", 8)
+        object.__setattr__(cfg, "max_model_retries", 2)
+        object.__setattr__(cfg, "model", "claude-sonnet-4-20250514")
+        object.__setattr__(cfg, "base_url", None)
+        object.__setattr__(cfg, "extra", {})
+        object.__setattr__(cfg, "allow_native_features", False)
+        object.__setattr__(cfg, "native_config", {})
+        caps = factory.get_capabilities(cfg)
+        assert caps is custom_caps
 
 
 # ---------------------------------------------------------------------------

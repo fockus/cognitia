@@ -15,12 +15,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from cognitia.runtime.cancellation import CancellationToken  # noqa: TC001
 from cognitia.runtime.capabilities import (
     VALID_FEATURE_MODES,
     VALID_RUNTIME_NAMES,
     CapabilityRequirements,
-    get_runtime_capabilities,
 )
+from cognitia.runtime.cost import CostBudget  # noqa: TC001
 
 # ---------------------------------------------------------------------------
 # Message — каноническое сообщение для runtime
@@ -105,6 +106,9 @@ RUNTIME_ERROR_KINDS = frozenset(
         "tool_error",  # ошибка выполнения инструмента
         "dependency_missing",  # отсутствует optional dependency
         "capability_unsupported",  # runtime не поддерживает требуемые features
+        "cancelled",  # operation cancelled via CancellationToken
+        "guardrail_tripwire",  # guardrail check failed (input or output)
+        "retry",  # retrying LLM call after transient failure
     }
 )
 
@@ -325,6 +329,36 @@ class RuntimeEvent:
         """Ошибка runtime."""
         return RuntimeEvent(type="error", data=error.to_dict())
 
+    @property
+    def text(self) -> str:
+        """Text content for assistant_delta, status, and final events."""
+        return self.data.get("text", "")
+
+    @property
+    def tool_name(self) -> str:
+        """Tool name for tool_call_started/finished events."""
+        return self.data.get("name", "")
+
+    @property
+    def is_final(self) -> bool:
+        """True if this is a final event."""
+        return self.type == "final"
+
+    @property
+    def is_error(self) -> bool:
+        """True if this is an error event."""
+        return self.type == "error"
+
+    @property
+    def is_text(self) -> bool:
+        """True if this is an assistant_delta (text streaming) event."""
+        return self.type == "assistant_delta"
+
+    @property
+    def structured_output(self) -> Any:
+        """Structured output from final event, or None."""
+        return self.data.get("structured_output")
+
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в dict."""
         return {"type": self.type, "data": self.data}
@@ -420,6 +454,10 @@ class RuntimeConfig:
     # Structured output schema для portable/native runtime path
     output_format: dict[str, Any] | None = None
 
+    # Pydantic model type для автоматической валидации structured output
+    # Если задан и output_format=None, output_format генерируется из model_json_schema()
+    output_type: type | None = None
+
     # Дополнительные параметры (extensible)
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -429,24 +467,69 @@ class RuntimeConfig:
     allow_native_features: bool = False
     native_config: dict[str, Any] = field(default_factory=dict)
 
+    # Cooperative cancellation token
+    cancellation_token: CancellationToken | None = None
+
+    # Cost budget tracking
+    cost_budget: CostBudget | None = None
+
+    # Guardrails — checked before/after LLM calls
+    input_guardrails: list[Any] = field(default_factory=list)  # list[InputGuardrail]
+    output_guardrails: list[Any] = field(default_factory=list)  # list[OutputGuardrail]
+
+    # Pre-LLM input filters — applied to messages/system_prompt before turn
+    input_filters: list[Any] = field(default_factory=list)  # list[InputFilter]
+
+    # Retry policy for LLM call failures (e.g. ExponentialBackoff)
+    retry_policy: Any | None = None  # RetryPolicy
+
+    # Observability: EventBus for pub-sub runtime events
+    event_bus: Any | None = None  # EventBus
+
+    # Observability: Tracer for span-based tracing
+    tracer: Any | None = None  # Tracer
+
+    # RAG: Retriever for automatic context injection
+    retriever: Any | None = None  # Retriever
+
+    @staticmethod
+    def _get_valid_names() -> frozenset[str]:
+        """Get valid runtime names: static builtins + dynamic registry."""
+        try:
+            from cognitia.runtime.registry import get_valid_runtime_names
+
+            return get_valid_runtime_names()
+        except Exception:
+            return VALID_RUNTIME_NAMES
+
     def __post_init__(self) -> None:
-        if self.runtime_name not in VALID_RUNTIME_NAMES:
+        # Auto-generate output_format from output_type if not explicitly provided
+        if self.output_type is not None and self.output_format is None:
+            schema_builder = getattr(self.output_type, "model_json_schema", None)
+            if not callable(schema_builder):
+                raise TypeError("output_type must define model_json_schema()")
+            self.output_format = schema_builder()
+
+        valid_names = self._get_valid_names()
+        if self.runtime_name not in valid_names:
             raise ValueError(
-                f"Неизвестный runtime: '{self.runtime_name}'. "
-                f"Допустимые: {', '.join(sorted(VALID_RUNTIME_NAMES))}"
+                f"Unknown runtime: '{self.runtime_name}'. "
+                f"Allowed: {', '.join(sorted(valid_names))}"
             )
         if self.feature_mode not in VALID_FEATURE_MODES:
             raise ValueError(
-                f"Неизвестный feature_mode: '{self.feature_mode}'. "
-                f"Допустимые: {', '.join(sorted(VALID_FEATURE_MODES))}"
+                f"Unknown feature_mode: '{self.feature_mode}'. "
+                f"Allowed: {', '.join(sorted(VALID_FEATURE_MODES))}"
             )
         if self.required_capabilities is not None:
-            caps = get_runtime_capabilities(self.runtime_name)
+            from cognitia.runtime.registry import resolve_runtime_capabilities
+
+            caps = resolve_runtime_capabilities(self.runtime_name)
             missing = caps.missing(self.required_capabilities)
             if missing:
                 raise ValueError(
                     "Runtime "
-                    f"'{self.runtime_name}' не поддерживает требуемые capabilities: "
+                    f"'{self.runtime_name}' does not support required capabilities: "
                     f"{', '.join(missing)}"
                 )
 

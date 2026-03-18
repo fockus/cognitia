@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from typing import Any
 
 from cognitia.runtime import StreamEvent
 from cognitia.runtime.types import Message, RuntimeErrorData, RuntimeEvent, ToolSpec
+from cognitia.session.backends import SessionBackend
 from cognitia.session.types import SessionKey, SessionState
 
 logger = logging.getLogger(__name__)
@@ -23,10 +25,15 @@ class InMemorySessionManager:
     - TTL eviction: сессия считается протухшей после ttl_seconds неактивности
     """
 
-    def __init__(self, ttl_seconds: float = 900.0) -> None:
+    def __init__(
+        self,
+        ttl_seconds: float = 900.0,
+        backend: SessionBackend | None = None,
+    ) -> None:
         self._sessions: dict[str, SessionState] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._ttl_seconds = ttl_seconds
+        self._backend = backend
 
     def _key_str(self, key: SessionKey) -> str:
         return str(key)
@@ -38,18 +45,135 @@ class InMemorySessionManager:
             self._locks[ks] = asyncio.Lock()
         return self._locks[ks]
 
+    @staticmethod
+    def _run_awaitable_sync(awaitable: Awaitable[Any]) -> Any:
+        """Synchronously execute backend coroutine from sync manager APIs."""
+        async def _await_value() -> Any:
+            return await awaitable
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(_await_value())
+
+        result: dict[str, Any] = {}
+        error: dict[str, BaseException] = {}
+
+        def runner() -> None:
+            try:
+                result["value"] = asyncio.run(_await_value())
+            except BaseException as exc:  # pragma: no cover - defensive bridge
+                error["error"] = exc
+
+        thread = threading.Thread(target=runner, daemon=True)
+        thread.start()
+        thread.join()
+
+        if "error" in error:
+            raise error["error"]
+        return result.get("value")
+
+    @staticmethod
+    def _serialize_state(state: SessionState) -> dict[str, Any]:
+        """Persist only serializable session fields."""
+        return {
+            "key": {
+                "user_id": state.key.user_id,
+                "topic_id": state.key.topic_id,
+            },
+            "system_prompt": state.system_prompt,
+            "active_tools": [tool.to_dict() for tool in state.active_tools],
+            "role_id": state.role_id,
+            "active_skill_ids": list(state.active_skill_ids),
+            "runtime_messages": [message.to_dict() for message in state.runtime_messages],
+            "is_rehydrated": state.is_rehydrated,
+            "tool_failure_count": state.tool_failure_count,
+            "last_activity_at": state.last_activity_at,
+            "delegated_from": state.delegated_from,
+            "delegation_summary": state.delegation_summary,
+            "delegation_turn_count": state.delegation_turn_count,
+            "pending_delegation": state.pending_delegation,
+        }
+
+    @staticmethod
+    def _deserialize_state(payload: dict[str, Any]) -> SessionState:
+        """Restore a serializable snapshot into a live SessionState shell."""
+        key_payload = payload.get("key", {})
+        return SessionState(
+            key=SessionKey(
+                user_id=str(key_payload.get("user_id", "")),
+                topic_id=str(key_payload.get("topic_id", "")),
+            ),
+            system_prompt=str(payload.get("system_prompt", "")),
+            active_tools=[
+                ToolSpec(**tool_payload) for tool_payload in payload.get("active_tools", [])
+            ],
+            role_id=str(payload.get("role_id", "default")),
+            active_skill_ids=list(payload.get("active_skill_ids", [])),
+            runtime_messages=[
+                Message(**message_payload)
+                for message_payload in payload.get("runtime_messages", [])
+            ],
+            is_rehydrated=bool(payload.get("is_rehydrated", False)),
+            tool_failure_count=int(payload.get("tool_failure_count", 0)),
+            last_activity_at=float(payload.get("last_activity_at", time.monotonic())),
+            delegated_from=payload.get("delegated_from"),
+            delegation_summary=payload.get("delegation_summary"),
+            delegation_turn_count=int(payload.get("delegation_turn_count", 0)),
+            pending_delegation=payload.get("pending_delegation"),
+        )
+
+    def _load_snapshot_sync(self, key: SessionKey) -> SessionState | None:
+        """Load a session snapshot from backend and cache it in memory."""
+        if self._backend is None:
+            return None
+
+        payload = self._run_awaitable_sync(self._backend.load(self._key_str(key)))
+        if payload is None:
+            return None
+
+        state = self._deserialize_state(payload)
+        state.is_rehydrated = True
+        self._sessions[self._key_str(state.key)] = state
+        return state
+
+    def _persist_state_sync(self, state: SessionState) -> None:
+        if self._backend is None:
+            return
+        self._run_awaitable_sync(
+            self._backend.save(self._key_str(state.key), self._serialize_state(state))
+        )
+
+    async def _persist_state(self, state: SessionState) -> None:
+        if self._backend is None:
+            return
+        await self._backend.save(self._key_str(state.key), self._serialize_state(state))
+
+    def _delete_snapshot_sync(self, key: SessionKey) -> None:
+        if self._backend is None:
+            return
+        self._run_awaitable_sync(self._backend.delete(self._key_str(key)))
+
+    async def _delete_snapshot(self, key: SessionKey) -> None:
+        if self._backend is None:
+            return
+        await self._backend.delete(self._key_str(key))
+
     def get(self, key: SessionKey) -> SessionState | None:
         """Получить существующую сессию. Возвращает None если TTL истёк."""
         ks = self._key_str(key)
         state = self._sessions.get(ks)
         if state is None:
-            return None
+            state = self._load_snapshot_sync(key)
+            if state is None:
+                return None
         if (
             self._ttl_seconds > 0
             and (time.monotonic() - state.last_activity_at) > self._ttl_seconds
         ):
-            logger.info("get[%s]: сессия протухла (TTL=%.0fs), удаляю", ks, self._ttl_seconds)
+            logger.info("get[%s]: session expired (TTL=%.0fs), evicting", ks, self._ttl_seconds)
             self._sessions.pop(ks, None)
+            self._delete_snapshot_sync(key)
             return None
         return state
 
@@ -57,6 +181,7 @@ class InMemorySessionManager:
         """Зарегистрировать новую сессию."""
         state.last_activity_at = time.monotonic()
         self._sessions[self._key_str(state.key)] = state
+        self._persist_state_sync(state)
 
     async def close(self, key: SessionKey) -> None:
         """Закрыть сессию и отключить SDK."""
@@ -67,6 +192,7 @@ class InMemorySessionManager:
                 await state.runtime.cleanup()
             elif state.adapter and state.adapter.is_connected:
                 await state.adapter.disconnect()
+        await self._delete_snapshot(key)
         self._locks.pop(ks, None)
 
     async def close_all(self) -> None:
@@ -93,18 +219,19 @@ class InMemorySessionManager:
         """Выполнить turn через AgentRuntime v1 (новый контракт)."""
         ks = self._key_str(key)
         lock = self._get_lock(key)
-        logger.info("run_turn[%s]: ожидание lock (locked=%s)", ks, lock.locked())
+        logger.info("run_turn[%s]: waiting for lock (locked=%s)", ks, lock.locked())
         async with lock:
-            logger.info("run_turn[%s]: lock получен", ks)
+            logger.info("run_turn[%s]: lock acquired", ks)
             state = self.get(key)
             if state:
                 state.last_activity_at = time.monotonic()
+                await self._persist_state(state)
             if not state:
-                logger.error("run_turn[%s]: сессия не найдена", ks)
+                logger.error("run_turn[%s]: session not found", ks)
                 yield RuntimeEvent.error(
                     RuntimeErrorData(
                         kind="runtime_crash",
-                        message="Сессия не найдена",
+                        message="Session not found",
                         recoverable=False,
                     )
                 )
@@ -115,14 +242,14 @@ class InMemorySessionManager:
                 yield RuntimeEvent.error(
                     RuntimeErrorData(
                         kind="runtime_crash",
-                        message="Runtime не инициализирован в сессии",
+                        message="Runtime not initialized in session",
                         recoverable=False,
                     )
                 )
                 return
 
             logger.info(
-                "run_turn[%s]: вызов runtime.run() (type=%s, user_text_len=%d)",
+                "run_turn[%s]: calling runtime.run() (type=%s, user_text_len=%d)",
                 ks,
                 type(state.runtime).__name__,
                 len(messages[-1].content) if messages else 0,
@@ -137,8 +264,8 @@ class InMemorySessionManager:
             ):
                 event_count += 1
                 yield event
-            logger.info("run_turn[%s]: завершён, events=%d", ks, event_count)
-        logger.info("run_turn[%s]: lock отпущен", ks)
+            logger.info("run_turn[%s]: completed, events=%d", ks, event_count)
+        logger.info("run_turn[%s]: lock released", ks)
 
     async def stream_reply(self, key: SessionKey, user_text: str) -> AsyncIterator[Any]:
         """Legacy API: отправить сообщение и стримить ответ (RuntimePort/adapter path)."""
@@ -146,12 +273,15 @@ class InMemorySessionManager:
         async with lock:
             state = self.get(key)
             if not state:
-                yield StreamEvent(type="error", text="Сессия не найдена")
+                yield StreamEvent(type="error", text="Session not found")
                 return
+            state.last_activity_at = time.monotonic()
+            await self._persist_state(state)
 
             # Новый runtime путь (fallback для мест, где ещё вызывают stream_reply).
             if state.runtime is not None and state.adapter is None:
                 state.runtime_messages.append(Message(role="user", content=user_text))
+                await self._persist_state(state)
                 full_text = ""
                 assistant_emitted = False
                 async for runtime_event in state.runtime.run(
@@ -180,7 +310,7 @@ class InMemorySessionManager:
                     elif runtime_event.type == "error":
                         yield StreamEvent(
                             type="error",
-                            text=str(runtime_event.data.get("message", "Ошибка runtime")),
+                            text=str(runtime_event.data.get("message", "Runtime error")),
                         )
                         return
                     elif runtime_event.type == "final":
@@ -193,6 +323,7 @@ class InMemorySessionManager:
                             state.runtime_messages.append(
                                 Message(role="assistant", content=full_text),
                             )
+                            await self._persist_state(state)
                         yield StreamEvent(type="done", text=full_text, is_final=True)
                         return
 
@@ -200,11 +331,12 @@ class InMemorySessionManager:
                     state.runtime_messages.append(
                         Message(role="assistant", content=full_text),
                     )
+                    await self._persist_state(state)
                 yield StreamEvent(type="done", text=full_text, is_final=True)
                 return
 
             if not state.adapter or not state.adapter.is_connected:
-                yield StreamEvent(type="error", text="SDK не подключён")
+                yield StreamEvent(type="error", text="SDK not connected")
                 return
 
             async for event in state.adapter.stream_reply(user_text):
@@ -221,4 +353,5 @@ class InMemorySessionManager:
             return False
         state.role_id = role_id
         state.active_skill_ids = skill_ids
+        self._persist_state_sync(state)
         return True

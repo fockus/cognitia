@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
 from cognitia.runtime.types import Message, RuntimeEvent, ToolSpec
+from cognitia.session.backends import InMemorySessionBackend
 from cognitia.session.manager import InMemorySessionManager
 from cognitia.session.types import SessionKey, SessionState
 from conftest import FakeStreamEvent
@@ -108,6 +109,19 @@ class TestUpdateRole:
         result = mgr.update_role(SessionKey("u1", "t1"), "coach", [])
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_update_role_persists_snapshot_to_backend(self) -> None:
+        backend = InMemorySessionBackend()
+        mgr = InMemorySessionManager(backend=backend)
+        mgr.register(_make_state())
+
+        assert mgr.update_role(SessionKey("u1", "t1"), "diagnostician", ["iss"]) is True
+
+        payload = await backend.load("u1:t1")
+        assert payload is not None
+        assert payload["role_id"] == "diagnostician"
+        assert payload["active_skill_ids"] == ["iss"]
+
 
 class TestClose:
     """close / close_all — закрытие сессий."""
@@ -146,6 +160,18 @@ class TestClose:
         s1.adapter.disconnect.assert_awaited_once()
         s2.adapter.disconnect.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_close_all_preserves_backend_snapshots(self) -> None:
+        backend = InMemorySessionBackend()
+        mgr = InMemorySessionManager(backend=backend)
+        mgr.register(_make_state())
+
+        await mgr.close_all()
+
+        payload = await backend.load("u1:t1")
+        assert payload is not None
+        assert payload["role_id"] == "coach"
+
 
 class TestStreamReply:
     """stream_reply — стриминг ответа через адаптер."""
@@ -159,7 +185,7 @@ class TestStreamReply:
             events.append(event)
         assert len(events) == 1
         assert events[0].type == "error"
-        assert "не найдена" in events[0].text
+        assert "not found" in events[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_stream_disconnected_yields_error(self) -> None:
@@ -170,7 +196,7 @@ class TestStreamReply:
         async for event in mgr.stream_reply(SessionKey("u1", "t1"), "привет"):
             events.append(event)
         assert len(events) == 1
-        assert "не подключён" in events[0].text
+        assert "not connected" in events[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_stream_forwards_events(self) -> None:
@@ -220,6 +246,37 @@ class TestStreamReply:
         assert [m.role for m in second_messages] == ["user", "assistant", "user"]
         assert [m.content for m in second_messages] == ["привет", "ok", "как дела?"]
 
+    @pytest.mark.asyncio
+    async def test_stream_runtime_path_persists_history_to_backend(self) -> None:
+        backend = InMemorySessionBackend()
+        mgr = InMemorySessionManager(backend=backend)
+        fake_runtime = _FakeRuntime([RuntimeEvent.final("ok")])
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=fake_runtime,
+            runtime_config=MagicMock(),
+            system_prompt="system",
+            active_tools=[ToolSpec(name="calc", description="d", parameters={})],
+            role_id="coach",
+            active_skill_ids=["skill-1"],
+        )
+        mgr.register(state)
+
+        async for _ in mgr.stream_reply(SessionKey("u1", "t1"), "привет"):
+            pass
+
+        restored_mgr = InMemorySessionManager(backend=backend)
+        restored = restored_mgr.get(SessionKey("u1", "t1"))
+        assert restored is not None
+        assert restored.is_rehydrated is True
+        assert restored.runtime is None
+        assert restored.adapter is None
+        assert restored.runtime_config is None
+        assert [m.role for m in restored.runtime_messages] == ["user", "assistant"]
+        assert [m.content for m in restored.runtime_messages] == ["привет", "ok"]
+        assert restored.active_skill_ids == ["skill-1"]
+        assert restored.active_tools[0].name == "calc"
+
 
 class TestRunTurn:
     """run_turn — новый контракт AgentRuntime v1."""
@@ -238,7 +295,7 @@ class TestRunTurn:
 
         assert len(events) == 1
         assert events[0].type == "error"
-        assert "не найдена" in events[0].data["message"]
+        assert "not found" in events[0].data["message"].lower()
 
     @pytest.mark.asyncio
     async def test_run_turn_forwards_runtime_events(self) -> None:

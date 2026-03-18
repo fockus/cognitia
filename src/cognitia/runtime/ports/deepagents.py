@@ -63,7 +63,7 @@ class DeepAgentsRuntimePort(BaseRuntimePort):
 
                     native["backend"] = FilesystemBackend(root_dir=".", virtual_mode=False)
                 except ImportError:
-                    logger.warning("deepagents FilesystemBackend недоступен, auto-backend пропущен")
+                    logger.warning("deepagents FilesystemBackend unavailable, auto-backend skipped")
             effective_config = replace(effective_config, native_config=native)
 
         super().__init__(

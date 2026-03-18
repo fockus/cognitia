@@ -32,7 +32,7 @@ class TestAppendStructuredOutputInstruction:
         result = append_structured_output_instruction("System", schema)
         assert "Structured output" in result
         assert '"name"' in result
-        assert "JSON Schema" in result
+        assert "schema" in result.lower()
 
     def test_append_with_final_response_field(self) -> None:
         schema: dict[str, Any] = {"type": "object", "properties": {}}
@@ -44,7 +44,7 @@ class TestAppendStructuredOutputInstruction:
     def test_append_without_final_response_field(self) -> None:
         schema: dict[str, Any] = {"type": "object", "properties": {}}
         result = append_structured_output_instruction("System", schema)
-        assert "валидным JSON" in result
+        assert "valid JSON" in result
 
     def test_append_json_schema_type_unwrapped(self) -> None:
         output_format: dict[str, Any] = {

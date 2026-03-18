@@ -26,6 +26,12 @@ from cognitia.runtime.capabilities import (
 )
 from cognitia.runtime.factory import RuntimeFactory
 from cognitia.runtime.model_policy import ModelPolicy
+from cognitia.runtime.registry import (
+    RuntimeRegistry,
+    get_default_registry,
+    get_valid_runtime_names,
+    reset_default_registry,
+)
 from cognitia.runtime.model_registry import ModelRegistry, get_registry, reset_registry
 
 # --- Runtime Ports (каноничные адаптеры AgentRuntime → RuntimePort) ---
@@ -102,6 +108,7 @@ __all__ = [
     "RuntimeErrorData",
     "RuntimeEvent",
     "RuntimeFactory",
+    "RuntimeRegistry",
     "RuntimeTier",
     "StreamEvent",
     "ThinRuntimePort",
@@ -109,10 +116,13 @@ __all__ = [
     "TurnMetrics",
     "convert_event",
     "create_mcp_server",
+    "get_default_registry",
     "get_registry",
     "get_runtime_capabilities",
+    "get_valid_runtime_names",
     "mcp_tool",
     "one_shot_query",
+    "reset_default_registry",
     "reset_registry",
     "resolve_model_name",
     "stream_one_shot_query",

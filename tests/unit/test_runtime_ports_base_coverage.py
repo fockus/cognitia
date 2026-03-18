@@ -152,7 +152,7 @@ class TestBaseRuntimePortStreamReply:
         events = [e async for e in port.stream_reply("hi")]
         assert len(events) == 1
         assert events[0].type == "error"
-        assert "не подключён" in events[0].text
+        assert "not connected" in events[0].text.lower()
 
     async def test_stream_reply_happy_path(self) -> None:
         port = FakeRuntimePort(events=[

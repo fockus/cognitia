@@ -71,17 +71,26 @@ class TestAutoBackendForMemory:
 
     def test_auto_backend_when_memory_but_no_backend(self) -> None:
         """memory_sources + native mode + no backend → auto-create backend."""
-        port = DeepAgentsRuntimePort(
-            system_prompt="test",
-            config=RuntimeConfig(
-                runtime_name="deepagents",
-                feature_mode="native_first",
-                allow_native_features=True,
-            ),
-            memory_sources=["./AGENTS.md"],
-        )
-        assert port._config.native_config.get("memory") == ["./AGENTS.md"]
-        assert port._config.native_config.get("backend") is not None
+        mock_backend = MagicMock()
+        mock_fs_module = MagicMock()
+        mock_fs_module.FilesystemBackend.return_value = mock_backend
+
+        import sys
+        sys.modules["deepagents.backends.filesystem"] = mock_fs_module
+        try:
+            port = DeepAgentsRuntimePort(
+                system_prompt="test",
+                config=RuntimeConfig(
+                    runtime_name="deepagents",
+                    feature_mode="native_first",
+                    allow_native_features=True,
+                ),
+                memory_sources=["./AGENTS.md"],
+            )
+            assert port._config.native_config.get("memory") == ["./AGENTS.md"]
+            assert port._config.native_config.get("backend") is not None
+        finally:
+            del sys.modules["deepagents.backends.filesystem"]
 
     def test_no_auto_backend_when_backend_already_set(self) -> None:
         """Если backend уже задан — не перезаписываем."""

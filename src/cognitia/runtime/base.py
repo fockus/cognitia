@@ -11,7 +11,7 @@ Runtime НЕ владеет историей: получает messages кажд
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from cognitia.runtime.types import (
     Message,
@@ -69,3 +69,15 @@ class AgentRuntime(Protocol):
     async def cleanup(self) -> None:
         """Освободить ресурсы runtime (connections, subprocess, etc.)."""
         ...  # pragma: no cover
+
+    def cancel(self) -> None:
+        """Request cooperative cancellation of the current operation."""
+        ...  # pragma: no cover
+
+    async def __aenter__(self) -> AgentRuntime:
+        """Enter async context manager."""
+        return self  # pragma: no cover
+
+    async def __aexit__(self, *exc: Any) -> None:
+        """Exit async context manager — calls cleanup()."""
+        await self.cleanup()  # pragma: no cover

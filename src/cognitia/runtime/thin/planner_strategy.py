@@ -5,14 +5,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from cognitia.runtime.structured_output import (
-    append_structured_output_instruction,
-    extract_structured_output,
-)
+from cognitia.runtime.structured_output import append_structured_output_instruction
 from cognitia.runtime.thin.conversational import run_conversational
 from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.executor import ToolExecutor
-from cognitia.runtime.thin.helpers import _build_metrics, _messages_to_lm
+from cognitia.runtime.thin.finalization import CheckpointFn, finalize_with_validation
+from cognitia.runtime.thin.helpers import _messages_to_lm
 from cognitia.runtime.thin.parsers import parse_envelope, parse_plan
 from cognitia.runtime.thin.prompts import (
     build_final_assembly_prompt,
@@ -37,6 +35,7 @@ async def run_planner(
     tools: list[ToolSpec],
     config: RuntimeConfig,
     start_time: float,
+    checkpoint: CheckpointFn | None = None,
 ) -> AsyncIterator[RuntimeEvent]:
     """Planner-lite: plan -> step execution -> final assembly."""
     # Шаг 1: получить план от LLM
@@ -44,18 +43,34 @@ async def run_planner(
     lm_messages = _messages_to_lm(messages)
 
     try:
+        checkpoint_event = await _run_checkpoint(checkpoint)
+        if checkpoint_event is not None:
+            yield checkpoint_event
+            return
         raw = await llm_call(lm_messages, prompt)
     except ThinLlmError as exc:
         yield RuntimeEvent.error(exc.error)
+        return
+    checkpoint_event = await _run_checkpoint(checkpoint)
+    if checkpoint_event is not None:
+        yield checkpoint_event
         return
     plan = parse_plan(raw)
 
     if plan is None:
         # Retry
         try:
+            checkpoint_event = await _run_checkpoint(checkpoint)
+            if checkpoint_event is not None:
+                yield checkpoint_event
+                return
             raw = await llm_call(lm_messages, prompt)
         except ThinLlmError as exc:
             yield RuntimeEvent.error(exc.error)
+            return
+        checkpoint_event = await _run_checkpoint(checkpoint)
+        if checkpoint_event is not None:
+            yield checkpoint_event
             return
         plan = parse_plan(raw)
 
@@ -63,7 +78,7 @@ async def run_planner(
         yield RuntimeEvent.error(
             RuntimeErrorData(
                 kind="bad_model_output",
-                message="LLM не вернула валидный план после 2 попыток",
+                message="LLM did not return a valid plan after 2 attempts",
                 recoverable=False,
             )
         )
@@ -113,6 +128,7 @@ async def run_planner(
                 tools=tools,
                 config=step_config,
                 start_time=start_time,
+                checkpoint=checkpoint,
             ):
                 # Пробрасываем tool + streaming events
                 if event.type in (
@@ -143,6 +159,7 @@ async def run_planner(
                 ),
                 config=step_config,
                 start_time=start_time,
+                checkpoint=checkpoint,
             ):
                 if event.type == "assistant_delta":
                     yield event
@@ -166,9 +183,17 @@ async def run_planner(
         plan.final_format,
     )
     try:
+        checkpoint_event = await _run_checkpoint(checkpoint)
+        if checkpoint_event is not None:
+            yield checkpoint_event
+            return
         raw = await llm_call(lm_messages, assembly_prompt)
     except ThinLlmError as exc:
         yield RuntimeEvent.error(exc.error)
+        return
+    checkpoint_event = await _run_checkpoint(checkpoint)
+    if checkpoint_event is not None:
+        yield checkpoint_event
         return
     envelope = parse_envelope(raw)
 
@@ -177,18 +202,27 @@ async def run_planner(
     else:
         final_text = raw  # fallback
 
-    new_messages.append(Message(role="assistant", content=final_text))
-    structured_output = extract_structured_output(final_text, config.output_format)
-
+    checkpoint_event = await _run_checkpoint(checkpoint)
+    if checkpoint_event is not None:
+        yield checkpoint_event
+        return
     yield RuntimeEvent.assistant_delta(final_text)
-    yield RuntimeEvent.final(
-        text=final_text,
-        new_messages=new_messages,
-        metrics=_build_metrics(
-            start_time,
-            config,
-            iterations=len(plan.steps) + 2,  # plan + steps + assembly
-            tool_calls=total_tool_calls,
-        ),
-        structured_output=structured_output,
-    )
+    async for event in finalize_with_validation(
+        final_text,
+        config,
+        lm_messages,
+        assembly_prompt,
+        llm_call,
+        start_time,
+        iterations=len(plan.steps) + 2,
+        tool_calls=total_tool_calls,
+        new_messages_prefix=new_messages,
+        checkpoint=checkpoint,
+    ):
+        yield event
+
+
+async def _run_checkpoint(checkpoint: CheckpointFn | None) -> RuntimeEvent | None:
+    if checkpoint is None:
+        return None
+    return await checkpoint()

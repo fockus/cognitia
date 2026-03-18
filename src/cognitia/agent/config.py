@@ -8,9 +8,7 @@ from typing import TYPE_CHECKING, Any
 from cognitia.runtime.capabilities import (
     VALID_FEATURE_MODES,
     CapabilityRequirements,
-    get_runtime_capabilities,
 )
-from cognitia.runtime.types import VALID_RUNTIME_NAMES
 
 if TYPE_CHECKING:
     from cognitia.agent.middleware import Middleware
@@ -74,24 +72,27 @@ class AgentConfig:
     native_config: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        from cognitia.runtime.registry import get_valid_runtime_names, resolve_runtime_capabilities
+
         if not self.system_prompt or not self.system_prompt.strip():
-            raise ValueError("system_prompt не может быть пустым")
-        if self.runtime not in VALID_RUNTIME_NAMES:
+            raise ValueError("system_prompt must not be empty")
+        valid_names = get_valid_runtime_names()
+        if self.runtime not in valid_names:
             raise ValueError(
-                f"Неизвестный runtime: '{self.runtime}'. "
-                f"Допустимые: {', '.join(sorted(VALID_RUNTIME_NAMES))}"
+                f"Unknown runtime: '{self.runtime}'. "
+                f"Allowed: {', '.join(sorted(valid_names))}"
             )
         if self.feature_mode not in VALID_FEATURE_MODES:
             raise ValueError(
-                f"Неизвестный feature_mode: '{self.feature_mode}'. "
-                f"Допустимые: {', '.join(sorted(VALID_FEATURE_MODES))}"
+                f"Unknown feature_mode: '{self.feature_mode}'. "
+                f"Allowed: {', '.join(sorted(VALID_FEATURE_MODES))}"
             )
         if self.require_capabilities is not None:
-            caps = get_runtime_capabilities(self.runtime)
+            caps = resolve_runtime_capabilities(self.runtime)
             missing = caps.missing(self.require_capabilities)
             if missing:
                 raise ValueError(
-                    f"Runtime '{self.runtime}' не поддерживает требуемые capabilities: "
+                    f"Runtime '{self.runtime}' does not support required capabilities: "
                     f"{', '.join(missing)}"
                 )
 

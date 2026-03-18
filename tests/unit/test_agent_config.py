@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 from cognitia.agent.config import AgentConfig
-from cognitia.runtime.capabilities import CapabilityRequirements
+from cognitia.runtime.capabilities import CapabilityRequirements, RuntimeCapabilities
 
 
 class TestAgentConfigDefaults:
@@ -132,6 +132,23 @@ class TestAgentConfigValidation:
                 runtime="thin",
                 require_capabilities=CapabilityRequirements(tier="full"),
             )
+
+    def test_custom_runtime_from_registry_is_accepted(self) -> None:
+        """Registry-registered runtime проходит валидацию AgentConfig."""
+        from cognitia.runtime.registry import get_default_registry
+
+        registry = get_default_registry()
+        caps = RuntimeCapabilities(runtime_name="custom_agent_rt", tier="light")
+        registry.register("custom_agent_rt", lambda config, **kwargs: object(), capabilities=caps)
+        try:
+            cfg = AgentConfig(
+                system_prompt="test",
+                runtime="custom_agent_rt",
+                require_capabilities=CapabilityRequirements(tier="light"),
+            )
+            assert cfg.runtime == "custom_agent_rt"
+        finally:
+            registry.unregister("custom_agent_rt")
 
 
 class TestAgentConfigModelResolution:

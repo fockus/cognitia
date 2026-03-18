@@ -85,7 +85,7 @@ def convert_event(event: RuntimeEvent) -> StreamEvent | None:
     if event.type == "error":
         return StreamEvent(
             type="error",
-            text=str(event.data.get("message", "Неизвестная ошибка runtime")),
+            text=str(event.data.get("message", "Unknown runtime error")),
         )
 
     if event.type == "final":
@@ -188,7 +188,7 @@ class BaseRuntimePort:
             return _estimate_tokens(self._history) >= threshold
         if trigger_type == "messages":
             return len(self._history) >= threshold
-        msg = f"Неизвестный compaction trigger type: {trigger_type!r}. Допустимые: 'tokens', 'messages'"
+        msg = f"Unknown compaction trigger type: {trigger_type!r}. Allowed: 'tokens', 'messages'"
         raise ValueError(msg)
 
     async def _maybe_summarize(self) -> None:
@@ -250,7 +250,7 @@ class BaseRuntimePort:
         5. Yield done event
         """
         if not self._connected:
-            yield StreamEvent(type="error", text="Runtime не подключён")
+            yield StreamEvent(type="error", text="Runtime not connected")
             return
 
         self._append_to_history("user", user_text)

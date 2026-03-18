@@ -33,7 +33,7 @@ Pluggable runtimes. Persistent memory. Secure by default.
 <span class="stat-label">LLM Providers</span>
 </div>
 <div class="stat-item">
-<span class="stat-number">1200+</span>
+<span class="stat-number">2100+</span>
 <span class="stat-label">Tests</span>
 </div>
 </div>

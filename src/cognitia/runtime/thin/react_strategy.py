@@ -6,14 +6,12 @@ import json
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from cognitia.runtime.structured_output import (
-    append_structured_output_instruction,
-    extract_structured_output,
-)
+from cognitia.runtime.structured_output import append_structured_output_instruction
 from cognitia.runtime.thin.executor import ToolExecutor
 from cognitia.runtime.thin.errors import ThinLlmError
-from cognitia.runtime.thin.helpers import _build_metrics, _messages_to_lm
-from cognitia.runtime.thin.llm_client import try_stream_llm_call
+from cognitia.runtime.thin.finalization import CheckpointFn, finalize_with_validation
+from cognitia.runtime.thin.helpers import _messages_to_lm, _should_buffer_postprocessing
+from cognitia.runtime.thin.llm_client import run_buffered_llm_call, try_stream_llm_call
 from cognitia.runtime.thin.parsers import extract_text_fallback, parse_envelope
 from cognitia.runtime.thin.prompts import build_react_prompt
 from cognitia.runtime.types import (
@@ -33,6 +31,8 @@ async def run_react(  # noqa: C901
     tools: list[ToolSpec],
     config: RuntimeConfig,
     start_time: float,
+    checkpoint: CheckpointFn | None = None,
+    on_retry: Callable[[int, float], None] | None = None,
 ) -> AsyncIterator[RuntimeEvent]:
     """React loop: LLM -> tool_call | final. С поддержкой token streaming."""
     prompt = build_react_prompt(
@@ -51,20 +51,46 @@ async def run_react(  # noqa: C901
     retries = 0
     last_raw = ""
     stream_chunks: list[str] = []
+    buffered_postprocessing = _should_buffer_postprocessing(config)
 
     while iterations < config.max_iterations:
         iterations += 1
 
         # Пробуем streaming LLM вызов, fallback на non-streaming
         try:
-            stream_result = await try_stream_llm_call(llm_call, lm_messages, prompt)
-            if stream_result is not None:
-                stream_chunks, raw = stream_result
+            checkpoint_event = await _run_checkpoint(checkpoint)
+            if checkpoint_event is not None:
+                yield checkpoint_event
+                return
+            if buffered_postprocessing:
+                attempt = await run_buffered_llm_call(
+                    llm_call,
+                    lm_messages,
+                    prompt,
+                    retry_policy=config.retry_policy,
+                    cancellation_token=config.cancellation_token,
+                    on_retry=on_retry,
+                )
+                stream_chunks = attempt.chunks
+                raw = attempt.raw
             else:
-                raw = await llm_call(lm_messages, prompt)
-                stream_chunks = []
+                stream_result = await try_stream_llm_call(llm_call, lm_messages, prompt)
+                if stream_result is not None:
+                    stream_chunks, raw = stream_result
+                else:
+                    checkpoint_event = await _run_checkpoint(checkpoint)
+                    if checkpoint_event is not None:
+                        yield checkpoint_event
+                        return
+                    raw = await llm_call(lm_messages, prompt)
+                    stream_chunks = []
         except ThinLlmError as exc:
             yield RuntimeEvent.error(exc.error)
+            return
+
+        checkpoint_event = await _run_checkpoint(checkpoint)
+        if checkpoint_event is not None:
+            yield checkpoint_event
             return
 
         last_raw = raw
@@ -75,31 +101,31 @@ async def run_react(  # noqa: C901
             if retries > config.max_model_retries:
                 fallback_text = extract_text_fallback(last_raw)
                 if fallback_text:
-                    new_messages.append(Message(role="assistant", content=fallback_text))
-                    structured_output = extract_structured_output(
+                    checkpoint_event = await _run_checkpoint(checkpoint)
+                    if checkpoint_event is not None:
+                        yield checkpoint_event
+                        return
+                    yield RuntimeEvent.status("LLM returned non-JSON output; using text fallback")
+                    async for event in finalize_with_validation(
                         fallback_text,
-                        config.output_format,
-                    )
-                    yield RuntimeEvent.status(
-                        "LLM ответила не в JSON-формате, использую текстовый fallback"
-                    )
-                    yield RuntimeEvent.assistant_delta(fallback_text)
-                    yield RuntimeEvent.final(
-                        text=fallback_text,
-                        new_messages=new_messages,
-                        metrics=_build_metrics(
-                            start_time,
-                            config,
-                            iterations,
-                            tool_calls_count,
-                        ),
-                        structured_output=structured_output,
-                    )
+                        config,
+                        lm_messages,
+                        prompt,
+                        llm_call,
+                        start_time,
+                        iterations=iterations,
+                        tool_calls=tool_calls_count,
+                        new_messages_prefix=new_messages,
+                        checkpoint=checkpoint,
+                    ):
+                        if not buffered_postprocessing and event.type == "final":
+                            yield RuntimeEvent.assistant_delta(fallback_text)
+                        yield event
                     return
                 yield RuntimeEvent.error(
                     RuntimeErrorData(
                         kind="bad_model_output",
-                        message=f"LLM вернула некорректный JSON {retries} раз подряд",
+                        message=f"LLM returned invalid JSON {retries} times in a row",
                         recoverable=False,
                     )
                 )
@@ -124,6 +150,11 @@ async def run_react(  # noqa: C901
                 return
 
             cid = tc.correlation_id or f"c{tool_calls_count + 1}"
+
+            checkpoint_event = await _run_checkpoint(checkpoint)
+            if checkpoint_event is not None:
+                yield checkpoint_event
+                return
             yield RuntimeEvent.tool_call_started(
                 name=tc.name,
                 args=tc.args,
@@ -132,6 +163,11 @@ async def run_react(  # noqa: C901
 
             # Выполняем tool
             result = await executor.execute(tc.name, tc.args)
+
+            checkpoint_event = await _run_checkpoint(checkpoint)
+            if checkpoint_event is not None:
+                yield checkpoint_event
+                return
 
             # Проверяем ошибку в результате
             tool_ok = True
@@ -177,52 +213,59 @@ async def run_react(  # noqa: C901
         # --- final ---
         if envelope.type == "final" and envelope.final_message:
             text = envelope.final_message
-            new_messages.append(Message(role="assistant", content=text))
-            structured_output = extract_structured_output(text, config.output_format)
-
-            if stream_chunks:
+            checkpoint_event = await _run_checkpoint(checkpoint)
+            if checkpoint_event is not None:
+                yield checkpoint_event
+                return
+            if not buffered_postprocessing and stream_chunks:
                 for chunk in stream_chunks:
                     yield RuntimeEvent.assistant_delta(chunk)
-            else:
+            elif not buffered_postprocessing:
                 yield RuntimeEvent.assistant_delta(text)
-            yield RuntimeEvent.final(
-                text=text,
-                new_messages=new_messages,
-                metrics=_build_metrics(
-                    start_time,
-                    config,
-                    iterations,
-                    tool_calls_count,
-                ),
-                structured_output=structured_output,
-            )
+            async for event in finalize_with_validation(
+                text,
+                config,
+                lm_messages,
+                prompt,
+                llm_call,
+                start_time,
+                iterations=iterations,
+                tool_calls=tool_calls_count,
+                new_messages_prefix=new_messages,
+                checkpoint=checkpoint,
+            ):
+                yield event
             return
 
         # --- clarify ---
         if envelope.type == "clarify":
-            text = envelope.assistant_message or "Уточните, пожалуйста."
+            text = envelope.assistant_message or "Please clarify."
             if envelope.questions:
                 qs = "\n".join(f"- {q.text}" for q in envelope.questions)
                 text = f"{text}\n\n{qs}"
 
-            new_messages.append(Message(role="assistant", content=text))
-            structured_output = extract_structured_output(text, config.output_format)
-            if stream_chunks:
+            checkpoint_event = await _run_checkpoint(checkpoint)
+            if checkpoint_event is not None:
+                yield checkpoint_event
+                return
+            if not buffered_postprocessing and stream_chunks:
                 for chunk in stream_chunks:
                     yield RuntimeEvent.assistant_delta(chunk)
-            else:
+            elif not buffered_postprocessing:
                 yield RuntimeEvent.assistant_delta(text)
-            yield RuntimeEvent.final(
-                text=text,
-                new_messages=new_messages,
-                metrics=_build_metrics(
-                    start_time,
-                    config,
-                    iterations,
-                    tool_calls_count,
-                ),
-                structured_output=structured_output,
-            )
+            async for event in finalize_with_validation(
+                text,
+                config,
+                lm_messages,
+                prompt,
+                llm_call,
+                start_time,
+                iterations=iterations,
+                tool_calls=tool_calls_count,
+                new_messages_prefix=new_messages,
+                checkpoint=checkpoint,
+            ):
+                yield event
             return
 
     # Loop limit reached
@@ -233,3 +276,9 @@ async def run_react(  # noqa: C901
             recoverable=False,
         )
     )
+
+
+async def _run_checkpoint(checkpoint: CheckpointFn | None) -> RuntimeEvent | None:
+    if checkpoint is None:
+        return None
+    return await checkpoint()

@@ -1,0 +1,8 @@
+{
+  "claude-sonnet-4-20250514": {"input_per_1m": 3.0, "output_per_1m": 15.0},
+  "claude-haiku-3-20240307": {"input_per_1m": 0.25, "output_per_1m": 1.25},
+  "gpt-4o": {"input_per_1m": 2.5, "output_per_1m": 10.0},
+  "gpt-4o-mini": {"input_per_1m": 0.15, "output_per_1m": 0.6},
+  "gemini-2.0-flash": {"input_per_1m": 0.1, "output_per_1m": 0.4},
+  "_default": {"input_per_1m": 3.0, "output_per_1m": 15.0}
+}

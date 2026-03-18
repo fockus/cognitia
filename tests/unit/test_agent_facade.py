@@ -215,6 +215,25 @@ class TestAgentRuntimeCapabilities:
         assert caps.runtime_name == "thin"
         assert caps.tier == "light"
 
+    def test_runtime_capabilities_for_custom_runtime(self) -> None:
+        from cognitia.runtime.capabilities import RuntimeCapabilities
+        from cognitia.runtime.registry import get_default_registry
+
+        registry = get_default_registry()
+        caps = RuntimeCapabilities(
+            runtime_name="custom_caps_rt",
+            tier="light",
+            supports_provider_override=True,
+        )
+        registry.register("custom_caps_rt", lambda config, **kwargs: object(), capabilities=caps)
+        try:
+            agent = Agent(_make_config(runtime="custom_caps_rt"))
+            resolved = agent.runtime_capabilities
+            assert resolved.runtime_name == "custom_caps_rt"
+            assert resolved.supports_provider_override is True
+        finally:
+            registry.unregister("custom_caps_rt")
+
 
 class TestAgentClaudeSdkWiring:
     """Claude one-shot path пробрасывает native SDK options."""

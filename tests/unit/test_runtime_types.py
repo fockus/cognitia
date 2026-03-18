@@ -150,6 +150,9 @@ class TestRuntimeErrorData:
             "tool_error",
             "dependency_missing",
             "capability_unsupported",
+            "cancelled",
+            "guardrail_tripwire",
+            "retry",
         }
         assert expected == RUNTIME_ERROR_KINDS
 
@@ -324,7 +327,7 @@ class TestRuntimeConfig:
         assert cfg.max_iterations == 10
 
     def test_invalid_runtime_name(self) -> None:
-        with pytest.raises(ValueError, match="Неизвестный runtime"):
+        with pytest.raises(ValueError, match="Unknown runtime"):
             RuntimeConfig(runtime_name="nonexistent")
 
     def test_valid_names(self) -> None:

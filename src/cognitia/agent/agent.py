@@ -35,7 +35,8 @@ class Agent:
         from cognitia.runtime.factory import RuntimeFactory
 
         factory = RuntimeFactory()
-        return factory.get_capabilities(self._build_runtime_config(self._config.runtime))
+        config = self._build_runtime_config(self._config.runtime)
+        return factory.get_capabilities(config)
 
     async def query(self, prompt: str) -> Result:
         """One-shot запрос → Result.
