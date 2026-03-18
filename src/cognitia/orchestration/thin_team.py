@@ -9,13 +9,17 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from dataclasses import replace
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from cognitia.orchestration.base_team import BaseTeamOrchestrator
 from cognitia.orchestration.message_bus import MessageBus
-from cognitia.orchestration.message_tools import create_send_message_tool
+from cognitia.orchestration.message_tools import (
+    SEND_MESSAGE_TOOL_SPEC,
+    create_send_message_tool,
+)
 from cognitia.orchestration.team_types import (
     InternalTeamState,
     TeamConfig,
@@ -79,17 +83,33 @@ class ThinTeamOrchestrator(BaseTeamOrchestrator):
         worker_ids: dict[str, str] = {}
         bus = MessageBus()
 
-        worker_names = [s.name for s in config.worker_specs[: config.max_workers]]
+        send_message_name = SEND_MESSAGE_TOOL_SPEC.name
+        worker_specs = [
+            replace(
+                spec,
+                tools=(
+                    spec.tools
+                    if any(tool.name == send_message_name for tool in spec.tools)
+                    else [*spec.tools, SEND_MESSAGE_TOOL_SPEC]
+                ),
+            )
+            for spec in config.worker_specs[: config.max_workers]
+        ]
+        worker_names = [s.name for s in worker_specs]
 
         # Регистрируем send_message tool — один executor для всех workers
         # executor принимает args dict с from_agent (опционально, fallback на sender)
         assert isinstance(self._sub_orch, ThinSubagentOrchestrator)
         self._sub_orch.register_tool(
             "send_message",
-            create_send_message_tool(bus, sender_agent_id="team", team_members=worker_names),
+            create_send_message_tool(
+                bus,
+                sender_agent_id="team",
+                team_members=worker_names,
+            ),
         )
 
-        for spec in config.worker_specs[: config.max_workers]:
+        for spec in worker_specs:
             worker_task = compose_worker_task(
                 config=config, worker_name=spec.name, task=task
             )

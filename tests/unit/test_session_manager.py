@@ -247,10 +247,120 @@ class TestStreamReply:
         assert [m.content for m in second_messages] == ["привет", "ok", "как дела?"]
 
     @pytest.mark.asyncio
+    async def test_stream_runtime_path_preserves_final_metadata(self) -> None:
+        """final metadata не теряется в StreamEvent(done)."""
+        mgr = InMemorySessionManager()
+        fake_runtime = _FakeRuntime(
+            [
+                RuntimeEvent.final(
+                    "ok",
+                    session_id="session-1",
+                    total_cost_usd=1.25,
+                    usage={"input_tokens": 7, "output_tokens": 2},
+                    structured_output={"answer": 42},
+                    native_metadata={"provider": "thin"},
+                )
+            ]
+        )
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=fake_runtime,
+            system_prompt="system",
+            active_tools=[],
+            role_id="coach",
+        )
+        mgr.register(state)
+
+        events = []
+        async for event in mgr.stream_reply(SessionKey("u1", "t1"), "привет"):
+            events.append(event)
+
+        done_events = [event for event in events if event.type == "done"]
+        assert len(done_events) == 1
+        done = done_events[0]
+        assert done.session_id == "session-1"
+        assert done.total_cost_usd == 1.25
+        assert done.usage == {"input_tokens": 7, "output_tokens": 2}
+        assert done.structured_output == {"answer": 42}
+        assert done.native_metadata == {"provider": "thin"}
+
+    @pytest.mark.asyncio
+    async def test_stream_runtime_path_preserves_final_new_messages_in_history(self) -> None:
+        """canonical final.new_messages должны сохраняться в session history."""
+        mgr = InMemorySessionManager()
+        fake_runtime = _FakeRuntime(
+            [
+                RuntimeEvent.assistant_delta("Final answer"),
+                RuntimeEvent.final(
+                    "Final answer",
+                    new_messages=[
+                        Message(role="assistant", content="Thinking"),
+                        Message(role="tool", content="42", name="calc"),
+                        Message(role="assistant", content="Final answer"),
+                    ],
+                ),
+            ]
+        )
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=fake_runtime,
+            system_prompt="system",
+            active_tools=[],
+            role_id="coach",
+        )
+        mgr.register(state)
+
+        events = []
+        async for event in mgr.stream_reply(SessionKey("u1", "t1"), "привет"):
+            events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "done"]
+        assert [m.role for m in state.runtime_messages] == ["user", "assistant", "tool", "assistant"]
+        assert [m.content for m in state.runtime_messages[1:]] == [
+            "Thinking",
+            "42",
+            "Final answer",
+        ]
+        assert state.runtime_messages[2].name == "calc"
+
+    @pytest.mark.asyncio
+    async def test_stream_runtime_path_without_terminal_event_yields_error(self) -> None:
+        """silent EOF в runtime path не должен считаться успешным done."""
+        mgr = InMemorySessionManager()
+        fake_runtime = _FakeRuntime([RuntimeEvent.assistant_delta("partial")])
+        state = SessionState(
+            key=SessionKey("u1", "t1"),
+            runtime=fake_runtime,
+            system_prompt="system",
+            active_tools=[],
+            role_id="coach",
+        )
+        mgr.register(state)
+
+        events = []
+        async for event in mgr.stream_reply(SessionKey("u1", "t1"), "привет"):
+            events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "error"]
+        assert "without final RuntimeEvent" in events[-1].text
+        assert [m.role for m in state.runtime_messages] == ["user"]
+
+    @pytest.mark.asyncio
     async def test_stream_runtime_path_persists_history_to_backend(self) -> None:
         backend = InMemorySessionBackend()
         mgr = InMemorySessionManager(backend=backend)
-        fake_runtime = _FakeRuntime([RuntimeEvent.final("ok")])
+        fake_runtime = _FakeRuntime(
+            [
+                RuntimeEvent.final(
+                    "ok",
+                    new_messages=[
+                        Message(role="assistant", content="Thinking"),
+                        Message(role="tool", content="4", name="calc"),
+                        Message(role="assistant", content="ok"),
+                    ],
+                )
+            ]
+        )
         state = SessionState(
             key=SessionKey("u1", "t1"),
             runtime=fake_runtime,
@@ -272,8 +382,9 @@ class TestStreamReply:
         assert restored.runtime is None
         assert restored.adapter is None
         assert restored.runtime_config is None
-        assert [m.role for m in restored.runtime_messages] == ["user", "assistant"]
-        assert [m.content for m in restored.runtime_messages] == ["привет", "ok"]
+        assert [m.role for m in restored.runtime_messages] == ["user", "assistant", "tool", "assistant"]
+        assert [m.content for m in restored.runtime_messages] == ["привет", "Thinking", "4", "ok"]
+        assert restored.runtime_messages[2].name == "calc"
         assert restored.active_skill_ids == ["skill-1"]
         assert restored.active_tools[0].name == "calc"
 

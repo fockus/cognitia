@@ -5,14 +5,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-import pytest
-
 from cognitia.runtime.ports.base import (
     BaseRuntimePort,
-    StreamEvent,
     convert_event,
 )
-from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent
+from cognitia.runtime.ports.thin import ThinRuntimePort
+from cognitia.runtime.types import Message, RuntimeEvent
+from cognitia.agent.tool import tool
 
 
 # --- convert_event ---
@@ -41,10 +40,14 @@ class TestConvertEvent:
         assert result.tool_input == {"p": 1}
 
     def test_convert_tool_call_finished(self) -> None:
-        e = RuntimeEvent(type="tool_call_finished", data={"result_summary": "done"})
+        e = RuntimeEvent(
+            type="tool_call_finished",
+            data={"name": "read", "result_summary": "done"},
+        )
         result = convert_event(e)
         assert result is not None
         assert result.type == "tool_use_result"
+        assert result.tool_name == "read"
         assert result.tool_result == "done"
 
     def test_convert_approval_required(self) -> None:
@@ -158,6 +161,7 @@ class TestBaseRuntimePortStreamReply:
         port = FakeRuntimePort(events=[
             RuntimeEvent(type="assistant_delta", data={"text": "Hello "}),
             RuntimeEvent(type="assistant_delta", data={"text": "world"}),
+            RuntimeEvent(type="final", data={"text": "Hello world"}),
         ])
         await port.connect()
         events = [e async for e in port.stream_reply("hi")]
@@ -178,6 +182,13 @@ class TestBaseRuntimePortStreamReply:
         assert len(text_events) == 1
         assert text_events[0].text == "final answer"
 
+    async def test_stream_reply_silent_eof_yields_error(self) -> None:
+        port = FakeRuntimePort(events=[])
+        await port.connect()
+        events = [e async for e in port.stream_reply("hi")]
+        assert [event.type for event in events] == ["error"]
+        assert "without final" in events[0].text.lower()
+
     async def test_stream_reply_runtime_error(self) -> None:
         port = FakeRuntimePort(error=RuntimeError("connection lost"))
         await port.connect()
@@ -189,6 +200,7 @@ class TestBaseRuntimePortStreamReply:
     async def test_stream_reply_appends_history(self) -> None:
         port = FakeRuntimePort(events=[
             RuntimeEvent(type="assistant_delta", data={"text": "reply"}),
+            RuntimeEvent(type="final", data={"text": "reply"}),
         ])
         await port.connect()
         _ = [e async for e in port.stream_reply("hello")]
@@ -267,3 +279,40 @@ class TestBaseRuntimePortHistory:
         port._append_to_history("assistant", "b")
         await port._maybe_summarize()
         assert port._rolling_summary == ""
+
+
+class _FakeThinRuntime:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def run(self, **kwargs: Any):
+        self.calls.append(kwargs)
+        yield RuntimeEvent.final("ok")
+
+
+class TestThinRuntimePort:
+    """ThinRuntimePort должен передавать advertised tools в runtime."""
+
+    async def test_run_runtime_forwards_local_tools_as_active_tools(self) -> None:
+        @tool("calc", "Add numbers")
+        def calc(a: int, b: int) -> int:
+            return a + b
+
+        port = ThinRuntimePort(
+            system_prompt="system prompt",
+            local_tools={"calc": calc},
+        )
+        fake_runtime = _FakeThinRuntime()
+        port._runtime = fake_runtime
+
+        events = [
+            event
+            async for event in port._run_runtime(
+                messages=[Message(role="user", content="compute")],
+                system_prompt="system prompt",
+            )
+        ]
+
+        assert [event.type for event in events] == ["final"]
+        assert len(fake_runtime.calls) == 1
+        assert [spec.name for spec in fake_runtime.calls[0]["active_tools"]] == ["calc"]

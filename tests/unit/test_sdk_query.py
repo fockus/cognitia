@@ -9,7 +9,7 @@ pytest.importorskip("claude_agent_sdk", reason="claude-agent-sdk не устан
 
 pytestmark = pytest.mark.requires_claude_sdk
 
-from cognitia.runtime.sdk_query import one_shot_query, stream_one_shot_query
+from cognitia.runtime.sdk_query import one_shot_query, stream_one_shot_query  # noqa: E402
 
 
 def _make_sdk_text_block(text: str = "Ответ") -> MagicMock:
@@ -254,17 +254,15 @@ class TestOneShotQuery:
         assert options.setting_sources == ["project", "user"]
 
     @pytest.mark.asyncio
-    async def test_no_result_message_returns_text_only(self) -> None:
-        """Если нет ResultMessage — возвращаем текст без метрик."""
+    async def test_no_result_message_raises_runtime_error(self) -> None:
+        """Если нет ResultMessage — one_shot_query не считает это success."""
 
         async def fake_query(**kwargs):
             yield _make_sdk_assistant_msg([_make_sdk_text_block("partial")])
 
         with patch("cognitia.runtime.sdk_query._sdk_query", side_effect=fake_query):
-            result = await one_shot_query("test")
-
-        assert result.text == "partial"
-        assert result.session_id is None
+            with pytest.raises(RuntimeError, match="final ResultMessage"):
+                await one_shot_query("test")
 
 
 class TestStreamOneShotQuery:
@@ -400,3 +398,18 @@ class TestStreamOneShotQuery:
         assert events[0].tool_name == "calc"
         assert events[0].tool_input == {"expr": "2+2"}
         assert events[1].tool_result == "4"
+
+    @pytest.mark.asyncio
+    async def test_stream_without_result_message_emits_error(self) -> None:
+        """Без ResultMessage stream_one_shot_query возвращает error, а не done."""
+
+        async def fake_query(**kwargs):
+            yield _make_sdk_assistant_msg([_make_sdk_text_block("partial")])
+
+        with patch("cognitia.runtime.sdk_query._sdk_query", side_effect=fake_query):
+            events = []
+            async for event in stream_one_shot_query("missing final"):
+                events.append(event)
+
+        assert [event.type for event in events] == ["text_delta", "error"]
+        assert "final ResultMessage" in events[-1].text

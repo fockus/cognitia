@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from cognitia.orchestration.code_verifier import CommandResult
 from cognitia.orchestration.coding_standards import CodingStandardsConfig
 from cognitia.orchestration.tdd_code_verifier import TddCodeVerifier

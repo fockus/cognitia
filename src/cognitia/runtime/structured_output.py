@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol, cast
 
 from cognitia.runtime.thin.parsers import strip_markdown_fences as _strip_markdown_fences
 
 
-def validate_structured_output(text: str, output_type: type) -> Any:
+class _StructuredOutputModel(Protocol):
+    """Минимальный контракт для Pydantic-like моделей."""
+
+    @classmethod
+    def model_validate_json(cls, json_data: str) -> Any: ...
+
+    @classmethod
+    def model_json_schema(cls) -> dict[str, Any]: ...
+
+
+def validate_structured_output(text: str, output_type: _StructuredOutputModel) -> Any:
     """Parse JSON from text and validate against a Pydantic model.
 
     Strips markdown fences before parsing. Returns a validated model instance.
@@ -25,7 +35,7 @@ def validate_structured_output(text: str, output_type: type) -> Any:
     return output_type.model_validate_json(cleaned)
 
 
-def extract_pydantic_schema(output_type: type) -> dict[str, Any]:
+def extract_pydantic_schema(output_type: _StructuredOutputModel) -> dict[str, Any]:
     """Extract JSON Schema dict from a Pydantic model class."""
     return output_type.model_json_schema()
 
@@ -47,7 +57,8 @@ def resolve_structured_output(
         pydantic.ValidationError: if output_type is set but JSON doesn't match schema
     """
     if output_type is not None:
-        return validate_structured_output(text, output_type)
+        model = cast(_StructuredOutputModel, output_type)
+        return validate_structured_output(text, model)
     return extract_structured_output(text, output_format)
 
 
@@ -64,7 +75,8 @@ def try_resolve_structured_output(
     """
     if output_type is not None:
         try:
-            parsed = validate_structured_output(text, output_type)
+            model = cast(_StructuredOutputModel, output_type)
+            parsed = validate_structured_output(text, model)
             return parsed, None
         except (ValueError, Exception) as exc:
             return None, str(exc)

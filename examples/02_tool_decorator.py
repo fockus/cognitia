@@ -51,6 +51,14 @@ async def main() -> None:
     calc_result = await calc_defn.handler(a=2, b=3)
     print(f"Sum: {calc_result}")
 
+    # 5. Use tools with Agent (requires API key)
+    # agent = Agent(AgentConfig(
+    #     system_prompt="You help with weather.",
+    #     runtime="thin",
+    #     tools=(get_weather, add_numbers),
+    # ))
+    # result = await agent.query("What's the weather in Paris?")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

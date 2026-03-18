@@ -59,7 +59,7 @@ class TestTeamFullLifecycleE2E:
             user_msg = next((m["content"] for m in messages if m["role"] == "user"), "")
             worker_tasks_received.append(user_msg[:50])
             await asyncio.sleep(0.05)
-            return _final_envelope(f"done by worker")
+            return _final_envelope("done by worker")
 
         config = TeamConfig(
             lead_prompt="You are the team lead. Coordinate the work.",
@@ -246,8 +246,6 @@ class TestSubagentSpawnE2E:
     @pytest.mark.asyncio
     async def test_subagent_spawn_execute_collect(self) -> None:
         """Spawn 3 subagents parallel -> all complete -> collect results."""
-        agent_outputs: dict[str, str] = {}
-
         async def fake_llm(
             messages: list[dict[str, str]], system_prompt: str, **kwargs: Any
         ) -> str:

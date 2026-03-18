@@ -7,7 +7,6 @@ Bounded loops, typed errors, streaming RuntimeEvent.
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import time
 from collections.abc import AsyncIterator, Callable
@@ -64,8 +63,6 @@ class ThinRuntime:
         self._auto_wrap_retriever()
         self._retry_events: list[RuntimeEvent] = []
         raw_llm_call = llm_call or self._make_default_llm_call()
-        if self._config.retry_policy is not None:
-            raw_llm_call = self._wrap_with_retry(raw_llm_call)
         if self._config.event_bus is not None:
             raw_llm_call = self._wrap_with_event_bus(raw_llm_call)
         self._llm_call = raw_llm_call
@@ -120,52 +117,6 @@ class ThinRuntime:
             return await default_llm_call(config, messages, system_prompt, **kwargs)
 
         return _call
-
-    def _wrap_with_retry(self, llm_call: Callable[..., Any]) -> Callable[..., Any]:
-        """Wrap an LLM call with retry logic based on config.retry_policy.
-
-        On each ThinLlmError, consults the retry policy. If it says retry,
-        sleeps for the computed delay and tries again. Retry status events
-        are buffered in self._retry_events and emitted by run().
-        """
-        policy = self._config.retry_policy
-        if policy is None:
-            raise ValueError("retry_policy must not be None")
-        logger = logging.getLogger(__name__)
-
-        async def _retrying_call(
-            messages: list[dict[str, str]],
-            system_prompt: str,
-            **kwargs: Any,
-        ) -> str | AsyncIterator[str]:
-            if kwargs.get("stream"):
-                if self._config.cancellation_token is not None:
-                    self._raise_if_cancelled(self._config.cancellation_token)
-                return await llm_call(messages, system_prompt, **kwargs)
-
-            attempt = 0
-            while True:
-                try:
-                    if self._config.cancellation_token is not None:
-                        self._raise_if_cancelled(self._config.cancellation_token)
-                    return await llm_call(messages, system_prompt, **kwargs)
-                except ThinLlmError as exc:
-                    if exc.error.kind == "cancelled":
-                        raise
-                    should, delay = policy.should_retry(exc, attempt)
-                    if not should:
-                        raise
-                    logger.info(
-                        "Retry attempt %d, delay %.1fs: %s",
-                        attempt + 1,
-                        delay,
-                        exc,
-                    )
-                    self._buffer_retry_status(attempt + 1, delay)
-                    await self._sleep_with_cancellation(delay, self._config.cancellation_token)
-                    attempt += 1
-
-        return _retrying_call
 
     def _wrap_with_event_bus(self, llm_call: Callable[..., Any]) -> Callable[..., Any]:
         """Wrap LLM call with EventBus emit for llm_call_start/llm_call_end."""

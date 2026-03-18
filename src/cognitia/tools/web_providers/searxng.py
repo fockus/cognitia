@@ -39,10 +39,10 @@ class SearXNGSearchProvider:
         if not query or not query.strip():
             return []
 
-        params = {
+        params: dict[str, str] = {
             "q": query,
             "format": "json",
-            "pageno": 1,
+            "pageno": "1",
         }
 
         try:

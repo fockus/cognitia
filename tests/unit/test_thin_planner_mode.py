@@ -84,13 +84,13 @@ class TestThinPlannerApprove:
 
     async def test_approve_plan(self, planner) -> None:
         plan = await planner.generate_plan("g", "c")
-        approved = await planner.approve(plan, by="system")
-        assert approved.status == "approved"
-        assert approved.approved_by == "system"
+        approved_plan = await planner.approve(plan, by="system")
+        assert approved_plan.status == "approved"
+        assert approved_plan.approved_by == "system"
 
     async def test_approve_saves_to_store(self, planner, plan_store) -> None:
         plan = await planner.generate_plan("g", "c")
-        approved = await planner.approve(plan, by="user")
+        _approved = await planner.approve(plan, by="user")
         loaded = await plan_store.load(plan.id)
         assert loaded is not None
         assert loaded.status == "approved"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cognitia.agent.result import Result
 from cognitia.runtime.types import Message
@@ -54,22 +54,30 @@ class Conversation:
         self._history.append(Message(role="user", content=effective_prompt))
 
         # Execute + collect
-        from cognitia.agent.agent import collect_stream_result
+        from cognitia.agent.agent import collect_stream_result, _runtime_messages_from_payloads
 
         collected = await collect_stream_result(self._execute(effective_prompt))
+        result_payload = dict(collected)
+        new_messages_payload = result_payload.pop("new_messages", None)
 
-        if collected["text"]:
-            self._history.append(Message(role="assistant", content=collected["text"]))
+        new_messages = _runtime_messages_from_payloads(new_messages_payload)
+        if new_messages:
+            self._history.extend(new_messages)
+        elif result_payload["text"]:
+            self._history.append(Message(role="assistant", content=result_payload["text"]))
 
         # Conversation всегда заполняет session_id
-        if not collected["session_id"]:
-            collected["session_id"] = self._session_id
+        if not result_payload["session_id"]:
+            result_payload["session_id"] = self._session_id
 
-        result = Result(**collected)
+        result = Result(**result_payload)
 
         # Apply middleware after_result
         for mw in self._agent.config.middleware:
             result = await mw.after_result(result)
+
+        if new_messages_payload is not None:
+            object.__setattr__(result, "new_messages", new_messages_payload)
 
         return result
 
@@ -86,12 +94,25 @@ class Conversation:
         self._history.append(Message(role="user", content=effective_prompt))
 
         full_text = ""
+        final_new_messages: list[Message] = []
         async for event in self._execute(effective_prompt):
             if event.type == "text_delta":
                 full_text += event.text
+            elif event.type in {"done", "final"}:
+                from cognitia.agent.agent import _runtime_messages_from_payloads
+
+                payload = getattr(event, "data", {}) if hasattr(event, "data") else {}
+                payload_new_messages = getattr(event, "new_messages", None)
+                if payload_new_messages is None:
+                    payload_new_messages = payload.get("new_messages")
+                final_new_messages = _runtime_messages_from_payloads(
+                    payload_new_messages
+                )
             yield event
 
-        if full_text:
+        if final_new_messages:
+            self._history.extend(final_new_messages)
+        elif full_text:
             self._history.append(Message(role="assistant", content=full_text))
 
     async def close(self) -> None:
@@ -134,27 +155,25 @@ class Conversation:
     async def _execute_agent_runtime(self, prompt: str, runtime_name: str) -> AsyncIterator[Any]:
         """Multi-turn через AgentRuntime (accumulated messages)."""
         from cognitia.agent.agent import _RuntimeEventAdapter
+        from cognitia.agent.runtime_wiring import build_portable_runtime_plan
         from cognitia.runtime.factory import RuntimeFactory
 
-        config = self._agent._build_runtime_config(runtime_name)
-        if runtime_name == "deepagents":
-            config.native_config = {
-                **config.native_config,
-                "thread_id": self._session_id,
-            }
+        runtime_plan = build_portable_runtime_plan(
+            self._agent.config,
+            runtime_name,
+            session_id=self._session_id,
+        )
         factory = RuntimeFactory()
         runtime = factory.create(
-            config=config,
-            tool_executors={td.name: td.handler for td in self._agent.config.tools},
+            config=runtime_plan.config,
+            **runtime_plan.create_kwargs,
         )
-
-        active_tools = [td.to_tool_spec() for td in self._agent.config.tools]
 
         try:
             async for event in runtime.run(
                 messages=list(self._history),
                 system_prompt=self._agent.config.system_prompt,
-                active_tools=active_tools,
+                active_tools=runtime_plan.active_tools,
             ):
                 yield _RuntimeEventAdapter(event)
         finally:
@@ -198,13 +217,16 @@ class Conversation:
             output_format=config.output_format,
             continue_conversation=True,
             max_turns=config.max_turns,
-            permission_mode=config.permission_mode,
-            setting_sources=list(config.setting_sources) if config.setting_sources else None,
-            betas=list(config.betas) if config.betas else None,
+            permission_mode=cast(Any, config.permission_mode),
+            setting_sources=cast(
+                Any,
+                list(config.setting_sources) if config.setting_sources else None,
+            ),
+            betas=cast(Any, list(config.betas) if config.betas else None),
             max_budget_usd=config.max_budget_usd,
             max_thinking_tokens=config.max_thinking_tokens,
             fallback_model=config.fallback_model,
-            sandbox=config.sandbox,
+            sandbox=cast(Any, config.sandbox),
             env=dict(config.env) if config.env else None,
             include_partial_messages=bool(config.native_config.get("include_partial_messages")),
         )

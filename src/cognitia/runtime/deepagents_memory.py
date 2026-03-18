@@ -10,7 +10,7 @@ from cognitia.runtime.types import RuntimeErrorData
 def _build_resume_command(resume_value: Any) -> Any:
     """Собрать langgraph Command lazily, чтобы base-install оставался import-safe."""
     try:
-        from langgraph.types import Command
+        from langgraph.types import Command  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError(
             "DeepAgents native resume требует optional dependency `langgraph` "

@@ -101,9 +101,6 @@ class TestMcpBridgeHttpRoundtrip:
         """discover_tools() -> ToolSpec[], call_tool() -> result payload."""
         transport = _create_mock_transport()
 
-        # McpClient с кастомным transport
-        client = McpClient(timeout_seconds=5.0)
-
         # Подменяем httpx.AsyncClient через bridge с real McpClient
         bridge = McpBridge(
             mcp_servers={"weather": "http://weather.test/mcp"},

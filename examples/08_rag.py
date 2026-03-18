@@ -24,7 +24,7 @@ async def main() -> None:
     results = await retriever.retrieve("programming language", top_k=2)
     print("Retrieved documents:")
     for doc in results:
-        print(f"  score={doc.score:.1f}: {doc.content[:60]}...")
+        print(f"  score={doc.score or 0.0:.1f}: {doc.content[:60]}...")
 
     # 3. RagInputFilter -- auto-inject context into system prompt
     rag_filter = RagInputFilter(retriever=retriever, top_k=2)

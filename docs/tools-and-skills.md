@@ -75,7 +75,8 @@ Always specify amount and term in months.
 ### Loading skills
 
 ```python
-from cognitia.skills import YamlSkillLoader, SkillRegistry
+from cognitia.skills import SkillRegistry
+from cognitia.skills.loader import YamlSkillLoader
 
 loader = YamlSkillLoader("./skills")
 skills = loader.load_all()

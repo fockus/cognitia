@@ -174,6 +174,22 @@ class TestThinTeamMessaging:
         status = await orch.get_team_status(team_id)
         assert status.messages_exchanged >= 1
 
+    @pytest.mark.asyncio
+    async def test_thin_team_worker_specs_advertise_send_message(self) -> None:
+        """start(config, task) → worker spec advertises send_message tool."""
+        from cognitia.orchestration.thin_team import ThinTeamOrchestrator
+
+        orch = ThinTeamOrchestrator()
+        config = _make_team_config(n_workers=2)
+
+        await orch.start(config, "Task")
+
+        advertised_tools: list[str] = []
+        for spec in orch._sub_orch._specs.values():  # noqa: SLF001 - regression guard
+            advertised_tools.extend(tool.name for tool in spec.tools)
+
+        assert "send_message" in advertised_tools
+
 
 # ---------------------------------------------------------------------------
 # Pause / Resume

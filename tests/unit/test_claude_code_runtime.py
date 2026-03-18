@@ -207,10 +207,8 @@ class TestClaudeCodeRuntimeStreaming:
         runtime = ClaudeCodeRuntime(adapter=adapter)
         events = await collect_events(runtime, [Message(role="user", content="x")])
 
-        # error + final (пустой)
-        errors = [e for e in events if e.type == "error"]
-        assert len(errors) == 1
-        assert "SDK crash" in errors[0].data["message"]
+        assert [event.type for event in events] == ["error"]
+        assert "SDK crash" in events[0].data["message"]
 
     @pytest.mark.asyncio
     async def test_extracts_last_user_message(self) -> None:

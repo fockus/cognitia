@@ -1,12 +1,26 @@
 """Модуль хуков — перехват событий агента."""
 
-from contextlib import suppress
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
 
 from cognitia.hooks.registry import HookCallback, HookEntry, HookRegistry
 
-# sdk_bridge requires claude_agent_sdk (optional dependency)
-registry_to_sdk_hooks = None
-with suppress(ImportError):
-    from cognitia.hooks.sdk_bridge import registry_to_sdk_hooks
+__all__ = ["HookCallback", "HookEntry", "HookRegistry"]
 
-__all__ = ["HookCallback", "HookEntry", "HookRegistry", "registry_to_sdk_hooks"]
+
+def __getattr__(name: str) -> Any:
+    if name != "registry_to_sdk_hooks":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    try:
+        module = import_module("cognitia.hooks.sdk_bridge")
+        value = getattr(module, name)
+    except (ImportError, AttributeError) as exc:
+        raise ImportError(
+            "registry_to_sdk_hooks is unavailable. Install claude-agent-sdk to use SDK hooks."
+        ) from exc
+
+    globals()[name] = value
+    return value

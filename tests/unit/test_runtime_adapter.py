@@ -360,6 +360,7 @@ class TestStreamReply:
 
         async def fake_receive_response():
             yield _make_assistant_msg([_make_text_block("Привет!")])
+            yield _make_result_msg()
 
         mock_client.receive_response = fake_receive_response
         adapter, _ = _make_adapter_with_client(mock_client)
@@ -387,6 +388,7 @@ class TestStreamReply:
                     _make_text_block("Нашёл: SBER"),
                 ]
             )
+            yield _make_result_msg()
 
         mock_client.receive_response = fake_receive_response
         adapter, _ = _make_adapter_with_client(mock_client)
@@ -416,6 +418,7 @@ class TestStreamReply:
                     _make_text_block("Вот ответ"),
                 ]
             )
+            yield _make_result_msg()
 
         mock_client.receive_response = fake_receive_response
         adapter, _ = _make_adapter_with_client(mock_client)
@@ -507,6 +510,7 @@ class TestStreamReplyBrokenPipe:
 
         async def fake_receive_response():
             yield _make_assistant_msg([_make_text_block("OK после reconnect")])
+            yield _make_result_msg()
 
         mock_client.receive_response = fake_receive_response
         adapter, _ = _make_adapter_with_client(mock_client)
@@ -549,6 +553,7 @@ class TestStreamReplyBrokenPipe:
 
         async def fake_receive_response():
             yield _make_assistant_msg([_make_text_block("recovered")])
+            yield _make_result_msg()
 
         mock_client.receive_response = fake_receive_response
         adapter, _ = _make_adapter_with_client(mock_client)
@@ -879,8 +884,8 @@ class TestResultMessageMetrics:
         assert done_event.structured_output == struct
 
     @pytest.mark.asyncio
-    async def test_done_event_without_result_message_has_none_metrics(self) -> None:
-        """Без ResultMessage — метрики None."""
+    async def test_missing_result_message_emits_error(self) -> None:
+        """Без ResultMessage stream_reply не должен завершаться как done."""
         mock_client = AsyncMock()
 
         async def fake_receive_response():
@@ -893,12 +898,8 @@ class TestResultMessageMetrics:
         async for event in adapter.stream_reply("test"):
             events.append(event)
 
-        done_event = events[-1]
-        assert done_event.type == "done"
-        assert done_event.session_id is None
-        assert done_event.total_cost_usd is None
-        assert done_event.usage is None
-        assert done_event.structured_output is None
+        assert [event.type for event in events] == ["text_delta", "error"]
+        assert "final ResultMessage" in events[-1].text
 
 
 class TestPartialAndStatusEvents:

@@ -52,7 +52,7 @@ from cognitia import AgentConfig
 |-------|------|---------|-------------|
 | `system_prompt` | `str` | **required** | System prompt for the agent |
 | `model` | `str` | `"sonnet"` | Model alias or full ID |
-| `runtime` | `str` | `"claude_sdk"` | Runtime: `"claude_sdk"` \| `"thin"` \| `"deepagents"` |
+| `runtime` | `str` | `"claude_sdk"` | Runtime: `"claude_sdk"` \| `"thin"` \| `"deepagents"` \| `"cli"` |
 | `tools` | `tuple[ToolDefinition, ...]` | `()` | Tools from `@tool` decorator |
 | `middleware` | `tuple[Middleware, ...]` | `()` | Middleware chain |
 | `mcp_servers` | `dict[str, Any]` | `{}` | Remote MCP server configs |
@@ -292,7 +292,7 @@ Static factory methods: `RuntimeEvent.assistant_delta(text)`, `RuntimeEvent.stat
 from cognitia.runtime.types import RuntimeConfig
 
 config = RuntimeConfig(
-    runtime_name="thin",              # claude_sdk | thin | deepagents
+    runtime_name="thin",              # claude_sdk | thin | deepagents | cli
     model="claude-sonnet-4-20250514", # or alias
     max_iterations=6,                 # ReAct loop limit
     max_tool_calls=8,                 # tool calls per turn limit
@@ -355,6 +355,7 @@ caps.enabled_flags()   # frozenset({"mcp", "resume", "interrupt"})
 | `claude_sdk` | `full` | Yes | Yes | Yes | No |
 | `deepagents` | `full` | No | Yes | No | Yes |
 | `thin` | `light` | Yes | No | No | Yes |
+| `cli` | `light` | No | No | No | No |
 
 ### CapabilityRequirements
 

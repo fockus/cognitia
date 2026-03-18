@@ -13,7 +13,7 @@ import structlog
 from cognitia.tools.web_protocols import SearchResult
 
 try:
-    from tavily import TavilyClient
+    from tavily import TavilyClient  # type: ignore[import-untyped]
 except ImportError:
     TavilyClient = None  # type: ignore[assignment,misc]
 

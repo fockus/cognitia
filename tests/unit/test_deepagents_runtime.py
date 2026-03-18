@@ -613,6 +613,68 @@ class TestDeepAgentsRuntimeRun:
                 assert msg.content == "Ответ модели"
 
     @pytest.mark.asyncio
+    async def test_run_preserves_tool_history_in_final(self) -> None:
+        """tool_call_* events должны попадать в final.new_messages."""
+        runtime = DeepAgentsRuntime()
+
+        async def _fake_stream(**kwargs):
+            yield RuntimeEvent.tool_call_started(
+                name="calc",
+                args={"x": 2},
+                correlation_id="call-1",
+            )
+            yield RuntimeEvent.tool_call_finished(
+                name="calc",
+                correlation_id="call-1",
+                result_summary="4",
+            )
+            yield RuntimeEvent.assistant_delta("Ответ модели")
+
+        with (
+            patch("cognitia.runtime.deepagents._check_langchain_available", return_value=None),
+            patch.object(runtime, "_stream_langchain", side_effect=_fake_stream),
+        ):
+            events = []
+            async for ev in runtime.run(
+                messages=[Message(role="user", content="hi")],
+                system_prompt="test",
+                active_tools=[],
+            ):
+                events.append(ev)
+
+        final = events[-1]
+        new_msgs = final.data["new_messages"]
+        assert len(new_msgs) == 3
+
+        first, second, third = new_msgs
+        if isinstance(first, dict):
+            assert first["role"] == "assistant"
+            assert first["tool_calls"][0]["name"] == "calc"
+            assert first["tool_calls"][0]["args"] == {"x": 2}
+        else:
+            assert first.role == "assistant"
+            assert first.tool_calls[0]["name"] == "calc"
+            assert first.tool_calls[0]["args"] == {"x": 2}
+
+        if isinstance(second, dict):
+            assert second["role"] == "tool"
+            assert second["name"] == "calc"
+            assert second["content"] == "4"
+            assert second["metadata"]["correlation_id"] == "call-1"
+        else:
+            assert second.role == "tool"
+            assert second.name == "calc"
+            assert second.content == "4"
+            assert second.metadata["correlation_id"] == "call-1"
+
+        if isinstance(third, dict):
+            assert third["role"] == "assistant"
+            assert third["content"] == "Ответ модели"
+        else:
+            assert third.role == "assistant"
+            assert third.content == "Ответ модели"
+
+    @pytest.mark.asyncio
     async def test_run_multiple_tool_calls_counted(self) -> None:
         """Несколько tool_call_finished → metrics.tool_calls_count суммируется."""
         runtime = DeepAgentsRuntime()
@@ -722,6 +784,46 @@ class TestBuildLcMessages:
         )
         assert isinstance(lc[1], AIMessage)
         assert lc[1].content == "Ответ"
+
+    def test_tool_message_converted(self) -> None:
+        """assistant tool_calls + tool → AIMessage/ToolMessage."""
+        runtime = self._make_runtime()
+        try:
+            from langchain_core.messages import AIMessage, ToolMessage
+        except ImportError:
+            pytest.skip("langchain_core не установлен")
+
+        lc = runtime._build_lc_messages(
+            [
+                Message(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "name": "calc",
+                            "args": {"x": 2},
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                Message(
+                    role="tool",
+                    content="4",
+                    name="calc",
+                    metadata={"correlation_id": "call-1"},
+                ),
+            ],
+            "sys",
+        )
+
+        assert isinstance(lc[1], AIMessage)
+        assert lc[1].tool_calls[0]["name"] == "calc"
+        assert lc[1].tool_calls[0]["args"] == {"x": 2}
+        assert isinstance(lc[2], ToolMessage)
+        assert lc[2].name == "calc"
+        assert lc[2].tool_call_id == "call-1"
+        assert lc[2].content == "4"
 
     def test_system_message_in_history(self) -> None:
         """system в history → SystemMessage (в дополнение к system_prompt)."""

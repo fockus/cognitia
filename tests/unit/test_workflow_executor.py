@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
+from cognitia.agent.tool import tool
 from cognitia.orchestration.workflow_graph import WorkflowGraph
 
 
@@ -101,6 +101,64 @@ class TestWorkflowThinExecutor:
         # llm_call вызывался дважды (по одному разу на каждый node)
         assert len(llm_calls) == 2
 
+    async def test_workflow_thin_executor_advertises_local_tools(self) -> None:
+        """Local tools попадают в active_tools для runtime advertising."""
+        import json
+
+        import cognitia.orchestration.workflow_executor as workflow_executor_module
+        from cognitia.orchestration.workflow_executor import ThinWorkflowExecutor
+        from cognitia.runtime.types import RuntimeEvent, ToolSpec
+
+        captured_active_tools: list[ToolSpec] = []
+
+        @tool("calc", description="Calculate values")
+        async def calc(value: int) -> int:
+            return value * 2
+
+        async def summarize(text: str) -> str:
+            """Summarize text."""
+            return text.upper()
+
+        class FakeRuntime:
+            def __init__(
+                self,
+                *,
+                config,
+                llm_call,
+                local_tools,
+                mcp_servers,
+            ) -> None:
+                self.config = config
+                self.llm_call = llm_call
+                self.local_tools = local_tools
+                self.mcp_servers = mcp_servers
+
+            async def run(self, *, messages, system_prompt, active_tools, mode_hint):
+                captured_active_tools.extend(active_tools)
+                yield RuntimeEvent.final(
+                    text=json.dumps({"ok": True}),
+                    new_messages=[],
+                )
+
+        executor = ThinWorkflowExecutor(
+            llm_call=lambda *args, **kwargs: None,
+            local_tools={"calc": calc, "summarize": summarize},
+        )
+
+        original_runtime = workflow_executor_module.ThinRuntime
+        workflow_executor_module.ThinRuntime = FakeRuntime  # type: ignore[assignment]
+        try:
+            result = await executor.run_node("system", "task", {})
+        finally:
+            workflow_executor_module.ThinRuntime = original_runtime  # type: ignore[assignment]
+
+        assert result == json.dumps({"ok": True})
+        assert [spec.name for spec in captured_active_tools] == ["calc", "summarize"]
+        assert captured_active_tools[0].description == "Calculate values"
+        assert captured_active_tools[0].is_local is True
+        assert captured_active_tools[1].description == "Summarize text."
+        assert captured_active_tools[1].parameters == {}
+
 
 class TestWorkflowLangGraphCompile:
     """WorkflowGraph → LangGraph StateGraph compile."""
@@ -148,7 +206,7 @@ class TestWorkflowLangGraphCompile:
 
 
 class TestWorkflowMixedRuntimes:
-    """Mixed runtimes: MixedRuntimeExecutor routing nodes по runtime_map."""
+    """Mixed runtimes: observability metadata per node."""
 
     async def test_workflow_mixed_runtimes_records_runtime_per_node(self) -> None:
         """MixedRuntimeExecutor записывает __runtime_executions__ в state для observability."""
@@ -184,7 +242,7 @@ class TestWorkflowMixedRuntimes:
         assert result["__runtime_executions__"]["deep_step"] == "deepagents"
 
     async def test_workflow_mixed_runtimes_unmapped_node_uses_thin_fallback(self) -> None:
-        """Node без mapping в runtime_map выполняется с thin runtime (fallback)."""
+        """Node без mapping получает thin metadata, но execution stays direct."""
         from cognitia.orchestration.workflow_executor import MixedRuntimeExecutor
 
         async def unmapped_node(state: dict[str, Any]) -> dict[str, Any]:

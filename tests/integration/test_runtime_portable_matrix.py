@@ -19,7 +19,11 @@ def _portable_reply(prompt: str) -> str:
     return f"portable:{prompt}"
 
 
-def _make_done_event(prompt: str, runtime_name: str) -> StreamEvent:
+def _make_done_event(
+    prompt: str,
+    runtime_name: str,
+    new_messages: list[Message] | None = None,
+) -> StreamEvent:
     event = StreamEvent(
         type="done",
         text=_portable_reply(prompt),
@@ -29,10 +33,15 @@ def _make_done_event(prompt: str, runtime_name: str) -> StreamEvent:
         "runtime_name": runtime_name,
         "feature_mode": "portable",
     }
+    if new_messages is not None:
+        event.new_messages = [message.to_dict() for message in new_messages]
     return event
 
 
 class FakePortableRuntime:
+    def __init__(self, include_new_messages: bool = False) -> None:
+        self._include_new_messages = include_new_messages
+
     async def run(
         self,
         *,
@@ -45,8 +54,16 @@ class FakePortableRuntime:
         prompt = messages[-1].content
         yield RuntimeEvent.assistant_delta("portable:")
         yield RuntimeEvent.assistant_delta(prompt)
+        new_messages = None
+        if self._include_new_messages:
+            new_messages = [
+                Message(role="assistant", content="portable:"),
+                Message(role="assistant", content=prompt),
+                Message(role="assistant", content=_portable_reply(prompt)),
+            ]
         yield RuntimeEvent.final(
             text=_portable_reply(prompt),
+            new_messages=new_messages,
             native_metadata={
                 "runtime_name": "deepagents",
                 "feature_mode": "portable",
@@ -58,20 +75,30 @@ class FakePortableRuntime:
 
 
 class FakePortableAdapter:
+    def __init__(self, include_new_messages: bool = False) -> None:
+        self._include_new_messages = include_new_messages
+
     async def stream_reply(self, prompt: str) -> AsyncIterator[StreamEvent]:
         yield StreamEvent(type="text_delta", text="portable:")
         yield StreamEvent(type="text_delta", text=prompt)
-        yield _make_done_event(prompt, "claude_sdk")
+        new_messages = None
+        if self._include_new_messages:
+            new_messages = [
+                Message(role="assistant", content="portable:"),
+                Message(role="assistant", content=prompt),
+                Message(role="assistant", content=_portable_reply(prompt)),
+            ]
+        yield _make_done_event(prompt, "claude_sdk", new_messages=new_messages)
 
     async def disconnect(self) -> None:
         return None
 
 
 @contextmanager
-def _patch_runtime_boundary(runtime_name: str) -> Iterator[None]:
+def _patch_runtime_boundary(runtime_name: str, include_new_messages: bool = False) -> Iterator[None]:
     if runtime_name == "deepagents":
         fake_factory = MagicMock()
-        fake_factory.create.return_value = FakePortableRuntime()
+        fake_factory.create.return_value = FakePortableRuntime(include_new_messages)
         with patch("cognitia.runtime.factory.RuntimeFactory", return_value=fake_factory):
             yield
         return
@@ -88,7 +115,7 @@ def _patch_runtime_boundary(runtime_name: str) -> Iterator[None]:
         yield _make_done_event(prompt, "claude_sdk")
 
     async def fake_create_adapter(self: Any) -> FakePortableAdapter:
-        return FakePortableAdapter()
+        return FakePortableAdapter(include_new_messages)
 
     with (
         patch(
@@ -175,6 +202,36 @@ class TestRuntimePortableMatrix:
         assert first.session_id == "matrix-session"
         assert second.session_id == "matrix-session"
         assert len(conv.history) == 4
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("runtime_name", ["claude_sdk", "deepagents"])
+    async def test_runtime_portable_matrix_conversation_preserves_new_messages(
+        self, runtime_name: str
+    ) -> None:
+        agent = Agent(
+            AgentConfig(
+                system_prompt="Be helpful",
+                runtime=runtime_name,
+                feature_mode="portable",
+            )
+        )
+
+        with _patch_runtime_boundary(runtime_name, include_new_messages=True):
+            async with agent.conversation(session_id="matrix-session") as conv:
+                result = await conv.say("hello")
+
+        assert result.ok is True
+        assert getattr(result, "new_messages", None) == [
+            {"role": "assistant", "content": "portable:"},
+            {"role": "assistant", "content": "hello"},
+            {"role": "assistant", "content": "portable:hello"},
+        ]
+        assert [msg.role for msg in conv.history] == [
+            "user",
+            "assistant",
+            "assistant",
+            "assistant",
+        ]
 
 
 @pytest.mark.integration

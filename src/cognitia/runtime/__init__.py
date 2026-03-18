@@ -10,7 +10,10 @@ Legacy:
 - ClaudeOptionsBuilder — infrastructure (options_builder.py)
 """
 
-from contextlib import suppress
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
 
 # --- AgentRuntime v1 контракт ---
 from cognitia.runtime.base import AgentRuntime
@@ -38,15 +41,6 @@ from cognitia.runtime.model_registry import ModelRegistry, get_registry, reset_r
 from cognitia.runtime.ports import BaseRuntimePort
 from cognitia.runtime.ports.base import StreamEvent, convert_event
 
-# Optional ports (require runtime-specific extras)
-DeepAgentsRuntimePort = None
-with suppress(ImportError):
-    from cognitia.runtime.ports import DeepAgentsRuntimePort
-
-ThinRuntimePort = None
-with suppress(ImportError):
-    from cognitia.runtime.ports import ThinRuntimePort
-
 from cognitia.runtime.types import (
     DEFAULT_MODEL,
     RUNTIME_ERROR_KINDS,
@@ -62,27 +56,6 @@ from cognitia.runtime.types import (
     resolve_model_name,
 )
 
-# --- Legacy: backward compat re-exports ---
-ClaudeOptionsBuilder = None
-RuntimeAdapter = None
-with suppress(ImportError):
-    from cognitia.runtime.adapter import RuntimeAdapter
-    from cognitia.runtime.options_builder import ClaudeOptionsBuilder
-
-# --- SDK 0.1.48 wrappers (optional: require claude extra) ---
-QueryResult = None
-create_mcp_server = None
-mcp_tool = None
-one_shot_query = None
-stream_one_shot_query = None
-with suppress(ImportError):
-    from cognitia.runtime.sdk_query import (
-        QueryResult,
-        one_shot_query,
-        stream_one_shot_query,
-    )
-    from cognitia.runtime.sdk_tools import create_mcp_server, mcp_tool
-
 __all__ = [
     "DEFAULT_MODEL",
     "RUNTIME_CAPABILITY_FLAGS",
@@ -95,14 +68,10 @@ __all__ = [
     "AgentRuntime",
     "BaseRuntimePort",
     "CapabilityRequirements",
-    "ClaudeOptionsBuilder",
-    "DeepAgentsRuntimePort",
     "FeatureMode",
     "Message",
     "ModelPolicy",
     "ModelRegistry",
-    "QueryResult",
-    "RuntimeAdapter",
     "RuntimeCapabilities",
     "RuntimeConfig",
     "RuntimeErrorData",
@@ -111,19 +80,85 @@ __all__ = [
     "RuntimeRegistry",
     "RuntimeTier",
     "StreamEvent",
-    "ThinRuntimePort",
     "ToolSpec",
     "TurnMetrics",
     "convert_event",
-    "create_mcp_server",
     "get_default_registry",
     "get_registry",
     "get_runtime_capabilities",
     "get_valid_runtime_names",
-    "mcp_tool",
-    "one_shot_query",
     "reset_default_registry",
     "reset_registry",
     "resolve_model_name",
-    "stream_one_shot_query",
 ]
+
+_OPTIONAL_EXPORTS: dict[str, tuple[str, str, str]] = {
+    "DeepAgentsRuntimePort": (
+        "cognitia.runtime.ports",
+        "DeepAgentsRuntimePort",
+        "Install optional deepagents dependencies to use DeepAgentsRuntimePort.",
+    ),
+    "ThinRuntimePort": (
+        "cognitia.runtime.ports",
+        "ThinRuntimePort",
+        "Install optional thin runtime dependencies to use ThinRuntimePort.",
+    ),
+    "ClaudeOptionsBuilder": (
+        "cognitia.runtime.options_builder",
+        "ClaudeOptionsBuilder",
+        "Install claude-agent-sdk to use ClaudeOptionsBuilder.",
+    ),
+    "RuntimeAdapter": (
+        "cognitia.runtime.adapter",
+        "RuntimeAdapter",
+        "Install claude-agent-sdk to use RuntimeAdapter.",
+    ),
+    "QueryResult": (
+        "cognitia.runtime.sdk_query",
+        "QueryResult",
+        "Install claude-agent-sdk to use QueryResult.",
+    ),
+    "one_shot_query": (
+        "cognitia.runtime.sdk_query",
+        "one_shot_query",
+        "Install claude-agent-sdk to use one_shot_query.",
+    ),
+    "stream_one_shot_query": (
+        "cognitia.runtime.sdk_query",
+        "stream_one_shot_query",
+        "Install claude-agent-sdk to use stream_one_shot_query.",
+    ),
+    "create_mcp_server": (
+        "cognitia.runtime.sdk_tools",
+        "create_mcp_server",
+        "Install claude-agent-sdk to use create_mcp_server.",
+    ),
+    "mcp_tool": (
+        "cognitia.runtime.sdk_tools",
+        "mcp_tool",
+        "Install claude-agent-sdk to use mcp_tool.",
+    ),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy-load optional runtime exports and fail fast when extras are absent."""
+    optional = _OPTIONAL_EXPORTS.get(name)
+    if optional is None:
+        try:
+            module = import_module(f"{__name__}.{name}")
+        except ImportError as exc:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+
+        globals()[name] = module
+        return module
+
+    module_name, attr_name, hint = optional
+    try:
+        module = import_module(module_name)
+        value = getattr(module, attr_name)
+    except (ImportError, AttributeError) as exc:
+        raise ImportError(f"{attr_name} is unavailable. {hint}") from exc
+
+    globals()[name] = value
+    return value

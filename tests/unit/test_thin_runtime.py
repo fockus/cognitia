@@ -7,9 +7,16 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from cognitia.retry import ExponentialBackoff
 from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.runtime import ThinRuntime
-from cognitia.runtime.types import Message, RuntimeConfig, RuntimeErrorData, RuntimeEvent, ToolSpec
+from cognitia.runtime.types import (
+    Message,
+    RuntimeConfig,
+    RuntimeErrorData,
+    RuntimeEvent,
+    ToolSpec,
+)
 
 # ---------------------------------------------------------------------------
 # Mock LLM — возвращает заранее заданные ответы
@@ -224,6 +231,22 @@ class TestThinRuntimeConversational:
         final = [e for e in events if e.type == "final"]
         assert len(final) == 1
         assert final[0].data["text"] == "Повторный ответ"
+
+    @pytest.mark.asyncio
+    async def test_retry_policy_does_not_wrap_llm_callable_twice(self) -> None:
+        """retry_policy should not add a second wrapper over buffered retry."""
+        llm = MockLLM([make_final_response("Повторный ответ")])
+        policy = ExponentialBackoff(max_retries=2, base_delay=0.0, jitter=False)
+        runtime = ThinRuntime(
+            config=RuntimeConfig(runtime_name="thin", retry_policy=policy),
+            llm_call=llm,
+        )
+
+        assert runtime._llm_call is llm  # noqa: SLF001 - regression guard
+
+        events = await collect(runtime, "test", mode_hint="conversational")
+        final = next(e for e in events if e.type == "final")
+        assert final.data["text"] == "Повторный ответ"
 
     @pytest.mark.asyncio
     async def test_conversational_streaming_without_postprocessing_keeps_eager_deltas(self) -> None:

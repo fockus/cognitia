@@ -13,32 +13,17 @@ Cognitia is built on Clean Architecture and SOLID:
 ## Layers
 
 ```text
-┌─────────────────────────────────────────────────┐
-│  Business Application (your_app)                │
-│  Knows about cognitia. Implements concrete      │
-│  business providers, prompts, roles.            │
-├─────────────────────────────────────────────────┤
-│  cognitia (library)                             │
-│  ┌────────────┐ ┌──────────┐ ┌───────────────┐  │
-│  │  bootstrap  │ │ context  │ │   runtime     │  │
-│  │  (stack)    │ │ (builder)│ │ (claude/thin/ │  │
-│  │             │ │          │ │  deepagents)  │  │
-│  ├────────────┤ ├──────────┤ ├───────────────┤  │
-│  │  policy    │ │ session  │ │   tools       │  │
-│  │ (deny/allow│ │ (manager,│ │ (sandbox,     │  │
-│  │  selector) │ │  rehydr.)│ │  builtin,web) │  │
-│  ├────────────┤ ├──────────┤ ├───────────────┤  │
-│  │  memory    │ │  skills  │ │   todo        │  │
-│  │ (inmemory, │ │ (registry│ │ (inmemory,    │  │
-│  │  postgres) │ │  loader) │ │  fs, db)      │  │
-│  ├────────────┤ ├──────────┤ ├───────────────┤  │
-│  │ memory_bank│ │  routing │ │ orchestration │  │
-│  │ (fs, db)   │ │ (keyword)│ │ (plan, sub,   │  │
-│  │            │ │          │ │  team, msg)   │  │
-│  └────────────┘ └──────────┘ └───────────────┘  │
-├─────────────────────────────────────────────────┤
-│  External Dependencies (LLM API, DB, MCP)       │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Business Application (your_app)                         │
+│  Knows about cognitia. Implements concrete providers.    │
+├──────────────────────────────────────────────────────────┤
+│  cognitia (library)                                       │
+│  bootstrap | context | runtime (claude/thin/cli/deep)    │
+│  policy | session | tools | memory | skills | routing     │
+│  memory_bank | orchestration | hooks | observability      │
+├──────────────────────────────────────────────────────────┤
+│  External Dependencies (LLM API, DB, MCP)                 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## Packages
@@ -55,8 +40,8 @@ Cognitia is built on Clean Architecture and SOLID:
 | `orchestration` | Planning, subagents, team mode, message bus | core |
 | `policy` | ToolPolicy (deny/allow), ToolSelector (budget) | core |
 | `routing` | KeywordRoleRouter (auto role-switching) | core |
-| `skills` | SkillRegistry, YamlSkillLoader (MCP skills) | core |
-| `runtime` | AgentRuntime (Claude SDK, ThinRuntime, DeepAgents) | extras |
+| `skills` | SkillRegistry, LoadedSkill, SkillSpec, McpServerSpec; YAML loader helper in `skills.loader` | core |
+| `runtime` | AgentRuntime (Claude SDK, ThinRuntime, CLI, DeepAgents) | extras |
 | `resilience` | Circuit breaker for external calls | core |
 | `observability` | Structured JSON logging | structlog |
 | `hooks` | Lifecycle hooks (pre/post turn) | core |
@@ -79,7 +64,7 @@ SandboxProvider ───── sandbox providers (Local, E2B, Docker)
 
 WebProvider ────────── web providers (Httpx)
 
-AgentRuntime ──────── runtime (ClaudeCode, Thin, DeepAgents)
+AgentRuntime ──────── runtime (ClaudeCode, Thin, CLI, DeepAgents)
 
 PlanStore ─────────── plan stores (InMemory)
 PlannerMode ───────── planners (Thin, DeepAgents)

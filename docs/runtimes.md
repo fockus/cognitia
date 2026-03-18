@@ -1,19 +1,19 @@
 # Runtimes
 
-Cognitia поддерживает три runtime. Все реализуют единый `AgentRuntime` Protocol — переключение без изменения бизнес-кода.
+Cognitia поддерживает четыре runtime. Все реализуют единый `AgentRuntime` Protocol — переключение без изменения бизнес-кода.
 
 ## Сравнение
 
-| | Claude SDK | ThinRuntime | DeepAgents |
-|--|-----------|-------------|------------|
-| **LLM** | Claude (через SDK subprocess) | Anthropic + OpenAI-compatible + Google | Anthropic baseline; OpenAI/Google через provider package |
-| **MCP** | Нативная поддержка | Встроенный MCP client | Не входит в portable baseline |
-| **Sandbox** | Нативные Read/Write/Bash | Через SandboxProvider | Через SandboxProvider |
-| **Planning** | Нативный plan mode | ThinPlannerMode | DeepAgentsPlannerMode |
-| **Subagents** | Нативный Task tool | asyncio.Task | Native `task` / LangGraph |
-| **Team mode** | ClaudeTeamOrchestrator | (backlog) | DeepAgentsTeamOrchestrator |
-| **Extras** | `cognitia[claude]` | `cognitia[thin]` | `cognitia[deepagents]` |
-| **Offline** | Нет | Да (через local/proxy `base_url`) | Зависит от provider/local endpoint, не гарантируется |
+| | Claude SDK | ThinRuntime | CLI Runtime | DeepAgents |
+|--|-----------|-------------|-------------|------------|
+| **LLM** | Claude (через SDK subprocess) | Anthropic + OpenAI-compatible + Google | Внешний CLI с NDJSON stream | Anthropic baseline; OpenAI/Google через provider package |
+| **MCP** | Нативная поддержка | Встроенный MCP client | Нет portable guarantee | Не входит в portable baseline |
+| **Sandbox** | Нативные Read/Write/Bash | Через SandboxProvider | Зависит от wrapped CLI | Через SandboxProvider |
+| **Planning** | Нативный plan mode | ThinPlannerMode | Зависит от wrapped CLI | DeepAgentsPlannerMode |
+| **Subagents** | Нативный Task tool | asyncio.Task | Нет portable guarantee | Native `task` / LangGraph |
+| **Team mode** | ClaudeTeamOrchestrator | (backlog) | Нет portable guarantee | DeepAgentsTeamOrchestrator |
+| **Extras** | `cognitia[claude]` | `cognitia[thin]` | N/A | `cognitia[deepagents]` |
+| **Offline** | Нет | Да (через local/proxy `base_url`) | Depends on wrapped CLI | Зависит от provider/local endpoint, не гарантируется |
 
 ## Portable matrix (текущее покрытие)
 
@@ -23,6 +23,7 @@ Cognitia поддерживает три runtime. Все реализуют ед
   - `Conversation.say()`
 - `deepagents` native built-ins и store/resume surface покрыты offline graph-тестами отдельно от portable matrix.
 - `thin` остаётся `light` tier и не считается целью полной parity с `claude_sdk` / `deepagents`.
+- `cli` — light-tier subprocess NDJSON runtime для внешних CLI агентов; MCP/subagents parity не гарантируются.
 - Provider-specific risk, зафиксированный живым smoke:
   - `Gemini + DeepAgents built-ins` на tool-heavy prompts пока остаётся нестабильным provider-specific path. Для минимального migration cost используйте `feature_mode="portable"`.
 
@@ -109,6 +110,9 @@ config = RuntimeConfig(runtime_name="claude_sdk")
 
 # Эксперименты: DeepAgents (LangGraph)
 config = RuntimeConfig(runtime_name="deepagents")
+
+# CLI subprocess runtime
+config = RuntimeConfig(runtime_name="cli")
 ```
 
 ## AgentRuntime Protocol

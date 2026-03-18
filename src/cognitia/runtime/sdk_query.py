@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -73,18 +73,18 @@ def _build_options(
     return ClaudeAgentOptions(
         system_prompt=system_prompt,
         model=model,
-        permission_mode=permission_mode,
+        permission_mode=cast(Any, permission_mode),
         cwd=cwd,
         output_format=output_format,
         max_turns=max_turns,
         mcp_servers=mcp_servers or {},
         allowed_tools=allowed_tools or [],
-        hooks=hooks,
+        hooks=cast(Any, hooks),
         max_budget_usd=max_budget_usd,
         fallback_model=fallback_model,
-        betas=betas or [],
+        betas=cast(Any, betas or []),
         env=env or {},
-        setting_sources=setting_sources,
+        setting_sources=cast(Any, setting_sources),
         include_partial_messages=include_partial_messages,
     )
 
@@ -95,6 +95,10 @@ def _extract_text_blocks(message: AssistantMessage) -> str:
         if isinstance(block, TextBlock):
             parts.append(block.text)
     return "".join(parts)
+
+
+def _missing_final_result_error() -> RuntimeError:
+    return RuntimeError("SDK query completed without final ResultMessage")
 
 
 async def one_shot_query(
@@ -156,15 +160,20 @@ async def one_shot_query(
 
     full_text = ""
     result = QueryResult()
+    saw_result_message = False
 
     async for message in _sdk_query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
             full_text += _extract_text_blocks(message)
         elif isinstance(message, ResultMessage):
+            saw_result_message = True
             result.session_id = getattr(message, "session_id", None)
             result.total_cost_usd = getattr(message, "total_cost_usd", None)
             result.usage = getattr(message, "usage", None)
             result.structured_output = getattr(message, "structured_output", None)
+
+    if not saw_result_message:
+        raise _missing_final_result_error()
 
     result.text = full_text
     return result
@@ -217,6 +226,7 @@ async def stream_one_shot_query(
     full_text = ""
     result_meta: dict[str, Any] = {}
     saw_partial_text = False
+    saw_result_message = False
 
     async for message in _sdk_query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
@@ -243,6 +253,7 @@ async def stream_one_shot_query(
             if status_text:
                 yield StreamEvent(type="status", text=status_text)
         elif isinstance(message, ResultMessage):
+            saw_result_message = True
             result_meta = {
                 "session_id": getattr(message, "session_id", None),
                 "total_cost_usd": getattr(message, "total_cost_usd", None),
@@ -255,6 +266,13 @@ async def stream_one_shot_query(
                 saw_partial_text = True
                 full_text += partial_text
                 yield StreamEvent(type="text_delta", text=partial_text)
+
+    if not saw_result_message:
+        yield StreamEvent(
+            type="error",
+            text="SDK query completed without final ResultMessage",
+        )
+        return
 
     yield StreamEvent(
         type="done",

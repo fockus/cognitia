@@ -123,7 +123,7 @@ async with agent.conversation() as conv:
 
     # Streaming in conversation
     async for event in conv.stream("Tell me a joke"):
-        if event.type == "text_delta":
+        if event.type == "assistant_delta":
             print(event.text, end="", flush=True)
 ```
 
@@ -138,11 +138,12 @@ class UserInfo(BaseModel):
     name: str
     age: int
 
+from cognitia.runtime.structured_output import extract_pydantic_schema
+
 agent = Agent(AgentConfig(
     system_prompt="Extract user info from text.",
     runtime="thin",
-    output_type=UserInfo,       # auto-extracts JSON Schema
-    max_model_retries=2,        # retry on validation failure
+    output_format=extract_pydantic_schema(UserInfo),
 ))
 
 result = await agent.query("John is 30 years old")
@@ -379,35 +380,39 @@ async for event in runtime.run(
 
 ### 9. Cost Budget
 
-Track LLM spending and enforce limits:
+Track LLM spending and enforce limits using the middleware API:
 
 ```python
-from cognitia.runtime.cost import CostBudget
+from cognitia.agent import Agent, AgentConfig, CostTracker
+
+tracker = CostTracker(budget_usd=5.0)
 
 agent = Agent(AgentConfig(
     system_prompt="You are a helpful assistant.",
     runtime="thin",
-    cost_budget=CostBudget(max_cost_usd=5.0, action_on_exceed="warn"),
+    middleware=(tracker,),
 ))
+
+result = await agent.query("Hello!")
+print(f"Total cost: ${tracker.total_cost_usd:.4f}")
 ```
 
-See [Production Safety](production-safety.md) for details on cost tracking, guardrails, and retry policies.
+For lower-level control, see `CostBudget` and `CostTracker` in [Production Safety](production-safety.md).
 
 ### 10. Guardrails
 
-Pre- and post-LLM content checks:
+Pre- and post-LLM content checks via `RuntimeConfig`:
 
 ```python
 from cognitia.guardrails import ContentLengthGuardrail, RegexGuardrail
 
-agent = Agent(AgentConfig(
-    system_prompt="...",
-    runtime="thin",
-    input_guardrails=[
-        ContentLengthGuardrail(max_length=8000),
-        RegexGuardrail(patterns=[r"ignore previous instructions"]),
-    ],
-))
+# Guardrails are applied at the RuntimeConfig level
+length_guard = ContentLengthGuardrail(max_length=8000)
+regex_guard = RegexGuardrail(patterns=[r"ignore previous instructions"])
+
+# Check content before sending to LLM
+result = await length_guard.check("Some user input here")
+print(result.passed)  # True if within limits
 ```
 
 ### 11. Sessions
@@ -434,35 +439,60 @@ from cognitia.observability.tracer import ConsoleTracer, TracingSubscriber
 
 bus = InMemoryEventBus()
 tracer = ConsoleTracer()
-TracingSubscriber(bus, tracer).attach()
+subscriber = TracingSubscriber(bus, tracer)
+subscriber.attach()
 
-agent = Agent(AgentConfig(
-    system_prompt="...",
-    runtime="thin",
-    event_bus=bus,
-    tracer=tracer,
-))
+# Subscribe to specific events
+await bus.subscribe("llm_call_end", lambda data: print(f"LLM call: {data}"))
+
+# Fire events (ThinRuntime does this automatically)
+await bus.publish("llm_call_end", {"model": "sonnet", "tokens": 150})
 ```
 
 See [Observability](observability.md) for custom tracers and event subscriptions.
 
-### 13. RAG
+### 13. UI Projection
 
-Inject relevant documents into LLM context:
+Convert `RuntimeEvent` streams into UI-friendly state for frontends:
 
 ```python
-from cognitia.rag import Document, SimpleRetriever
+from cognitia.ui.projection import ChatProjection, project_stream
+from cognitia.runtime.types import RuntimeEvent
+
+projection = ChatProjection()
+
+# project_stream wraps an async event iterator into UIState updates
+async def demo_events():
+    yield RuntimeEvent.assistant_delta(text="Hello, ")
+    yield RuntimeEvent.assistant_delta(text="world!")
+    yield RuntimeEvent.final(text="Hello, world!", new_messages=[])
+
+async for ui_state in project_stream(demo_events(), projection):
+    for msg in ui_state.messages:
+        print(msg.blocks)  # [TextBlock(text="Hello, world!")]
+```
+
+See [UI Projection](ui-projection.md) for custom projections and `UIState.to_dict()` serialization.
+
+### 14. RAG
+
+Inject relevant documents into LLM context using `RagInputFilter`:
+
+```python
+from cognitia.rag import Document, SimpleRetriever, RagInputFilter
+from cognitia.runtime.types import Message
 
 docs = [
     Document(content="Paris is the capital of France."),
     Document(content="Python was created by Guido van Rossum."),
 ]
 
-agent = Agent(AgentConfig(
-    system_prompt="Answer questions using provided context.",
-    runtime="thin",
-    retriever=SimpleRetriever(documents=docs),
-))
+retriever = SimpleRetriever(documents=docs)
+rag_filter = RagInputFilter(retriever=retriever, top_k=2)
+
+messages = [Message(role="user", content="What is the capital of France?")]
+filtered_msgs, enriched_prompt = await rag_filter.filter(messages, "You are helpful.")
+print(enriched_prompt)  # System prompt with relevant docs injected
 ```
 
 See [RAG](rag.md) for custom retrievers (Pinecone, pgvector) and filter chain integration.

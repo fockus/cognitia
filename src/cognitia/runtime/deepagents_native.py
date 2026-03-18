@@ -5,10 +5,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from cognitia.runtime.deepagents_builtins import split_native_builtin_tools
-from cognitia.runtime.deepagents_hitl import build_interrupt_events
-from cognitia.runtime.deepagents_models import build_deepagents_chat_model
-from cognitia.runtime.deepagents_tools import create_langchain_tool
 from cognitia.runtime.types import RuntimeErrorData, RuntimeEvent, ToolSpec
 
 
@@ -44,7 +40,10 @@ def build_deepagents_graph(
     agent_name: str | None = None,
 ) -> Any:
     """Собрать native DeepAgents graph через upstream create_deep_agent()."""
-    from deepagents import create_deep_agent
+    from cognitia.runtime.deepagents_builtins import split_native_builtin_tools
+    from cognitia.runtime.deepagents_models import build_deepagents_chat_model
+    from cognitia.runtime.deepagents_tools import create_langchain_tool
+    from deepagents import create_deep_agent  # type: ignore[import-not-found]
 
     llm = build_deepagents_chat_model(model, base_url=base_url)
     selection = split_native_builtin_tools(tools)
@@ -108,6 +107,8 @@ async def stream_deepagents_graph_events(
     run_config: dict[str, Any] | None = None,
 ) -> AsyncIterator[RuntimeEvent]:
     """Нормализовать upstream graph events в RuntimeEvent."""
+    from cognitia.runtime.deepagents_hitl import build_interrupt_events
+
     tool_correlation: dict[str, str] = {}
     saw_text = False
 

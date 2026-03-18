@@ -228,7 +228,7 @@ class TestE2ECostTracker:
             assert r1.ok is True
             assert tracker.total_cost_usd == pytest.approx(0.04)
 
-            r2 = await agent.query("q2")
+            await agent.query("q2")
             assert tracker.total_cost_usd == pytest.approx(0.08)
 
             # Third query exceeds budget

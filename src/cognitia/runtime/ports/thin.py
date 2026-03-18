@@ -14,7 +14,7 @@ from typing import Any
 
 from cognitia.runtime.ports.base import HISTORY_MAX, BaseRuntimePort
 from cognitia.runtime.thin.runtime import ThinRuntime
-from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent
+from cognitia.runtime.types import Message, RuntimeConfig, RuntimeEvent, ToolSpec
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,35 @@ class ThinRuntimePort(BaseRuntimePort):
             history_max=THIN_HISTORY_MAX,
             summarizer=summarizer,
         )
-        self._local_tools = local_tools
+        self._local_tools = local_tools or {}
+        self._active_tools = self._build_active_tools(self._local_tools)
         self._runtime: ThinRuntime | None = None
+
+    @staticmethod
+    def _build_active_tools(local_tools: dict[str, Any]) -> list[ToolSpec]:
+        """Преобразовать local tools в ToolSpec для LLM advertisement."""
+        active_tools: list[ToolSpec] = []
+        for name, tool in local_tools.items():
+            tool_definition = getattr(tool, "__tool_definition__", None)
+            if tool_definition is not None:
+                active_tools.append(tool_definition.to_tool_spec())
+                continue
+
+            description = ""
+            doc = getattr(tool, "__doc__", None)
+            if isinstance(doc, str):
+                description = doc.strip().split("\n")[0].strip()
+
+            active_tools.append(
+                ToolSpec(
+                    name=name,
+                    description=description,
+                    parameters={},
+                    is_local=True,
+                )
+            )
+
+        return active_tools
 
     async def connect(self) -> None:
         """Инициализировать ThinRuntime."""
@@ -81,6 +108,6 @@ class ThinRuntimePort(BaseRuntimePort):
         async for event in self._runtime.run(
             messages=messages,
             system_prompt=system_prompt,
-            active_tools=[],
+            active_tools=self._active_tools,
         ):
             yield event

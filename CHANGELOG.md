@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Multi-Agent Coordination** (`cognitia.multi_agent`)
+  - `AgentTool` Protocol — expose any runtime as a callable tool for other agents
+  - `create_agent_tool_spec()` / `execute_agent_tool()` — agent-as-tool utility functions
+  - `AgentToolResult` frozen dataclass with success/output/error/metrics
+  - `TaskQueue` Protocol (5 methods, ISP-compliant) with `InMemoryTaskQueue` and `SqliteTaskQueue`
+  - `TaskItem`, `TaskStatus`, `TaskPriority`, `TaskFilter` domain types
+  - `AgentRegistry` Protocol (5 methods, ISP-compliant) with `InMemoryAgentRegistry`
+  - `AgentRecord`, `AgentStatus`, `AgentFilter` domain types
+- **CLI Agent Runtime** (`cognitia.runtime.cli`)
+  - `CliAgentRuntime` — subprocess-based runtime for external CLI agents (Claude Code, custom)
+  - `NdjsonParser` Protocol with `ClaudeNdjsonParser` and `GenericNdjsonParser`
+  - `CliConfig` frozen dataclass (command, timeout, max_output_bytes, env)
+  - Registered in `RuntimeRegistry` as `"cli"` with light tier capabilities
+
 ## [1.0.0-core] - 2026-03-18
 
 ### Added
@@ -226,6 +244,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Memory** — `InMemoryMemoryProvider`, `PostgresMemoryProvider`
 - **Commands** — `CommandRegistry` with aliases
 
+[Unreleased]: https://github.com/fockus/cognitia/compare/v1.0.0-core...HEAD
 [1.0.0-core]: https://github.com/fockus/cognitia/compare/v0.7.0...v1.0.0-core
 [0.7.0]: https://github.com/fockus/cognitia/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fockus/cognitia/compare/v0.5.0...v0.6.0

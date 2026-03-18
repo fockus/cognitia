@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from cognitia.runtime.capabilities import RuntimeCapabilities
-from cognitia.runtime.types import RuntimeConfig, RuntimeEvent
+from cognitia.runtime.types import RuntimeConfig
 
 
 # ---------------------------------------------------------------------------

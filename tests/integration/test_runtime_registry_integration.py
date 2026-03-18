@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -96,7 +95,7 @@ class TestRegisterCustomRuntimeFullFlow:
 
 
 class TestFactoryBackwardCompatAllRuntimes:
-    """All 3 builtin runtimes create via registry-backed factory."""
+    """All builtin runtimes create via registry-backed factory."""
 
     def test_all_builtins_creatable(self) -> None:
         """claude_sdk, deepagents, thin all create without crash via default registry."""
@@ -106,7 +105,7 @@ class TestFactoryBackwardCompatAllRuntimes:
         registry = get_default_registry()
         factory = RuntimeFactory(registry=registry)
 
-        for name in ("claude_sdk", "deepagents", "thin"):
+        for name in ("claude_sdk", "deepagents", "thin", "cli"):
             runtime = factory.create(config=RuntimeConfig(runtime_name=name))
             # May be real runtime or _ErrorRuntime (deps missing), but must not crash
             assert runtime is not None

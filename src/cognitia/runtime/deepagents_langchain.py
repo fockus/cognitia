@@ -11,7 +11,7 @@ from cognitia.runtime.types import Message, RuntimeErrorData, RuntimeEvent
 def check_langchain_available() -> RuntimeErrorData | None:
     """Проверить наличие DeepAgents/LangChain baseline deps."""
     try:
-        import deepagents  # noqa: F401
+        import deepagents  # type: ignore[import-not-found] # noqa: F401
         import langchain_core  # noqa: F401
 
         return None
@@ -33,7 +33,7 @@ def build_langchain_messages(
     include_system_prompt: bool = True,
 ) -> list[Any]:
     """Конвертировать cognitia Message → LangChain messages."""
-    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
     lc_messages: list[Any] = []
     if include_system_prompt:
@@ -42,7 +42,27 @@ def build_langchain_messages(
         if msg.role == "user":
             lc_messages.append(HumanMessage(content=msg.content))
         elif msg.role == "assistant":
-            lc_messages.append(AIMessage(content=msg.content))
+            ai_kwargs: dict[str, Any] = {"content": msg.content}
+            if msg.tool_calls is not None:
+                ai_kwargs["tool_calls"] = msg.tool_calls
+            if msg.name is not None:
+                ai_kwargs["name"] = msg.name
+            lc_messages.append(AIMessage(**ai_kwargs))
+        elif msg.role == "tool":
+            tool_call_id = ""
+            if isinstance(msg.metadata, dict):
+                raw_id = msg.metadata.get("tool_call_id") or msg.metadata.get("correlation_id")
+                if raw_id is not None:
+                    tool_call_id = str(raw_id)
+            if not tool_call_id:
+                tool_call_id = msg.name or "tool"
+            lc_messages.append(
+                ToolMessage(
+                    content=msg.content,
+                    name=msg.name,
+                    tool_call_id=tool_call_id,
+                )
+            )
         elif msg.role == "system":
             lc_messages.append(SystemMessage(content=msg.content))
     return lc_messages

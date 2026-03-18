@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from cognitia.commands.loader import LoadedCommand, load_commands_from_yaml
+from cognitia.commands.loader import load_commands_from_yaml
 from cognitia.commands.registry import CommandRegistry
 
 

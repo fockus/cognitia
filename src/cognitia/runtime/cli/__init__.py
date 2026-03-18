@@ -5,9 +5,11 @@ from cognitia.runtime.cli.parser import (
     GenericNdjsonParser,
     NdjsonParser,
 )
+from cognitia.runtime.cli.runtime import CliAgentRuntime
 from cognitia.runtime.cli.types import CliConfig
 
 __all__ = [
+    "CliAgentRuntime",
     "CliConfig",
     "ClaudeNdjsonParser",
     "GenericNdjsonParser",

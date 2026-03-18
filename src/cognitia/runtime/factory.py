@@ -185,6 +185,10 @@ class RuntimeFactory:
             return self._create_deepagents(effective_config, **kwargs)
         elif name == "thin":
             return self._create_thin(effective_config, **kwargs)
+        elif name == "cli":
+            from cognitia.runtime.registry import _create_cli
+
+            return _create_cli(effective_config, **kwargs)
         else:
             raise ValueError(
                 f"Unknown runtime: '{name}'. "

@@ -59,7 +59,9 @@ class DeepAgentsRuntimePort(BaseRuntimePort):
             # Auto-backend: memory без backend → FilesystemBackend(root_dir=".")
             if "backend" not in native:
                 try:
-                    from deepagents.backends.filesystem import FilesystemBackend
+                    from deepagents.backends.filesystem import (  # type: ignore[import-not-found]
+                        FilesystemBackend,
+                    )
 
                     native["backend"] = FilesystemBackend(root_dir=".", virtual_mode=False)
                 except ImportError:

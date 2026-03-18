@@ -26,7 +26,7 @@ def compile_to_langgraph(graph: WorkflowGraph) -> Any:
     Raises ImportError if langgraph not installed.
     """
     try:
-        from langgraph.graph import END, StateGraph
+        from langgraph.graph import END, StateGraph  # type: ignore[import-not-found]
     except ImportError as e:
         msg = (
             "langgraph package required for LangGraph compilation. "
@@ -76,5 +76,4 @@ def compile_to_langgraph(graph: WorkflowGraph) -> Any:
         compile_kwargs["interrupt_before"] = list(graph._interrupts)
 
     return sg.compile(**compile_kwargs)
-
 

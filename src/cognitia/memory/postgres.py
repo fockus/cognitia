@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -521,7 +521,7 @@ def _json_or_none(value: Any) -> str | None:
     return json.dumps(value)
 
 
-def _merge_scoped_postgres_facts(rows: list[Any]) -> dict[str, Any]:
+def _merge_scoped_postgres_facts(rows: Sequence[Any]) -> dict[str, Any]:
     """Слить global + topic rows так, чтобы topic-scoped значения перекрывали global."""
     merged: dict[str, Any] = {}
     global_rows = [row for row in rows if getattr(row, "topic_id", None) is None]

@@ -19,11 +19,11 @@ pytest.importorskip("claude_agent_sdk", reason="claude-agent-sdk не устан
 
 pytestmark = pytest.mark.requires_claude_sdk
 
-from cognitia.hooks.registry import HookRegistry
-from cognitia.hooks.sdk_bridge import registry_to_sdk_hooks
-from cognitia.runtime.adapter import RuntimeAdapter
-from cognitia.runtime.options_builder import ClaudeOptionsBuilder
-from cognitia.runtime.sdk_tools import create_mcp_server, mcp_tool
+from cognitia.hooks.registry import HookRegistry  # noqa: E402
+from cognitia.hooks.sdk_bridge import registry_to_sdk_hooks  # noqa: E402
+from cognitia.runtime.adapter import RuntimeAdapter  # noqa: E402
+from cognitia.runtime.options_builder import ClaudeOptionsBuilder  # noqa: E402
+from cognitia.runtime.sdk_tools import create_mcp_server, mcp_tool  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # HookRegistry → SDK hooks → ClaudeAgentOptions pipeline

@@ -8,6 +8,7 @@ from typing import Any
 
 from cognitia.agent.config import AgentConfig
 from cognitia.agent.result import Result
+from cognitia.runtime.types import Message
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +56,18 @@ class Agent:
 
         # 2. Execute + collect
         collected = await collect_stream_result(self._execute_stream(effective_prompt))
+        result_payload = dict(collected)
+        new_messages = result_payload.pop("new_messages", None)
 
         # 3. Build Result
-        result = Result(**collected)
+        result = Result(**result_payload)
 
         # 4. Middleware after_result
         for mw in self._config.middleware:
             result = await mw.after_result(result)
+
+        if new_messages is not None:
+            object.__setattr__(result, "new_messages", new_messages)
 
         return result
 
@@ -163,24 +169,24 @@ class Agent:
 
     async def _execute_agent_runtime(self, prompt: str, runtime_name: str) -> AsyncIterator[Any]:
         """Execute через AgentRuntime (thin/deepagents)."""
+        from cognitia.agent.runtime_wiring import build_portable_runtime_plan
         from cognitia.runtime.factory import RuntimeFactory
         from cognitia.runtime.types import Message
 
-        config = self._build_runtime_config(runtime_name)
+        runtime_plan = build_portable_runtime_plan(self._config, runtime_name)
         factory = RuntimeFactory()
         runtime = factory.create(
-            config=config,
-            tool_executors={td.name: td.handler for td in self._config.tools},
+            config=runtime_plan.config,
+            **runtime_plan.create_kwargs,
         )
 
         messages = [Message(role="user", content=prompt)]
-        active_tools = [td.to_tool_spec() for td in self._config.tools]
 
         try:
             async for event in runtime.run(
                 messages=messages,
                 system_prompt=self._config.system_prompt,
-                active_tools=active_tools,
+                active_tools=runtime_plan.active_tools,
             ):
                 # Конвертируем RuntimeEvent → StreamEvent-like
                 yield _RuntimeEventAdapter(event)
@@ -306,19 +312,34 @@ async def collect_stream_result(stream: AsyncIterator[Any]) -> dict[str, Any]:
     usage = None
     structured_output = None
     native_metadata = None
+    new_messages = None
     error = None
 
     async for event in stream:
         etype = event.type
         if etype == "text_delta":
             text += event.text
-        elif etype == "done":
-            text = event.text or text
+        elif etype in {"done", "final"}:
+            payload = getattr(event, "data", {}) if hasattr(event, "data") else {}
+            text = getattr(event, "text", None) or payload.get("text", text)
             session_id = getattr(event, "session_id", None)
+            if session_id is None:
+                session_id = payload.get("session_id")
             total_cost_usd = getattr(event, "total_cost_usd", None)
+            if total_cost_usd is None:
+                total_cost_usd = payload.get("total_cost_usd")
             usage = getattr(event, "usage", None)
+            if usage is None:
+                usage = payload.get("usage")
             structured_output = getattr(event, "structured_output", None)
+            if structured_output is None:
+                structured_output = payload.get("structured_output")
             native_metadata = getattr(event, "native_metadata", None)
+            if native_metadata is None:
+                native_metadata = payload.get("native_metadata")
+            new_messages = getattr(event, "new_messages", None)
+            if new_messages is None:
+                new_messages = payload.get("new_messages")
         elif etype == "error":
             error = event.text or "Unknown error"
 
@@ -329,8 +350,28 @@ async def collect_stream_result(stream: AsyncIterator[Any]) -> dict[str, Any]:
         "usage": usage,
         "structured_output": structured_output,
         "native_metadata": native_metadata,
+        "new_messages": new_messages,
         "error": error,
     }
+
+
+def _runtime_message_from_payload(payload: Any) -> Message:
+    """Normalize runtime payload into Message."""
+    from cognitia.runtime.types import Message
+
+    if isinstance(payload, Message):
+        return payload
+    if isinstance(payload, dict):
+        return Message(**payload)
+    raise TypeError(f"Unsupported runtime message payload: {type(payload)!r}")
+
+
+def _runtime_messages_from_payloads(payloads: Any) -> list[Message]:
+    """Normalize runtime new_messages payload into Message list."""
+    if not payloads:
+        return []
+
+    return [_runtime_message_from_payload(payload) for payload in payloads]
 
 
 class _RuntimeEventAdapter:
@@ -349,6 +390,7 @@ class _RuntimeEventAdapter:
             self.type = "done"
             self.text = data.get("text", "")
             self.is_final = True
+            self.new_messages = data.get("new_messages", [])
         elif etype == "error":
             self.type = "error"
             self.text = data.get("message", "Unknown error")
@@ -392,6 +434,8 @@ class _RuntimeEventAdapter:
             self.allowed_decisions = None
         if not hasattr(self, "interrupt_id"):
             self.interrupt_id = None
+        if not hasattr(self, "new_messages"):
+            self.new_messages = []
 
         self.session_id = data.get("session_id")
         self.total_cost_usd = data.get("total_cost_usd")
@@ -417,3 +461,4 @@ class _ErrorEvent:
         self.tool_result = ""
         self.allowed_decisions = None
         self.interrupt_id = None
+        self.new_messages: list[Any] = []

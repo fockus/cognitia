@@ -1,6 +1,6 @@
 """RuntimeRegistry — extensible adapter registry for runtime factories.
 
-Built-in runtimes (claude_sdk, deepagents, thin) are registered automatically.
+Built-in runtimes (`claude_sdk`, `deepagents`, `thin`, `cli`) are registered automatically.
 Third-party runtimes can be registered via register() or entry points
 (group="cognitia.runtimes").
 """
@@ -111,8 +111,18 @@ def _create_thin(config: RuntimeConfig, **kwargs: Any) -> Any:
     return ThinRuntime(config=config, **kwargs)
 
 
+def _create_cli(config: RuntimeConfig, **kwargs: Any) -> Any:
+    """Lazy factory for CliAgentRuntime."""
+    from cognitia.runtime.cli.runtime import CliAgentRuntime
+
+    kwargs.pop("tool_executors", None)
+    kwargs.pop("local_tools", None)
+    kwargs.pop("mcp_servers", None)
+    return CliAgentRuntime(config=config, **kwargs)
+
+
 def _register_builtins(registry: RuntimeRegistry) -> None:
-    """Register built-in runtimes: claude_sdk, deepagents, thin."""
+    """Register built-in runtimes: claude_sdk, deepagents, thin, cli."""
     registry.register(
         "claude_sdk",
         _create_claude_sdk,
@@ -127,6 +137,11 @@ def _register_builtins(registry: RuntimeRegistry) -> None:
         "thin",
         _create_thin,
         capabilities=get_runtime_capabilities("thin"),
+    )
+    registry.register(
+        "cli",
+        _create_cli,
+        capabilities=get_runtime_capabilities("cli"),
     )
 
 
@@ -199,7 +214,7 @@ def reset_default_registry() -> None:
 # Dynamic valid runtime names
 # ---------------------------------------------------------------------------
 
-_BUILTIN_NAMES = frozenset({"claude_sdk", "deepagents", "thin"})
+_BUILTIN_NAMES = frozenset({"claude_sdk", "deepagents", "thin", "cli"})
 
 
 def get_valid_runtime_names() -> frozenset[str]:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from itertools import zip_longest
 from typing import Any
 
 from cognitia.runtime.types import RuntimeErrorData, RuntimeEvent
@@ -69,11 +68,18 @@ def _approval_events_from_hitl_request(
     *,
     interrupt_id: str | None,
 ) -> list[RuntimeEvent]:
-    action_requests = request.get("action_requests") or []
-    review_configs = request.get("review_configs") or []
+    action_requests = [
+        item for item in (request.get("action_requests") or []) if isinstance(item, dict)
+    ]
+    review_configs = [
+        item for item in (request.get("review_configs") or []) if isinstance(item, dict)
+    ]
     events: list[RuntimeEvent] = []
 
-    for action, review in zip_longest(action_requests, review_configs, fillvalue={}):
+    total = max(len(action_requests), len(review_configs))
+    for idx in range(total):
+        action: dict[str, Any] = action_requests[idx] if idx < len(action_requests) else {}
+        review: dict[str, Any] = review_configs[idx] if idx < len(review_configs) else {}
         action_name = action.get("name") or review.get("action_name") or ""
         if not action_name:
             events.append(

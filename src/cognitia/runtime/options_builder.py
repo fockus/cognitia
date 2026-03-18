@@ -13,9 +13,11 @@ from claude_agent_sdk import (
     McpSdkServerConfig,
     PermissionResultAllow,
     PermissionResultDeny,
+    PermissionMode,
     SandboxSettings,
     SdkBeta,
     SdkPluginConfig,
+    SettingSource,
     ToolPermissionContext,
 )
 
@@ -60,9 +62,9 @@ class ClaudeOptionsBuilder:
         disallowed_tools: list[str] | None = None,
         can_use_tool: CanUseToolFn | None = None,
         max_turns: int | None = None,
-        permission_mode: str = "bypassPermissions",
+        permission_mode: PermissionMode = "bypassPermissions",
         tool_failure_count: int = 0,
-        setting_sources: list[str] | None = None,
+        setting_sources: list[SettingSource] | None = None,
         max_thinking_tokens: int | None = None,
         sandbox: SandboxSettings | None = None,
         agents: dict[str, AgentDefinition] | None = None,
@@ -118,7 +120,7 @@ class ClaudeOptionsBuilder:
             all_mcp.update(sdk_mcp_servers)
 
         # По умолчанию НЕ читаем project/user settings (CLAUDE.md, .claude/settings.json).
-        sources = setting_sources if setting_sources is not None else []
+        sources: list[SettingSource] = setting_sources if setting_sources is not None else []
 
         opts = ClaudeAgentOptions(
             model=model,
@@ -130,7 +132,7 @@ class ClaudeOptionsBuilder:
             max_turns=max_turns,
             permission_mode=permission_mode,
             cwd=str(self._cwd) if self._cwd else None,
-            setting_sources=sources,  # type: ignore[arg-type]
+            setting_sources=sources,
             max_thinking_tokens=max_thinking_tokens,
             sandbox=sandbox,
             agents=agents,

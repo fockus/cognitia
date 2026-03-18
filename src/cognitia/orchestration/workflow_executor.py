@@ -8,13 +8,14 @@ compile_to_langgraph_spec: структурная компиляция в LangGr
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
 from cognitia.orchestration.runtime_helpers import collect_runtime_output
 from cognitia.orchestration.workflow_graph import State, WorkflowGraph
 from cognitia.runtime.thin.runtime import ThinRuntime
-from cognitia.runtime.types import Message, RuntimeConfig
+from cognitia.runtime.types import Message, RuntimeConfig, ToolSpec
 
 
 class ThinWorkflowExecutor:
@@ -50,7 +51,7 @@ class ThinWorkflowExecutor:
             runtime.run(
                 messages=[Message(role="user", content=task)],
                 system_prompt=system_prompt,
-                active_tools=[],
+                active_tools=_build_active_tools(self._local_tools),
                 mode_hint="react",
             ),
         )
@@ -69,33 +70,61 @@ class ThinRuntimeExecutor:
 
 
 class MixedRuntimeExecutor:
-    """Выполняет WorkflowGraph с routing nodes по runtime_map.
+    """Выполняет WorkflowGraph с observability metadata по runtime_map.
 
-    Каждый node может быть назначен своему runtime ("thin", "deepagents", etc.).
-    Nodes без mapping выполняются напрямую (thin fallback).
+    Executor не маршрутизирует выполнение между runtime'ами: он исполняет nodes
+    обычным механизмом WorkflowGraph и только записывает, какой runtime был
+    ассоциирован с node_id для observability.
     """
 
     def __init__(self, runtime_map: dict[str, str]) -> None:
         self._runtime_map = runtime_map
 
     async def run(self, wf: WorkflowGraph, initial_state: State) -> State:
-        """Выполнить граф с per-node runtime routing.
+        """Выполнить граф с observability metadata per node.
 
         Uses WorkflowGraph.execute(node_interceptor=...) to wrap each node
-        execution with runtime routing and observability metadata.
+        execution and record runtime metadata without changing dispatch.
         """
 
-        async def _routed_interceptor(node_id: str, state: State) -> State:
+        async def _observability_interceptor(node_id: str, state: State) -> State:
             runtime_name = self._runtime_map.get(node_id, "thin")
-            # Execute node via the graph's default mechanism (no interceptor recursion)
+            # Execute node via the graph's default mechanism (no interceptor recursion).
+            # This executor only records metadata; it does not route execution.
             state = await wf._execute_node(node_id, state)
-            # Record which runtime handled this node (for observability)
+            # Record which runtime was associated with this node (for observability).
             executions: dict[str, str] = state.get("__runtime_executions__", {})
             executions[node_id] = runtime_name
             state["__runtime_executions__"] = executions
             return state
 
-        return await wf.execute(initial_state, node_interceptor=_routed_interceptor)
+        return await wf.execute(initial_state, node_interceptor=_observability_interceptor)
+
+
+def _build_active_tools(local_tools: dict[str, Callable[..., Any]]) -> list[ToolSpec]:
+    """Build ToolSpec list for local tools so runtimes can advertise them."""
+    active_tools: list[ToolSpec] = []
+    for tool_name, tool in local_tools.items():
+        tool_definition = getattr(tool, "__tool_definition__", None)
+        if tool_definition is not None:
+            active_tools.append(tool_definition.to_tool_spec())
+            continue
+
+        description = ""
+        doc = inspect.getdoc(tool)
+        if doc:
+            description = doc.strip().split("\n")[0].strip()
+
+        active_tools.append(
+            ToolSpec(
+                name=tool_name,
+                description=description,
+                parameters={},
+                is_local=True,
+            ),
+        )
+
+    return active_tools
 
 
 def compile_to_langgraph_spec(wf: WorkflowGraph) -> dict[str, Any]:

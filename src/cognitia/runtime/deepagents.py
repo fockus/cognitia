@@ -6,8 +6,6 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-_log = logging.getLogger(__name__)
-
 from cognitia.runtime.deepagents_builtins import (
     DEEPAGENTS_NATIVE_BUILTIN_TOOLS,
     build_native_notice,
@@ -50,6 +48,8 @@ from cognitia.runtime.types import (
     ToolSpec,
     TurnMetrics,
 )
+
+_log = logging.getLogger(__name__)
 
 _DEEPAGENTS_BUILTIN_TOOLS = DEEPAGENTS_NATIVE_BUILTIN_TOOLS
 __all__ = ["DeepAgentsRuntime", "_check_langchain_available", "create_langchain_tool"]
@@ -135,6 +135,7 @@ class DeepAgentsRuntime:
 
         full_text = ""
         tool_calls: list[dict[str, Any]] = []
+        new_messages: list[Message] = []
 
         try:
             stream = self._stream_langchain
@@ -202,8 +203,40 @@ class DeepAgentsRuntime:
                 yield event
                 if event.type == "assistant_delta":
                     full_text += str(event.data.get("text", ""))
+                elif event.type == "tool_call_started":
+                    tool_name = str(event.data.get("name", ""))
+                    correlation_id = str(event.data.get("correlation_id", ""))
+                    tool_args = event.data.get("args", {})
+                    new_messages.append(
+                        Message(
+                            role="assistant",
+                            content="",
+                            tool_calls=[
+                                {
+                                    "id": correlation_id,
+                                    "name": tool_name,
+                                    "args": tool_args if isinstance(tool_args, dict) else {},
+                                    "type": "tool_call",
+                                }
+                            ],
+                            metadata={
+                                "correlation_id": correlation_id,
+                                "tool_name": tool_name,
+                            },
+                        )
+                    )
                 elif event.type == "tool_call_finished":
                     tool_calls.append(event.data)
+                    new_messages.append(
+                        Message(
+                            role="tool",
+                            content=str(event.data.get("result_summary", "")),
+                            name=str(event.data.get("name", "")) or None,
+                            metadata={
+                                "correlation_id": str(event.data.get("correlation_id", "")),
+                            },
+                        )
+                    )
 
         except DeepAgentsModelError as e:
             yield RuntimeEvent.error(e.error)
@@ -219,7 +252,7 @@ class DeepAgentsRuntime:
             return
 
         # Формируем new_messages
-        new_messages = [Message(role="assistant", content=full_text)]
+        new_messages.append(Message(role="assistant", content=full_text))
 
         yield RuntimeEvent.final(
             text=full_text,

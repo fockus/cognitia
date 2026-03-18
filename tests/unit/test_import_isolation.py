@@ -11,6 +11,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
+import pytest
+
 
 @contextmanager
 def _block_packages(*names: str) -> Generator[None, None, None]:
@@ -129,6 +131,126 @@ class TestCoreImportsWithoutOptionalDeps:
             from cognitia.hooks import HookRegistry
 
             assert HookRegistry is not None
+
+    def test_runtime_adapter_reexport_fails_fast_without_sdk(self) -> None:
+        """Optional runtime re-export should raise, not expose None."""
+        with _block_packages("claude_agent_sdk"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.runtime"):
+                    del sys.modules[key]
+
+            with pytest.raises(ImportError, match="RuntimeAdapter"):
+                from cognitia.runtime import RuntimeAdapter  # noqa: F401
+
+    def test_runtime_star_import_skips_optional_exports_without_sdk(self) -> None:
+        """Star import should keep core runtime symbols available without SDK extras."""
+        with _block_packages("claude_agent_sdk"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.runtime"):
+                    del sys.modules[key]
+
+            namespace: dict[str, Any] = {}
+            exec("from cognitia.runtime import *", namespace)
+
+            assert "RuntimeFactory" in namespace
+            assert "RuntimeAdapter" not in namespace
+            assert "ClaudeOptionsBuilder" not in namespace
+
+    def test_hooks_sdk_bridge_reexport_fails_fast_without_sdk(self) -> None:
+        """Optional hooks bridge should raise, not expose None."""
+        with _block_packages("claude_agent_sdk"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.hooks"):
+                    del sys.modules[key]
+
+            with pytest.raises(ImportError, match="registry_to_sdk_hooks"):
+                from cognitia.hooks import registry_to_sdk_hooks  # noqa: F401
+
+    def test_hooks_star_import_skips_sdk_bridge_without_sdk(self) -> None:
+        """Star import should not force SDK hook bridge import."""
+        with _block_packages("claude_agent_sdk"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.hooks"):
+                    del sys.modules[key]
+
+            namespace: dict[str, Any] = {}
+            exec("from cognitia.hooks import *", namespace)
+
+            assert "HookRegistry" in namespace
+            assert "registry_to_sdk_hooks" not in namespace
+
+    def test_runtime_ports_reexports_fail_fast_when_optional_modules_unavailable(self) -> None:
+        """Optional runtime ports should fail fast when port modules cannot be imported."""
+        with _block_packages("cognitia.runtime.ports.thin", "cognitia.runtime.ports.deepagents"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.runtime") and key not in {
+                    "cognitia.runtime.ports.thin",
+                    "cognitia.runtime.ports.deepagents",
+                }:
+                    del sys.modules[key]
+
+            with pytest.raises(ImportError, match="ThinRuntimePort"):
+                from cognitia.runtime import ThinRuntimePort  # noqa: F401
+
+            with pytest.raises(ImportError, match="DeepAgentsRuntimePort"):
+                from cognitia.runtime.ports import DeepAgentsRuntimePort  # noqa: F401
+
+    def test_runtime_ports_star_import_skips_optional_ports_when_unavailable(self) -> None:
+        """Star import should expose only base runtime port symbols."""
+        with _block_packages("cognitia.runtime.ports.thin", "cognitia.runtime.ports.deepagents"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.runtime") and key not in {
+                    "cognitia.runtime.ports.thin",
+                    "cognitia.runtime.ports.deepagents",
+                }:
+                    del sys.modules[key]
+
+            namespace: dict[str, Any] = {}
+            exec("from cognitia.runtime.ports import *", namespace)
+
+            assert "BaseRuntimePort" in namespace
+            assert "ThinRuntimePort" not in namespace
+            assert "DeepAgentsRuntimePort" not in namespace
+
+    def test_memory_optional_providers_fail_fast_without_sqlalchemy(self) -> None:
+        """Optional memory providers should raise instead of disappearing."""
+        with _block_packages("sqlalchemy"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.memory") and key != "sqlalchemy":
+                    del sys.modules[key]
+
+            with pytest.raises(ImportError, match="SQLiteMemoryProvider"):
+                from cognitia.memory import SQLiteMemoryProvider  # noqa: F401
+
+            with pytest.raises(ImportError, match="PostgresMemoryProvider"):
+                from cognitia.memory import PostgresMemoryProvider  # noqa: F401
+
+    def test_skills_optional_loader_fail_fast_without_loader_module(self) -> None:
+        """Optional skill loader exports should raise instead of disappearing."""
+        with _block_packages("cognitia.skills.loader"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.skills") and key != "cognitia.skills.loader":
+                    del sys.modules[key]
+
+            with pytest.raises(ImportError, match="YamlSkillLoader"):
+                from cognitia.skills import YamlSkillLoader  # noqa: F401
+
+            with pytest.raises(ImportError, match="load_mcp_from_settings"):
+                from cognitia.skills import load_mcp_from_settings  # noqa: F401
+
+    def test_skills_star_import_skips_loader_helpers_when_loader_unavailable(self) -> None:
+        """Star import should keep core skill symbols available without loader helper."""
+        with _block_packages("cognitia.skills.loader"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.skills") and key != "cognitia.skills.loader":
+                    del sys.modules[key]
+
+            namespace: dict[str, Any] = {}
+            exec("from cognitia.skills import *", namespace)
+
+            assert "SkillRegistry" in namespace
+            assert "YamlSkillLoader" not in namespace
+            assert "load_mcp_from_settings" not in namespace
 
     def test_import_agent_module(self) -> None:
         """Agent facade imports without optional deps."""

@@ -278,7 +278,7 @@ class TestDefaultContextBuilder:
 # ---------------------------------------------------------------------------
 # P2.5: Последние сообщения диалога (last_messages)
 # ---------------------------------------------------------------------------
-from cognitia.memory.types import MemoryMessage
+from cognitia.memory.types import MemoryMessage  # noqa: E402
 
 
 class TestContextBuilderLastMessages:

@@ -125,6 +125,10 @@ class ClaudeCodeRuntime:
             async for stream_event in self._adapter.stream_reply(user_text):
                 runtime_event = self._convert_event(stream_event)
                 if runtime_event is not None:
+                    if runtime_event.type == "error":
+                        yield runtime_event
+                        return
+
                     # Собираем текст
                     if runtime_event.type == "assistant_delta":
                         full_text += runtime_event.data.get("text", "")

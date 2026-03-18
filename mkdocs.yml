@@ -67,6 +67,8 @@ nav:
     - Memory Providers: memory.md
     - Capabilities: capabilities.md
     - Orchestration: orchestration.md
+    - Multi-Agent Coordination: multi-agent.md
+    - CLI Runtime: cli-runtime.md
     - Production Safety: production-safety.md
     - Sessions: sessions.md
     - Observability: observability.md

@@ -44,9 +44,12 @@ agent = Agent(AgentConfig(system_prompt="...", runtime="claude_sdk"))
 
 # Experiments: DeepAgents graph runtime
 agent = Agent(AgentConfig(system_prompt="...", runtime="deepagents"))
+
+# External CLI subprocess runtime
+agent = Agent(AgentConfig(system_prompt="...", runtime="cli"))
 ```
 
-All three runtimes implement the same `AgentRuntime` protocol. Your application code stays the same.
+All four runtimes implement the same `AgentRuntime` protocol. Your application code stays the same.
 
 ### 3. Composable Capabilities
 
@@ -91,7 +94,7 @@ Use any LLM provider with human-friendly aliases:
 | --------- | ----------------------- |
 | **Clean Architecture** | Infrastructure → Application → Domain. Domain has zero external deps |
 | **SOLID** | SRP (focused modules), OCP (extend via protocols), LSP (substitutable implementations), ISP (≤5 methods per protocol), DIP (depend on abstractions) |
-| **DRY** | Shared protocols across 3 memory providers. One AgentRuntime contract for 3 runtimes |
+| **DRY** | Shared protocols across 3 memory providers. One AgentRuntime contract for 4 runtimes |
 | **KISS** | Agent facade: 3 lines for a working agent. Complexity opt-in via capabilities |
 | **YAGNI** | No capability loads unless explicitly toggled. Core has 3 dependencies |
 

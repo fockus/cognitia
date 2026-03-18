@@ -14,7 +14,7 @@ import structlog
 from cognitia.tools.web_protocols import SearchResult
 
 try:
-    from ddgs import DDGS
+    from ddgs import DDGS  # type: ignore[import-not-found]
 except ImportError:
     DDGS = None  # type: ignore[assignment,misc]
 

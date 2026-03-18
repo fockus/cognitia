@@ -17,6 +17,22 @@ from cognitia.session.types import SessionKey, SessionState
 logger = logging.getLogger(__name__)
 
 
+def _message_from_payload(payload: Any) -> Message:
+    """Нормализовать payload runtime history в Message."""
+    if isinstance(payload, Message):
+        return payload
+    if isinstance(payload, dict):
+        return Message(**payload)
+    raise TypeError(f"Unsupported runtime message payload: {type(payload)!r}")
+
+
+def _messages_from_payloads(payloads: Any) -> list[Message]:
+    """Нормализовать список runtime history payloads."""
+    if not payloads:
+        return []
+    return [_message_from_payload(payload) for payload in payloads]
+
+
 class InMemorySessionManager:
     """Менеджер сессий (in-memory, для MVP).
 
@@ -284,6 +300,8 @@ class InMemorySessionManager:
                 await self._persist_state(state)
                 full_text = ""
                 assistant_emitted = False
+                final_data: dict[str, Any] = {}
+                saw_terminal_event = False
                 async for runtime_event in state.runtime.run(
                     messages=list(state.runtime_messages),
                     system_prompt=state.system_prompt,
@@ -308,29 +326,47 @@ class InMemorySessionManager:
                             tool_result=str(runtime_event.data.get("result_summary", "")),
                         )
                     elif runtime_event.type == "error":
+                        saw_terminal_event = True
                         yield StreamEvent(
                             type="error",
                             text=str(runtime_event.data.get("message", "Runtime error")),
                         )
                         return
                     elif runtime_event.type == "final":
+                        saw_terminal_event = True
+                        final_data = runtime_event.data
                         final_text = str(runtime_event.data.get("text", ""))
                         if final_text and not full_text:
                             full_text = final_text
                             yield StreamEvent(type="text_delta", text=final_text)
                             assistant_emitted = True
-                        if assistant_emitted and full_text:
-                            state.runtime_messages.append(
-                                Message(role="assistant", content=full_text),
-                            )
+                        final_new_messages = _messages_from_payloads(
+                            runtime_event.data.get("new_messages")
+                        )
+                        if final_new_messages:
+                            state.runtime_messages.extend(final_new_messages)
                             await self._persist_state(state)
-                        yield StreamEvent(type="done", text=full_text, is_final=True)
+                        elif assistant_emitted and full_text:
+                            state.runtime_messages.append(Message(role="assistant", content=full_text))
+                            await self._persist_state(state)
+                        done_event = StreamEvent(type="done", text=full_text, is_final=True)
+                        done_event.session_id = final_data.get("session_id")
+                        done_event.total_cost_usd = final_data.get("total_cost_usd")
+                        done_event.usage = final_data.get("usage")
+                        done_event.structured_output = final_data.get("structured_output")
+                        done_event.native_metadata = final_data.get("native_metadata")
+                        yield done_event
                         return
 
-                if assistant_emitted and full_text:
-                    state.runtime_messages.append(
-                        Message(role="assistant", content=full_text),
+                if not saw_terminal_event:
+                    yield StreamEvent(
+                        type="error",
+                        text="runtime stream ended without final RuntimeEvent",
                     )
+                    return
+
+                if assistant_emitted and full_text:
+                    state.runtime_messages.append(Message(role="assistant", content=full_text))
                     await self._persist_state(state)
                 yield StreamEvent(type="done", text=full_text, is_final=True)
                 return

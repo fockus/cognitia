@@ -90,7 +90,7 @@ class DockerSandboxProvider:
             return self._container
 
         try:
-            import docker  # type: ignore[import-not-found]
+            import docker  # type: ignore[import-untyped]
         except ImportError as exc:
             raise RuntimeError(
                 "docker SDK не установлен. Установите optional dependency docker.",

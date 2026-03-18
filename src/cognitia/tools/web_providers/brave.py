@@ -47,9 +47,9 @@ class BraveSearchProvider:
             "Accept-Encoding": "gzip",
             "X-Subscription-Token": self._api_key,
         }
-        params = {
+        params: dict[str, str] = {
             "q": query,
-            "count": max_results,
+            "count": str(max_results),
         }
 
         try:

@@ -31,17 +31,9 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk.types import StreamEvent as SdkStreamEvent
 
-# Типы задач — могут отсутствовать в старых версиях SDK (< 0.2)
-try:
-    from claude_agent_sdk import (
-        TaskNotificationMessage,
-        TaskProgressMessage,
-        TaskStartedMessage,
-    )
-
-    _HAS_TASK_MESSAGES = True
-except ImportError:
-    _HAS_TASK_MESSAGES = False
+_TASK_STARTED_MESSAGE = "TaskStartedMessage"
+_TASK_PROGRESS_MESSAGE = "TaskProgressMessage"
+_TASK_NOTIFICATION_MESSAGE = "TaskNotificationMessage"
 
 logger = logging.getLogger(__name__)
 
@@ -81,17 +73,25 @@ def _extract_partial_text_delta(message: SdkStreamEvent) -> str | None:
 
 def _format_system_message(message: SystemMessage) -> str | None:
     """Преобразовать SDK SystemMessage в status text."""
-    if _HAS_TASK_MESSAGES:
-        if isinstance(message, TaskStartedMessage):
-            return f"Task started: {message.description}"
+    message_type = message.__class__.__name__
+    if message_type == _TASK_STARTED_MESSAGE:
+        description = getattr(message, "description", None)
+        if isinstance(description, str) and description:
+            return f"Task started: {description}"
 
-        if isinstance(message, TaskProgressMessage):
-            if message.last_tool_name:
-                return f"Task progress: {message.description} ({message.last_tool_name})"
-            return f"Task progress: {message.description}"
+    if message_type == _TASK_PROGRESS_MESSAGE:
+        description = getattr(message, "description", None)
+        if isinstance(description, str) and description:
+            last_tool_name = getattr(message, "last_tool_name", None)
+            if isinstance(last_tool_name, str) and last_tool_name:
+                return f"Task progress: {description} ({last_tool_name})"
+            return f"Task progress: {description}"
 
-        if isinstance(message, TaskNotificationMessage):
-            return f"Task {message.status}: {message.summary}"
+    if message_type == _TASK_NOTIFICATION_MESSAGE:
+        status = getattr(message, "status", None)
+        summary = getattr(message, "summary", None)
+        if isinstance(status, str) and isinstance(summary, str) and summary:
+            return f"Task {status}: {summary}"
 
     # Fallback для SDK без TaskMessage типов — извлекаем через getattr
     description = getattr(message, "description", None)
@@ -282,6 +282,7 @@ class RuntimeAdapter:
         msg_count = 0
         result_meta: dict[str, Any] = {}
         saw_partial_text = False
+        saw_result_message = False
         try:
             async for message in self._client.receive_response():
                 msg_count += 1
@@ -290,6 +291,7 @@ class RuntimeAdapter:
 
                 # Извлекаем метрики из ResultMessage
                 if isinstance(message, ResultMessage):
+                    saw_result_message = True
                     result_meta = {
                         "session_id": getattr(message, "session_id", None),
                         "total_cost_usd": getattr(message, "total_cost_usd", None),
@@ -328,6 +330,13 @@ class RuntimeAdapter:
         except Exception as exc:
             logger.error("Ошибка чтения ответа SDK: %s", exc)
             yield StreamEvent(type="error", text=f"Ошибка SDK: {exc}")
+            return
+
+        if not saw_result_message:
+            yield StreamEvent(
+                type="error",
+                text="SDK stream completed without final ResultMessage",
+            )
             return
 
         # Финальное событие с метриками из ResultMessage

@@ -34,6 +34,10 @@ class StreamEvent:
     allowed_decisions: list[str] | None = None
     interrupt_id: str | None = None
     native_metadata: dict[str, Any] | None = None
+    session_id: str | None = None
+    total_cost_usd: float | None = None
+    usage: dict[str, Any] | None = None
+    structured_output: Any = None
     is_final: bool = False
 
 
@@ -55,6 +59,7 @@ def convert_event(event: RuntimeEvent) -> StreamEvent | None:
     if event.type == "tool_call_finished":
         return StreamEvent(
             type="tool_use_result",
+            tool_name=str(event.data.get("name", "")),
             tool_result=str(event.data.get("result_summary", "")),
         )
 
@@ -260,6 +265,8 @@ class BaseRuntimePort:
 
         full_text = ""
         final_text = ""  # текст из final event (fallback если нет assistant_delta)
+        final_data: dict[str, Any] | None = None
+        saw_terminal_event = False
 
         try:
             async for event in self._run_runtime(
@@ -268,8 +275,17 @@ class BaseRuntimePort:
             ):
                 # Запоминаем текст из final для fallback
                 if event.type == "final":
+                    final_data = event.data
                     final_text = str(event.data.get("text", ""))
+                    saw_terminal_event = True
                     continue
+
+                if event.type == "error":
+                    stream_event = convert_event(event)
+                    if stream_event:
+                        yield stream_event
+                    saw_terminal_event = True
+                    return
 
                 stream_event = convert_event(event)
                 if stream_event:
@@ -283,6 +299,13 @@ class BaseRuntimePort:
             yield StreamEvent(type="error", text=error_msg)
             return
 
+        if not saw_terminal_event:
+            yield StreamEvent(
+                type="error",
+                text="runtime stream ended without final RuntimeEvent",
+            )
+            return
+
         # Fallback: если assistant_delta не пришёл, берём текст из final
         if not full_text and final_text:
             full_text = final_text
@@ -291,4 +314,12 @@ class BaseRuntimePort:
         if full_text:
             self._append_to_history("assistant", full_text)
 
-        yield StreamEvent(type="done", text=full_text, is_final=True)
+        done_event = StreamEvent(type="done", text=full_text, is_final=True)
+        if final_data is not None:
+            done_event.session_id = final_data.get("session_id")
+            done_event.total_cost_usd = final_data.get("total_cost_usd")
+            done_event.usage = final_data.get("usage")
+            done_event.structured_output = final_data.get("structured_output")
+            done_event.native_metadata = final_data.get("native_metadata")
+
+        yield done_event

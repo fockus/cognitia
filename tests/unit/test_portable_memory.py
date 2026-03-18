@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from cognitia.runtime.portable_memory import (
     inject_memory_into_prompt,
     load_agents_md,

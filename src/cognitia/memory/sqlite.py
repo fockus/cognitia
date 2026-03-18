@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -124,7 +124,7 @@ class SQLiteMemoryProvider:
                 ),
                 {"user_id": user_id, "topic_id": topic_id, "keep_last": keep_last},
             )
-            return int(result.rowcount or 0)
+            return int(getattr(result, "rowcount", 0) or 0)
 
     # --- Факты ---
 
@@ -161,7 +161,7 @@ class SQLiteMemoryProvider:
                         "source": source,
                     },
                 )
-                if (updated.rowcount or 0) == 0:
+                if int(getattr(updated, "rowcount", 0) or 0) == 0:
                     await session.execute(
                         text(
                             f"""
@@ -198,7 +198,7 @@ class SQLiteMemoryProvider:
                         "source": source,
                     },
                 )
-                if (updated.rowcount or 0) == 0:
+                if int(getattr(updated, "rowcount", 0) or 0) == 0:
                     await session.execute(
                         text(
                             f"""
@@ -560,7 +560,7 @@ def _load_json_value(raw: Any) -> Any:
         return raw
 
 
-def _merge_scoped_sqlite_facts(rows: list[Any]) -> dict[str, Any]:
+def _merge_scoped_sqlite_facts(rows: Sequence[Any]) -> dict[str, Any]:
     """Слить global + topic rows так, чтобы topic-scoped значения перекрывали global."""
     merged: dict[str, Any] = {}
     global_rows = [row for row in rows if getattr(row, "topic_id", None) is None]

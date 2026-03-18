@@ -126,7 +126,7 @@ print(tracker.total_cost_usd)  # 0.002
 | Feature | Description |
 |---------|-------------|
 | **Agent Facade** | High-level API: `query()`, `stream()`, `conversation()` — build agents in 3-5 lines |
-| **3 Pluggable Runtimes** | `thin` (built-in multi-provider loop), `claude_sdk` (Claude Agent SDK), `deepagents` (LangChain) |
+| **4 Pluggable Runtimes** | `thin` (built-in multi-provider loop), `claude_sdk` (Claude Agent SDK), `deepagents` (LangChain), `cli` (subprocess NDJSON runtime) |
 | **@tool Decorator** | Define tools with auto-inferred JSON Schema from Python type hints |
 | **Middleware Chain** | Pluggable request/response interceptors: `CostTracker`, `SecurityGuard`, custom |
 | **14 ISP Protocols** | Every interface has ≤5 methods. Depend on abstractions, swap implementations freely |
@@ -170,7 +170,7 @@ print(tracker.total_cost_usd)  # 0.002
 
 ## Runtimes
 
-Cognitia supports 3 interchangeable runtimes. Switch with a single config change — your business code stays the same:
+Cognitia supports 4 interchangeable runtimes. Switch with a single config change — your business code stays the same:
 
 ```python
 # Built-in lightweight loop (direct multi-provider API)
@@ -181,6 +181,9 @@ agent = Agent(AgentConfig(system_prompt="...", runtime="claude_sdk"))
 
 # DeepAgents graph runtime
 agent = Agent(AgentConfig(system_prompt="...", runtime="deepagents"))
+
+# CLI subprocess runtime (NDJSON stream, light tier)
+agent = Agent(AgentConfig(system_prompt="...", runtime="cli"))
 ```
 
 Or via environment variable:
@@ -193,6 +196,7 @@ export COGNITIA_RUNTIME=thin
 | `thin` | Fast prototyping, direct API, alternative LLMs | Anthropic, OpenAI-compatible, Google | Built-in client | `cognitia[thin]` |
 | `claude_sdk` | Full Claude ecosystem, native MCP, subagents | Claude only | Native | `cognitia[claude]` |
 | `deepagents` | DeepAgents graph runtime, LangGraph workflows | Anthropic baseline; OpenAI/Google via provider package | Not a portable guarantee | `cognitia[deepagents]` |
+| `cli` | External CLI agents, NDJSON subprocess integrations | Whatever the wrapped CLI provides | No portable MCP guarantee | `cognitia[cli]` |
 
 ### Runtime Feature Matrix
 
@@ -299,11 +303,11 @@ Your Application
 ║  ┌─────────────────▼───────────────────────────────────┐ ║
 ║  │  Implementations                                    │ ║
 ║  │  memory/      InMemory │ PostgreSQL │ SQLite        │ ║
-║  │  runtime/     thin │ claude_sdk │ deepagents        │ ║
+║  │  runtime/     thin │ claude_sdk │ deepagents │ cli  │ ║
 ║  │  context/     DefaultContextBuilder (token budget)  │ ║
 ║  │  policy/      DefaultToolPolicy (default-deny)      │ ║
 ║  │  routing/     KeywordRoleRouter                     │ ║
-║  │  skills/      YamlSkillLoader + SkillRegistry       │ ║
+║  │  skills/      SkillRegistry + YAML loader helper    │ ║
 ║  │  hooks/       HookRegistry + SDK bridge             │ ║
 ║  │  tools/       Sandbox · Web · Todo · MemoryBank     │ ║
 ║  │  orchestration/  Planning · Subagents · Team        │ ║

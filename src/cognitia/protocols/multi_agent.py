@@ -38,8 +38,9 @@ class TaskQueue(Protocol):
         ...
 
     async def get(self, filters: TaskFilter | None = None) -> TaskItem | None:
-        """Get the highest-priority unassigned task matching filters.
+        """Claim the highest-priority TODO task matching filters.
 
+        Implementations must return the claimed task in IN_PROGRESS status.
         Returns None if no matching task is available.
         """
         ...

@@ -1,7 +1,7 @@
 """Тесты для RuntimeFactory — выбор runtime по config/env/override."""
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from cognitia.runtime.capabilities import CapabilityRequirements
@@ -136,6 +136,49 @@ class TestCreate:
         kwargs = fake_cls.call_args.kwargs
         assert kwargs["local_tools"] == tool_exec
         assert "tool_executors" not in kwargs
+
+    def test_create_cli_ignores_facade_only_kwargs(
+        self,
+        factory: RuntimeFactory,
+    ) -> None:
+        """CLI runtime path drops tool_executors/local_tools before constructor."""
+        cfg = RuntimeConfig(runtime_name="cli")
+        fake_runtime = object()
+        fake_cls = MagicMock(return_value=fake_runtime)
+        cli_config = MagicMock()
+
+        with patch("cognitia.runtime.cli.runtime.CliAgentRuntime", fake_cls):
+            runtime = factory.create(
+                config=cfg,
+                tool_executors={"calc": object()},
+                local_tools={"calc": object()},
+                cli_config=cli_config,
+            )
+
+        assert runtime is fake_runtime
+        kwargs = fake_cls.call_args.kwargs
+        assert kwargs["config"] == cfg
+        assert kwargs["cli_config"] is cli_config
+        assert "tool_executors" not in kwargs
+        assert "local_tools" not in kwargs
+
+    def test_create_cli_uses_legacy_fallback_when_registry_unavailable(
+        self,
+        factory: RuntimeFactory,
+    ) -> None:
+        """Если registry недоступен, cli всё равно создаётся через legacy fallback."""
+        cfg = RuntimeConfig(runtime_name="cli")
+        fake_runtime = object()
+        fake_cls = MagicMock(return_value=fake_runtime)
+
+        with patch.object(RuntimeFactory, "_effective_registry", new_callable=PropertyMock) as mock_registry:
+            mock_registry.return_value = None
+            with patch("cognitia.runtime.cli.runtime.CliAgentRuntime", fake_cls):
+                runtime = factory.create(config=cfg)
+
+        assert runtime is fake_runtime
+        kwargs = fake_cls.call_args.kwargs
+        assert kwargs["config"] == cfg
 
 
 class TestCapabilities:

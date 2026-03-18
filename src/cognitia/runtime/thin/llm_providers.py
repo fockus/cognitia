@@ -10,8 +10,9 @@ Factory: create_llm_adapter(ResolvedProvider) → LlmAdapter
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from typing import Any, Protocol, runtime_checkable
+import inspect
+from collections.abc import AsyncIterator, Iterable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from cognitia.runtime.provider_resolver import ResolvedProvider
 from cognitia.runtime.thin.errors import dependency_missing_error
@@ -164,7 +165,7 @@ class OpenAICompatAdapter:
             max_tokens=kwargs.get("max_tokens", 4096),
             stream=True,
         )
-        async for chunk in response:
+        async for chunk in cast(AsyncIterator[Any], response):
             content = chunk.choices[0].delta.content if chunk.choices else None
             if content:
                 yield content
@@ -210,11 +211,13 @@ class GoogleAdapter:
         **kwargs: Any,
     ) -> str:
         contents = self._prepare(messages)
-        response = await self._client.models.generate_content(
+        response: Any = self._client.models.generate_content(
             model=self._model,
-            contents=contents,
+            contents=cast(Any, contents),
             config={"system_instruction": system_prompt},
         )
+        if inspect.isawaitable(response):
+            response = await response
         return response.text  # type: ignore[return-value]
 
     async def stream(
@@ -224,13 +227,25 @@ class GoogleAdapter:
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         contents = self._prepare(messages)
-        response = await self._client.models.generate_content_stream(
+        response: Any = self._client.models.generate_content_stream(
             model=self._model,
-            contents=contents,
+            contents=cast(Any, contents),
             config={"system_instruction": system_prompt},
         )
-        async for chunk in response:
-            yield chunk.text
+        if inspect.isawaitable(response):
+            response = await response
+
+        if hasattr(response, "__aiter__"):
+            async for chunk in cast(AsyncIterator[Any], response):
+                text = chunk.text
+                if text:
+                    yield text
+            return
+
+        for chunk in cast(Iterable[Any], response):
+            text = chunk.text
+            if text:
+                yield text
 
 
 def create_llm_adapter(resolved: ResolvedProvider) -> LlmAdapter:

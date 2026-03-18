@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -99,9 +98,6 @@ class TestMcpBridgeDiscoverAndCallE2E:
         client = McpClient(timeout_seconds=5.0)
 
         # Сохраняем оригинальные методы и подменяем
-        original_list = client.list_tools
-        original_call = client.call_tool
-
         async def fake_list_tools(server_url: str, **kwargs: Any) -> list:
             data = tools_response
             return client._parse_tools_from_response(data)

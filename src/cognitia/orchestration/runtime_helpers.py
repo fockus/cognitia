@@ -34,16 +34,24 @@ async def collect_runtime_output(
         RuntimeError: On error events.
     """
     final_text = ""
+    saw_terminal_event = False
     async for event in events:
         if event.type == "final":
+            saw_terminal_event = True
             final_text = str(event.data.get("text", final_text))
         elif event.type == "assistant_delta":
             final_text += str(event.data.get("text", ""))
         elif event.type == "error":
+            saw_terminal_event = True
             raw_message = str(event.data.get("message", "runtime error"))
             if error_prefix:
                 message = f"{error_prefix}: {raw_message}"
             else:
                 message = raw_message
             raise RuntimeError(message)
+    if not saw_terminal_event:
+        message = "runtime stream ended without final RuntimeEvent"
+        if error_prefix:
+            message = f"{error_prefix}: {message}"
+        raise RuntimeError(message)
     return final_text

@@ -10,8 +10,8 @@ import pytest
 
 pytestmark = pytest.mark.live
 
-from cognitia.tools.web_httpx import HttpxWebProvider, _extract_text
-from cognitia.tools.web_protocols import SearchResult
+from cognitia.tools.web_httpx import HttpxWebProvider, _extract_text  # noqa: E402
+from cognitia.tools.web_protocols import SearchResult  # noqa: E402
 
 # Проверяем доступность ddgs
 try:

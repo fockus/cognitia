@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 
-from cognitia.orchestration.message_bus import MessageBus
 from cognitia.orchestration.subagent_types import SubagentSpec
 from cognitia.orchestration.team_types import TeamConfig, TeamMessage
 from cognitia.orchestration.thin_team import ThinTeamOrchestrator

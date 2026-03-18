@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from cognitia.runtime.structured_output import (
     append_structured_output_instruction,
     extract_structured_output,

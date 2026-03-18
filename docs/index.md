@@ -21,7 +21,7 @@ Pluggable runtimes. Persistent memory. Secure by default.
 
 <div class="stats-bar" markdown>
 <div class="stat-item">
-<span class="stat-number">3</span>
+<span class="stat-number">4</span>
 <span class="stat-label">Runtimes</span>
 </div>
 <div class="stat-item">
@@ -75,7 +75,7 @@ Every component is a Python Protocol you can swap.
 
 ### Pluggable Runtimes
 
-Three interchangeable runtimes — `thin` (built-in async loop), `claude_sdk` (Claude Agent SDK), `deepagents` (LangChain). Same business code, different engines.
+Four interchangeable runtimes — `thin` (built-in async loop), `claude_sdk` (Claude Agent SDK), `deepagents` (LangChain), `cli` (subprocess NDJSON). Same business code, different engines.
 </div>
 
 <div class="feature-card" markdown>

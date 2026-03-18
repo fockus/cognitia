@@ -20,7 +20,7 @@ Frozen dataclass with all agent configuration:
 from cognitia import AgentConfig
 
 config = AgentConfig(
-    runtime="thin",                    # "thin" | "claude_sdk" | "deepagents"
+    runtime="thin",                    # "thin" | "claude_sdk" | "deepagents" | "cli"
     model="sonnet",                    # model alias or full ID
     system_prompt="You are helpful.",  # system prompt
     tools=(my_tool,),                  # tuple of @tool-decorated functions

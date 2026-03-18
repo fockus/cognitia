@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from cognitia.agent.agent import Agent
@@ -24,6 +24,27 @@ def _make_config(**overrides: Any) -> AgentConfig:
     defaults = {"system_prompt": "test prompt"}
     defaults.update(overrides)
     return AgentConfig(**defaults)
+
+
+def _make_cli_process(stdout_lines: list[bytes]) -> MagicMock:
+    proc = MagicMock()
+
+    async def _stdout_iter():
+        for line in stdout_lines:
+            yield line
+
+    proc.stdout = _stdout_iter()
+    proc.stdin = MagicMock()
+    proc.stdin.write = MagicMock()
+    proc.stdin.drain = AsyncMock()
+    proc.stdin.close = MagicMock()
+    proc.stderr = AsyncMock()
+    proc.stderr.read = AsyncMock(return_value=b"")
+    proc.returncode = 0
+    proc.wait = AsyncMock(return_value=0)
+    proc.terminate = MagicMock()
+    proc.kill = MagicMock()
+    return proc
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +98,37 @@ class TestAgentQueryBasic:
             result = await agent.query("rate this")
 
         assert result.structured_output == {"score": 85}
+
+    @pytest.mark.asyncio
+    async def test_query_preserves_runtime_new_messages(self) -> None:
+        """final.new_messages должен быть доступен downstream consumers."""
+        from cognitia.runtime.types import Message
+
+        agent = Agent(_make_config())
+        expected_new_messages = [
+            Message(role="assistant", content="Thinking"),
+            Message(role="tool", content="42", name="calc"),
+            Message(role="assistant", content="Final answer"),
+        ]
+
+        async def fake_stream(prompt):
+            event = FakeStreamEvent(
+                "done",
+                text="Final answer",
+                is_final=True,
+                session_id="s1",
+            )
+            event.new_messages = [message.to_dict() for message in expected_new_messages]
+            yield event
+
+        with patch.object(agent, "_execute_stream", side_effect=fake_stream):
+            result = await agent.query("Hi")
+
+        assert result.ok is True
+        assert result.text == "Final answer"
+        assert getattr(result, "new_messages", None) == [
+            message.to_dict() for message in expected_new_messages
+        ]
 
     @pytest.mark.asyncio
     async def test_query_thin_output_format_returns_structured_output(self) -> None:
@@ -352,6 +404,97 @@ class TestAgentRuntimeFactoryWiring:
         assert "tool_executors" in create_kwargs
         assert create_kwargs["tool_executors"]["calc"] is calc.__tool_definition__.handler
 
+    @pytest.mark.asyncio
+    async def test_execute_agent_runtime_passes_mcp_servers(self) -> None:
+        from cognitia.skills.types import McpServerSpec
+
+        agent = Agent(
+            _make_config(
+                runtime="deepagents",
+                mcp_servers={"iss": McpServerSpec(name="iss", url="http://iss.test")},
+            )
+        )
+
+        class FakeRuntime:
+            async def run(self, **kwargs: Any):
+                from cognitia.runtime.types import RuntimeEvent
+
+                yield RuntimeEvent.final("ok")
+
+            async def cleanup(self) -> None:
+                return None
+
+        fake_factory = MagicMock()
+        fake_factory.create.return_value = FakeRuntime()
+
+        with patch("cognitia.runtime.factory.RuntimeFactory", return_value=fake_factory):
+            events = []
+            async for event in agent._execute_agent_runtime("hello", "deepagents"):
+                events.append(event)
+
+        assert events[-1].type == "done"
+        create_kwargs = fake_factory.create.call_args.kwargs
+        assert create_kwargs["mcp_servers"] == agent.config.mcp_servers
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_runtime_omits_mcp_servers_for_cli(self) -> None:
+        from cognitia.skills.types import McpServerSpec
+
+        agent = Agent(
+            _make_config(
+                runtime="cli",
+                mcp_servers={"iss": McpServerSpec(name="iss", url="http://iss.test")},
+            )
+        )
+
+        class FakeRuntime:
+            async def run(self, **kwargs: Any):
+                from cognitia.runtime.types import RuntimeEvent
+
+                yield RuntimeEvent.final("ok")
+
+            async def cleanup(self) -> None:
+                return None
+
+        fake_factory = MagicMock()
+        fake_factory.create.return_value = FakeRuntime()
+
+        with patch("cognitia.runtime.factory.RuntimeFactory", return_value=fake_factory):
+            events = []
+            async for event in agent._execute_agent_runtime("hello", "cli"):
+                events.append(event)
+
+        assert events[-1].type == "done"
+        create_kwargs = fake_factory.create.call_args.kwargs
+        assert "mcp_servers" not in create_kwargs
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_runtime_cli_query_works_with_mocked_subprocess(self) -> None:
+        agent = Agent(_make_config(runtime="cli"))
+
+        result_line = json.dumps({"type": "result", "result": "cli reply"}).encode() + b"\n"
+        mock_process = _make_cli_process([result_line])
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)):
+            result = await agent.query("hello from cli")
+
+        assert result.ok is True
+        assert result.text == "cli reply"
+        mock_process.stdin.write.assert_called_once_with(
+            b"System instructions:\ntest prompt\n\nConversation:\nuser: hello from cli"
+        )
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_runtime_cli_query_without_final_returns_error(self) -> None:
+        agent = Agent(_make_config(runtime="cli"))
+        mock_process = _make_cli_process([b'{"step":"processing"}\n'])
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)):
+            result = await agent.query("hello from cli")
+
+        assert result.ok is False
+        assert "without a final" in (result.error or "")
+
 
 # ---------------------------------------------------------------------------
 # Agent.stream()
@@ -500,6 +643,24 @@ class TestCollectStreamResult:
         assert result["error"] is None
 
     @pytest.mark.asyncio
+    async def test_collects_new_messages(self) -> None:
+        from cognitia.agent.agent import collect_stream_result
+        from cognitia.runtime.types import Message
+
+        expected_new_messages = [
+            Message(role="assistant", content="Thinking"),
+            Message(role="tool", content="42", name="calc"),
+        ]
+
+        async def stream():
+            event = FakeStreamEvent("done", text="Final answer", is_final=True)
+            event.new_messages = [message.to_dict() for message in expected_new_messages]
+            yield event
+
+        result = await collect_stream_result(stream())
+        assert result["new_messages"] == [message.to_dict() for message in expected_new_messages]
+
+    @pytest.mark.asyncio
     async def test_error_event(self) -> None:
         from cognitia.agent.agent import collect_stream_result
 
@@ -631,6 +792,7 @@ class TestRuntimeEventAdapter:
                     "usage": {"input_tokens": 10},
                     "structured_output": {"answer": 42},
                     "native_metadata": {"thread_id": "thread-1"},
+                    "new_messages": [{"role": "assistant", "content": "Result"}],
                 },
             )
         )
@@ -642,6 +804,7 @@ class TestRuntimeEventAdapter:
         assert adapted.usage == {"input_tokens": 10}
         assert adapted.structured_output == {"answer": 42}
         assert adapted.native_metadata == {"thread_id": "thread-1"}
+        assert adapted.new_messages == [{"role": "assistant", "content": "Result"}]
 
     def test_error_maps_to_error(self) -> None:
         from cognitia.agent.agent import _RuntimeEventAdapter

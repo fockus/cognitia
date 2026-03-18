@@ -81,7 +81,7 @@ sdk_hooks = registry_to_sdk_hooks(registry)
 The bridge wraps cognitia callbacks (`(**kwargs) -> dict | None`) into SDK-compatible signatures (`(hook_input, tool_use_id, context) -> HookJSONOutput`). A `None` return from cognitia callbacks maps to `{"continue_": True}`.
 
 !!! note
-    `registry_to_sdk_hooks` requires `claude_agent_sdk` as an optional dependency. It is `None` if the SDK is not installed.
+    Importing `registry_to_sdk_hooks` requires `claude_agent_sdk` as an optional dependency. Without it, `from cognitia.hooks import registry_to_sdk_hooks` raises `ImportError`.
 
 ---
 
