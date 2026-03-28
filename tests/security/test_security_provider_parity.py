@@ -13,6 +13,7 @@ from cognitia.todo.types import TodoItem
 from cognitia.tools.sandbox_docker import DockerSandboxProvider
 from cognitia.tools.sandbox_e2b import E2BSandboxProvider
 from cognitia.tools.sandbox_local import LocalSandboxProvider
+from cognitia.tools.sandbox_openshell import OpenShellSandboxProvider
 from cognitia.tools.types import SandboxConfig, SandboxViolation
 
 pytestmark = pytest.mark.security
@@ -33,6 +34,7 @@ class TestPathIsolationParity:
         local = LocalSandboxProvider(_sandbox_config(tmp_path))
         e2b = E2BSandboxProvider(_sandbox_config(tmp_path), _sandbox=AsyncMock())
         docker = DockerSandboxProvider(_sandbox_config(tmp_path), _container=AsyncMock())
+        openshell = OpenShellSandboxProvider(_sandbox_config(tmp_path), _session=AsyncMock())
 
         with pytest.raises(SandboxViolation):
             await local.read_file("../secret.txt")
@@ -40,21 +42,28 @@ class TestPathIsolationParity:
             await e2b.read_file("../secret.txt")
         with pytest.raises(SandboxViolation):
             await docker.read_file("../secret.txt")
+        with pytest.raises(SandboxViolation):
+            await openshell.read_file("../secret.txt")
 
     async def test_denied_commands_blocked_before_execution(self, tmp_path) -> None:
         mock_e2b = AsyncMock()
         mock_docker = AsyncMock()
+        mock_openshell = AsyncMock()
 
         e2b = E2BSandboxProvider(_sandbox_config(tmp_path), _sandbox=mock_e2b)
         docker = DockerSandboxProvider(_sandbox_config(tmp_path), _container=mock_docker)
+        openshell = OpenShellSandboxProvider(_sandbox_config(tmp_path), _session=mock_openshell)
 
         with pytest.raises(SandboxViolation):
             await e2b.execute("rm -rf /workspace")
         with pytest.raises(SandboxViolation):
             await docker.execute("rm -rf /workspace")
+        with pytest.raises(SandboxViolation):
+            await openshell.execute("rm -rf /workspace")
 
         mock_e2b.process.start.assert_not_called()
         mock_docker.exec_run.assert_not_called()
+        mock_openshell.exec.assert_not_called()
 
 
 class TestTenantBoundaries:

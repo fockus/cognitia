@@ -34,6 +34,7 @@ class MemoryBankConfig:
     auto_load_on_turn: bool = True
     auto_load_max_lines: int = 200
     default_folders: list[str] = field(default_factory=lambda: ["plans", "reports", "notes"])
+    tiered_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,24 @@ class MemoryEntry:
     content: str
     created_at: datetime
     updated_at: datetime
+
+
+ContextTier = Literal["L0", "L1", "L2"]
+
+
+@dataclass(frozen=True)
+class TieredEntry:
+    """Memory bank entry with a specific context tier.
+
+    L0 (~100 tokens): abstract/title for fast recall.
+    L1 (~2000 tokens): overview for decision-making.
+    L2 (unlimited): full original content.
+    """
+
+    path: str
+    tier: ContextTier
+    content: str
+    token_count: int = 0
 
 
 class MemoryBankViolation(Exception):

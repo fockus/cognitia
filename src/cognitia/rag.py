@@ -83,6 +83,41 @@ class SimpleRetriever:
         return scored[:top_k]
 
 
+class TieredRetriever:
+    """Retriever backed by TieredContextManager.
+
+    Searches L0 abstracts for keyword matches, returns L1 overviews
+    as Documents. Drop-in replacement for SimpleRetriever.
+
+    Args:
+        tiered_manager: A TieredContextManager instance (or any object
+            with an async ``search(query, budget_tokens, top_k)`` method).
+    """
+
+    def __init__(self, tiered_manager: Any, top_k: int = 5) -> None:
+        from cognitia.memory_bank.tiered import TieredContextManager
+
+        if not isinstance(tiered_manager, TieredContextManager):
+            raise TypeError(
+                f"Expected TieredContextManager, got {type(tiered_manager).__name__}"
+            )
+        self._manager: TieredContextManager = tiered_manager
+        self._top_k = top_k
+
+    async def retrieve(self, query: str, top_k: int = 5) -> list[Document]:
+        """Retrieve documents from memory bank via tiered search."""
+        entries = await self._manager.search(
+            query, budget_tokens=top_k * 2000, top_k=top_k
+        )
+        return [
+            Document(
+                content=entry.content,
+                metadata={"path": entry.path, "tier": entry.tier},
+            )
+            for entry in entries
+        ]
+
+
 class RagInputFilter:
     """InputFilter that injects retrieved documents into system_prompt.
 

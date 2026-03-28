@@ -131,6 +131,10 @@ e2b = [
 docker = [
     "docker>=7.0",
 ]
+# Sandbox: NVIDIA OpenShell (kernel-level isolation)
+openshell = [
+    "openshell>=0.0.16",
+]
 # All runtimes + all storage + web (for development)
 all = [
     "cognitia[claude,thin,deepagents,openai-agents,all-providers,postgres,sqlite,web,web-duckduckgo]",
