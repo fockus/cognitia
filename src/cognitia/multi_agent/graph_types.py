@@ -27,6 +27,7 @@ class AgentNode:
     parent_id: str | None = None
     allowed_tools: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
+    mcp_servers: tuple[str, ...] = ()
     runtime_config: dict[str, Any] | None = None  # None = inherit from parent
     budget_limit_usd: float | None = None
     status: AgentStatus = AgentStatus.IDLE
