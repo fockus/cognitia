@@ -8,7 +8,7 @@ import pytest
 
 from cognitia.multi_agent.graph_task_types import GraphTaskItem, TaskComment
 from cognitia.multi_agent.task_types import TaskStatus
-from cognitia.protocols.graph_task import GraphTaskBoard, GraphTaskScheduler, TaskCommentStore
+from cognitia.protocols.graph_task import GraphTaskBlocker, GraphTaskBoard, GraphTaskScheduler, TaskCommentStore
 
 
 # ---------------------------------------------------------------------------
@@ -402,3 +402,185 @@ class TestTimestamps:
         tasks = await board.list_tasks()
         assert tasks[0].started_at is None
         assert tasks[0].completed_at is None
+
+
+# ---------------------------------------------------------------------------
+# New fields (progress, stage, blocked_reason)
+# ---------------------------------------------------------------------------
+
+
+class TestNewFields:
+
+    async def test_new_task_defaults(self, board) -> None:
+        """New tasks have progress=0.0, stage='', blocked_reason=''."""
+        await board.create_task(_task("t1", "Test"))
+        tasks = await board.list_tasks()
+        t = tasks[0]
+        assert t.progress == 0.0
+        assert t.stage == ""
+        assert t.blocked_reason == ""
+
+
+# ---------------------------------------------------------------------------
+# Block / Unblock
+# ---------------------------------------------------------------------------
+
+
+class TestBlocked:
+
+    def test_blocker_protocol(self, board) -> None:
+        assert isinstance(board, GraphTaskBlocker)
+
+    async def test_block_task_sets_blocked_status(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        result = await board.block_task("t1", "Waiting for API key")
+        assert result is True
+        tasks = await board.list_tasks()
+        t = next(t for t in tasks if t.id == "t1")
+        assert t.status == TaskStatus.BLOCKED
+        assert t.blocked_reason == "Waiting for API key"
+
+    async def test_block_task_empty_reason_rejected(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        result = await board.block_task("t1", "")
+        assert result is False
+        # Task unchanged
+        tasks = await board.list_tasks()
+        assert tasks[0].status == TaskStatus.TODO
+
+    async def test_block_task_whitespace_reason_rejected(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        result = await board.block_task("t1", "   ")
+        assert result is False
+
+    async def test_block_done_task_rejected(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        await board.complete_task("t1")
+        result = await board.block_task("t1", "reason")
+        assert result is False
+
+    async def test_block_nonexistent_task(self, board) -> None:
+        result = await board.block_task("nonexistent", "reason")
+        assert result is False
+
+    async def test_unblock_task_returns_to_todo(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        await board.block_task("t1", "Waiting")
+        result = await board.unblock_task("t1")
+        assert result is True
+        tasks = await board.list_tasks()
+        t = next(t for t in tasks if t.id == "t1")
+        assert t.status == TaskStatus.TODO
+        assert t.blocked_reason == ""
+
+    async def test_unblock_non_blocked_task_rejected(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        result = await board.unblock_task("t1")
+        assert result is False
+
+    async def test_blocked_task_cannot_be_checked_out(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        await board.block_task("t1", "Waiting")
+        result = await board.checkout_task("t1", "agent-1")
+        assert result is None
+
+    async def test_blocked_task_not_in_ready_tasks(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        await board.block_task("t1", "Waiting")
+        ready = await board.get_ready_tasks()
+        assert all(t.id != "t1" for t in ready)
+
+    async def test_block_releases_checkout(self, board) -> None:
+        await board.create_task(_task("t1", "Test"))
+        await board.checkout_task("t1", "agent-1")
+        await board.block_task("t1", "External dependency")
+        tasks = await board.list_tasks()
+        t = next(t for t in tasks if t.id == "t1")
+        assert t.checkout_agent_id is None
+
+
+# ---------------------------------------------------------------------------
+# Progress auto-calculation
+# ---------------------------------------------------------------------------
+
+
+class TestProgress:
+
+    async def test_completed_leaf_has_full_progress(self, board) -> None:
+        await board.create_task(_task("t1", "Leaf"))
+        await board.complete_task("t1")
+        tasks = await board.list_tasks()
+        assert tasks[0].progress == 1.0
+
+    async def test_parent_progress_one_of_two_done(self, board) -> None:
+        await board.create_task(_task("parent", "Parent"))
+        await board.create_task(_task("c1", "Child 1", parent_id="parent"))
+        await board.create_task(_task("c2", "Child 2", parent_id="parent"))
+        await board.complete_task("c1")
+        tasks = await board.list_tasks()
+        parent = next(t for t in tasks if t.id == "parent")
+        assert parent.progress == pytest.approx(0.5)
+        assert parent.status == TaskStatus.TODO  # not all done
+
+    async def test_parent_progress_all_done(self, board) -> None:
+        await board.create_task(_task("parent", "Parent"))
+        await board.create_task(_task("c1", "Child 1", parent_id="parent"))
+        await board.create_task(_task("c2", "Child 2", parent_id="parent"))
+        await board.complete_task("c1")
+        await board.complete_task("c2")
+        tasks = await board.list_tasks()
+        parent = next(t for t in tasks if t.id == "parent")
+        assert parent.progress == pytest.approx(1.0)
+        assert parent.status == TaskStatus.DONE
+
+    async def test_grandparent_progress_cascades(self, board) -> None:
+        await board.create_task(_task("gp", "Grandparent"))
+        await board.create_task(_task("p", "Parent", parent_id="gp"))
+        await board.create_task(_task("c1", "Child 1", parent_id="p"))
+        await board.create_task(_task("c2", "Child 2", parent_id="p"))
+        await board.complete_task("c1")
+        tasks = await board.list_tasks()
+        parent = next(t for t in tasks if t.id == "p")
+        gp = next(t for t in tasks if t.id == "gp")
+        assert parent.progress == pytest.approx(0.5)
+        assert gp.progress == pytest.approx(0.5)  # only child "p" with progress 0.5
+
+    async def test_three_children_mixed(self, board) -> None:
+        await board.create_task(_task("parent", "Parent"))
+        await board.create_task(_task("c1", "C1", parent_id="parent"))
+        await board.create_task(_task("c2", "C2", parent_id="parent"))
+        await board.create_task(_task("c3", "C3", parent_id="parent"))
+        await board.complete_task("c1")
+        await board.complete_task("c2")
+        tasks = await board.list_tasks()
+        parent = next(t for t in tasks if t.id == "parent")
+        assert parent.progress == pytest.approx(2.0 / 3.0)
+        assert parent.status == TaskStatus.TODO  # c3 still todo
+
+    async def test_cancelled_child_drags_progress(self, board) -> None:
+        """Cancelled child has progress 0.0, counts in denominator."""
+        await board.create_task(_task("parent", "Parent"))
+        await board.create_task(_task("c1", "C1", parent_id="parent"))
+        await board.create_task(_task("c2", "C2", parent_id="parent"))
+        await board.create_task(_task("c3", "C3", parent_id="parent"))
+        await board.complete_task("c1")
+        await board.complete_task("c2")
+        # c3 stays TODO with progress 0.0
+        tasks = await board.list_tasks()
+        parent = next(t for t in tasks if t.id == "parent")
+        assert parent.progress == pytest.approx(2.0 / 3.0)
+        assert parent.status != TaskStatus.DONE
+
+    async def test_blocked_child_drags_progress(self, board) -> None:
+        """Blocked child has progress 0.0, parent not auto-completed."""
+        await board.create_task(_task("parent", "Parent"))
+        await board.create_task(_task("c1", "C1", parent_id="parent"))
+        await board.create_task(_task("c2", "C2", parent_id="parent"))
+        await board.create_task(_task("c3", "C3", parent_id="parent"))
+        await board.complete_task("c1")
+        await board.complete_task("c2")
+        await board.block_task("c3", "Waiting for input")
+        tasks = await board.list_tasks()
+        parent = next(t for t in tasks if t.id == "parent")
+        assert parent.progress == pytest.approx(2.0 / 3.0)
+        assert parent.status != TaskStatus.DONE

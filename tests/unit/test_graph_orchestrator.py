@@ -531,3 +531,58 @@ class TestContextAwareRunner:
         assert "code_exec" in ctx.tools
         assert "python" in ctx.skills
         assert "sql" in ctx.skills
+
+
+# ---------------------------------------------------------------------------
+# Delegate with stage
+# ---------------------------------------------------------------------------
+
+
+class TestDelegateWithStage:
+
+    async def test_delegate_passes_stage_to_task(self, make_orchestrator, task_board) -> None:
+        """DelegationRequest.stage is propagated to the GraphTaskItem."""
+        runner = AsyncMock(return_value="Done")
+        orch = make_orchestrator(agent_runner=runner)
+        run_id = await orch.start("Build")
+        await asyncio.sleep(0.1)
+        status = await orch.get_status(run_id)
+
+        req = DelegationRequest(
+            task_id="sub-stage",
+            agent_id="eng1",
+            goal="Review code",
+            parent_task_id=status.root_task_id,
+            stage="review",
+        )
+        await orch.delegate(req)
+        await asyncio.sleep(0.1)
+
+        all_tasks = await task_board.list_tasks()
+        task = next((t for t in all_tasks if t.id == "sub-stage"), None)
+        assert task is not None
+        assert task.stage == "review"
+
+    async def test_delegate_without_stage_creates_task_with_empty_stage(
+        self, make_orchestrator, task_board,
+    ) -> None:
+        """DelegationRequest without stage creates GraphTaskItem with empty stage."""
+        runner = AsyncMock(return_value="Done")
+        orch = make_orchestrator(agent_runner=runner)
+        run_id = await orch.start("Build")
+        await asyncio.sleep(0.1)
+        status = await orch.get_status(run_id)
+
+        req = DelegationRequest(
+            task_id="sub-no-stage",
+            agent_id="eng1",
+            goal="Code it",
+            parent_task_id=status.root_task_id,
+        )
+        await orch.delegate(req)
+        await asyncio.sleep(0.1)
+
+        all_tasks = await task_board.list_tasks()
+        task = next((t for t in all_tasks if t.id == "sub-no-stage"), None)
+        assert task is not None
+        assert task.stage == ""

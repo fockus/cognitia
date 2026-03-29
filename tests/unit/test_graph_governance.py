@@ -577,3 +577,49 @@ class TestGovernanceInGraphTools:
             agent_id="cto", goal="Do work",
         )
         assert "delegated" in result.lower()
+
+    async def test_delegate_with_stage_passes_through(self, org_with_caps) -> None:
+        """delegate_task with stage parameter passes it to DelegationRequest."""
+        from unittest.mock import AsyncMock
+
+        from cognitia.multi_agent.graph_governance import GraphGovernanceConfig
+        from cognitia.multi_agent.graph_task_board import InMemoryGraphTaskBoard
+        from cognitia.multi_agent.graph_tools import create_graph_tools
+
+        orch_mock = AsyncMock()
+        tools = create_graph_tools(
+            graph=org_with_caps,
+            task_board=InMemoryGraphTaskBoard(),
+            orchestrator=orch_mock,
+            governance=GraphGovernanceConfig(),
+        )
+        delegate = next(t for t in tools if t.name == "graph_delegate_task")
+        result = await delegate.handler(
+            agent_id="cto", goal="Do work", stage="review",
+        )
+        assert "delegated" in result.lower()
+        # Verify stage was passed in the DelegationRequest
+        call_args = orch_mock.delegate.call_args
+        req = call_args[0][0]
+        assert req.stage == "review"
+
+    async def test_delegate_without_stage_defaults_empty(self, org_with_caps) -> None:
+        """delegate_task without stage defaults to empty string in DelegationRequest."""
+        from unittest.mock import AsyncMock
+
+        from cognitia.multi_agent.graph_governance import GraphGovernanceConfig
+        from cognitia.multi_agent.graph_task_board import InMemoryGraphTaskBoard
+        from cognitia.multi_agent.graph_tools import create_graph_tools
+
+        orch_mock = AsyncMock()
+        tools = create_graph_tools(
+            graph=org_with_caps,
+            task_board=InMemoryGraphTaskBoard(),
+            orchestrator=orch_mock,
+            governance=GraphGovernanceConfig(),
+        )
+        delegate = next(t for t in tools if t.name == "graph_delegate_task")
+        result = await delegate.handler(agent_id="cto", goal="Do work")
+        assert "delegated" in result.lower()
+        req = orch_mock.delegate.call_args[0][0]
+        assert req.stage == ""

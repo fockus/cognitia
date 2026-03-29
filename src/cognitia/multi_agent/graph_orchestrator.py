@@ -156,6 +156,7 @@ class DefaultGraphOrchestrator:
             title=request.goal,
             assignee_agent_id=request.agent_id,
             parent_task_id=request.parent_task_id,
+            stage=request.stage,
         ))
 
         await self._emit("graph.orchestrator.delegated", {

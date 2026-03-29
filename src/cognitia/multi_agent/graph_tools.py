@@ -116,6 +116,7 @@ def create_graph_tools(
         goal: str,
         parent_task_id: str = "",
         caller_agent_id: str = "",
+        stage: str = "",
     ) -> str:
         """Delegate a task to an agent via the orchestrator.
 
@@ -124,6 +125,7 @@ def create_graph_tools(
             goal: Description of what the agent should accomplish.
             parent_task_id: Optional parent task for hierarchy.
             caller_agent_id: Agent performing the delegation (for governance).
+            stage: Optional workflow stage name for the task.
         """
         # Governance check on the caller
         if governance is not None and caller_agent_id:
@@ -146,6 +148,7 @@ def create_graph_tools(
             agent_id=agent_id,
             goal=goal,
             parent_task_id=parent_task_id or None,
+            stage=stage,
         )
         await orchestrator.delegate(req)
         return f"Delegated: task '{task_id}' assigned to '{node.name}' — {goal}"

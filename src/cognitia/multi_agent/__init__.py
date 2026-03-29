@@ -14,6 +14,7 @@ from cognitia.multi_agent.task_types import (
     TaskPriority,
     TaskStatus,
 )
+from cognitia.multi_agent.graph_task_types import WorkflowConfig, WorkflowStage
 from cognitia.multi_agent.types import AgentToolResult
 
 __all__ = [
@@ -28,6 +29,8 @@ __all__ = [
     "TaskItem",
     "TaskPriority",
     "TaskStatus",
+    "WorkflowConfig",
+    "WorkflowStage",
     "create_agent_tool_spec",
     "execute_agent_tool",
 ]

@@ -99,3 +99,50 @@ class TestGoalAncestry:
     async def test_ancestry_no_goal(self, board) -> None:
         await board.create_task(GraphTaskItem(id="t1", title="No goal"))
         assert await board.get_goal_ancestry("t1") is None
+
+
+class TestSerialization:
+
+    async def test_progress_stage_blocked_roundtrip(self, board) -> None:
+        """New fields survive SQLite JSON roundtrip."""
+        from dataclasses import replace
+
+        task = GraphTaskItem(id="t1", title="Test")
+        task = replace(task, progress=0.75, stage="review", blocked_reason="waiting")
+        await board.create_task(task)
+        tasks = await board.list_tasks()
+        t = tasks[0]
+        assert t.progress == 0.75
+        assert t.stage == "review"
+        assert t.blocked_reason == "waiting"
+
+
+class TestBlockUnblock:
+
+    async def test_block_task(self, board) -> None:
+        await board.create_task(GraphTaskItem(id="t1", title="Task"))
+        result = await board.block_task("t1", "Waiting for dep")
+        assert result is True
+        tasks = await board.list_tasks()
+        t = tasks[0]
+        assert t.status == TaskStatus.BLOCKED
+        assert t.blocked_reason == "Waiting for dep"
+
+    async def test_unblock_task(self, board) -> None:
+        await board.create_task(GraphTaskItem(id="t1", title="Task"))
+        await board.block_task("t1", "Waiting")
+        result = await board.unblock_task("t1")
+        assert result is True
+        tasks = await board.list_tasks()
+        t = tasks[0]
+        assert t.status == TaskStatus.TODO
+        assert t.blocked_reason == ""
+
+    async def test_block_nonexistent(self, board) -> None:
+        result = await board.block_task("nope", "reason")
+        assert result is False
+
+    async def test_unblock_non_blocked(self, board) -> None:
+        await board.create_task(GraphTaskItem(id="t1", title="Task"))
+        result = await board.unblock_task("t1")
+        assert result is False

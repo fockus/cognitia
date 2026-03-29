@@ -28,6 +28,14 @@ class GraphTaskScheduler(Protocol):
 
 
 @runtime_checkable
+class GraphTaskBlocker(Protocol):
+    """Block/unblock tasks. ISP: 2 methods."""
+
+    async def block_task(self, task_id: str, reason: str) -> bool: ...
+    async def unblock_task(self, task_id: str) -> bool: ...
+
+
+@runtime_checkable
 class TaskCommentStore(Protocol):
     """Persistent comment threads on tasks. ISP: 3 methods."""
 

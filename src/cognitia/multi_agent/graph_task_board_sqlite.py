@@ -64,6 +64,9 @@ class SqliteGraphTaskBoard:
             "estimated_effort": task.estimated_effort,
             "started_at": task.started_at,
             "completed_at": task.completed_at,
+            "progress": task.progress,
+            "stage": task.stage,
+            "blocked_reason": task.blocked_reason,
             "created_at": task.created_at, "updated_at": task.updated_at,
             "metadata": task.metadata,
         })
@@ -87,6 +90,9 @@ class SqliteGraphTaskBoard:
             estimated_effort=d.get("estimated_effort"),
             started_at=d.get("started_at"),
             completed_at=d.get("completed_at"),
+            progress=d.get("progress", 0.0),
+            stage=d.get("stage", ""),
+            blocked_reason=d.get("blocked_reason", ""),
             created_at=d.get("created_at", 0.0),
             updated_at=d.get("updated_at", 0.0),
             metadata=d.get("metadata", {}),
@@ -149,47 +155,121 @@ class SqliteGraphTaskBoard:
                     status=TaskStatus.DONE,
                     completed_at=time.time(),
                     updated_at=time.time(),
+                    progress=1.0,
                 )
                 self._conn.execute(
                     "UPDATE graph_tasks SET data = ? WHERE id = ?",
                     (self._ser(updated), task_id),
                 )
-                # Propagate within the same transaction
+                # Propagate progress and completion within the same transaction
                 if task.parent_task_id:
-                    self._propagate_sync_inner(task.parent_task_id)
+                    self._propagate_parent_sync(task.parent_task_id)
                 self._conn.commit()
                 return True
             except Exception:
                 self._conn.rollback()
                 raise
 
-    def _propagate_sync_inner(self, parent_id: str) -> None:
-        """Propagate completion upward. Must be called within an active transaction."""
+    def _block_sync(self, task_id: str, reason: str) -> bool:
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cur = self._conn.execute(
+                    "SELECT data FROM graph_tasks WHERE id = ?", (task_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    self._conn.commit()
+                    return False
+                if not reason or not reason.strip():
+                    self._conn.commit()
+                    return False
+                task = self._deser(row[0])
+                if task.status not in (TaskStatus.TODO, TaskStatus.IN_PROGRESS):
+                    self._conn.commit()
+                    return False
+                updated = replace(
+                    task,
+                    status=TaskStatus.BLOCKED,
+                    blocked_reason=reason.strip(),
+                    checkout_agent_id=None,
+                    updated_at=time.time(),
+                )
+                self._conn.execute(
+                    "UPDATE graph_tasks SET data = ? WHERE id = ?",
+                    (self._ser(updated), task_id),
+                )
+                self._conn.commit()
+                return True
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def _unblock_sync(self, task_id: str) -> bool:
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cur = self._conn.execute(
+                    "SELECT data FROM graph_tasks WHERE id = ?", (task_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    self._conn.commit()
+                    return False
+                task = self._deser(row[0])
+                if task.status != TaskStatus.BLOCKED:
+                    self._conn.commit()
+                    return False
+                updated = replace(
+                    task,
+                    status=TaskStatus.TODO,
+                    blocked_reason="",
+                    updated_at=time.time(),
+                )
+                self._conn.execute(
+                    "UPDATE graph_tasks SET data = ? WHERE id = ?",
+                    (self._ser(updated), task_id),
+                )
+                self._conn.commit()
+                return True
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def _propagate_parent_sync(self, parent_id: str) -> None:
+        """Recalculate parent progress from children and auto-complete if all DONE.
+
+        Must be called within an active transaction. Always recurses to grandparent.
+        """
         cur = self._conn.execute(
             "SELECT data FROM graph_tasks WHERE parent_task_id = ?", (parent_id,)
         )
         children = [self._deser(r[0]) for r in cur.fetchall()]
         if not children:
             return
+        progress = sum(c.progress for c in children) / len(children)
+        cur2 = self._conn.execute("SELECT data FROM graph_tasks WHERE id = ?", (parent_id,))
+        row = cur2.fetchone()
+        if not row:
+            return
+        parent = self._deser(row[0])
         if all(c.status == TaskStatus.DONE for c in children):
-            cur2 = self._conn.execute("SELECT data FROM graph_tasks WHERE id = ?", (parent_id,))
-            row = cur2.fetchone()
-            if row:
-                parent = self._deser(row[0])
-                if parent.status != TaskStatus.DONE:
-                    updated = replace(
-                        parent,
-                        status=TaskStatus.DONE,
-                        completed_at=time.time(),
-                        updated_at=time.time(),
-                    )
-                    self._conn.execute(
-                        "UPDATE graph_tasks SET data = ? WHERE id = ?",
-                        (self._ser(updated), parent_id),
-                    )
-                    # No intermediate commit — stays in caller's transaction
-                    if parent.parent_task_id:
-                        self._propagate_sync_inner(parent.parent_task_id)
+            updated = replace(
+                parent,
+                status=TaskStatus.DONE,
+                completed_at=time.time(),
+                updated_at=time.time(),
+                progress=progress,
+            )
+        else:
+            updated = replace(parent, progress=progress, updated_at=time.time())
+        self._conn.execute(
+            "UPDATE graph_tasks SET data = ? WHERE id = ?",
+            (self._ser(updated), parent_id),
+        )
+        # Always recurse — progress changes even with partial completion
+        if parent.parent_task_id:
+            self._propagate_parent_sync(parent.parent_task_id)
 
     def _subtasks_sync(self, task_id: str) -> list[GraphTaskItem]:
         with self._lock:
@@ -355,6 +435,12 @@ class SqliteGraphTaskBoard:
 
     async def get_blocked_by(self, task_id: str) -> list[GraphTaskItem]:
         return await asyncio.to_thread(self._get_blocked_by_sync, task_id)
+
+    async def block_task(self, task_id: str, reason: str) -> bool:
+        return await asyncio.to_thread(self._block_sync, task_id, reason)
+
+    async def unblock_task(self, task_id: str) -> bool:
+        return await asyncio.to_thread(self._unblock_sync, task_id)
 
     async def get_goal_ancestry(self, task_id: str) -> GoalAncestry | None:
         return await asyncio.to_thread(self._goal_ancestry_sync, task_id)

@@ -64,6 +64,9 @@ class PostgresGraphTaskBoard:
             "estimated_effort": task.estimated_effort,
             "started_at": task.started_at,
             "completed_at": task.completed_at,
+            "progress": task.progress,
+            "stage": task.stage,
+            "blocked_reason": task.blocked_reason,
             "created_at": task.created_at, "updated_at": task.updated_at,
             "metadata": task.metadata,
         }
@@ -87,6 +90,9 @@ class PostgresGraphTaskBoard:
             estimated_effort=data.get("estimated_effort"),
             started_at=data.get("started_at"),
             completed_at=data.get("completed_at"),
+            progress=data.get("progress", 0.0),
+            stage=data.get("stage", ""),
+            blocked_reason=data.get("blocked_reason", ""),
             created_at=data.get("created_at", 0.0),
             updated_at=data.get("updated_at", 0.0),
             metadata=data.get("metadata", {}),
@@ -157,14 +163,15 @@ class PostgresGraphTaskBoard:
                 status=TaskStatus.DONE,
                 completed_at=time.time(),
                 updated_at=time.time(),
+                progress=1.0,
             )
             await session.execute(
                 text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
                 {"id": task_id, "data": json.dumps(self._serialize_task(updated))},
             )
-            # Propagate to parent
+            # Propagate progress and completion to parent
             if task.parent_task_id:
-                await self._propagate_completion(session, task.parent_task_id)
+                await self._propagate_parent(session, task.parent_task_id)
             return True
 
     async def get_subtasks(self, task_id: str) -> list[GraphTaskItem]:
@@ -191,6 +198,59 @@ class PostgresGraphTaskBoard:
                 params,
             )).fetchall()
             return [self._deserialize_task(r[0]) for r in rows]
+
+    # --- GraphTaskBlocker ---
+
+    async def block_task(self, task_id: str, reason: str) -> bool:
+        """Block a task with a mandatory reason."""
+        if not reason or not reason.strip():
+            return False
+        async with self._session(commit=True) as session:
+            row = (await session.execute(
+                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
+                {"id": task_id},
+            )).fetchone()
+            if not row:
+                return False
+            task = self._deserialize_task(row[0])
+            if task.status not in (TaskStatus.TODO, TaskStatus.IN_PROGRESS):
+                return False
+            updated = replace(
+                task,
+                status=TaskStatus.BLOCKED,
+                blocked_reason=reason.strip(),
+                checkout_agent_id=None,
+                updated_at=time.time(),
+            )
+            await session.execute(
+                text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
+                {"id": task_id, "data": json.dumps(self._serialize_task(updated))},
+            )
+            return True
+
+    async def unblock_task(self, task_id: str) -> bool:
+        """Unblock a task, returning it to TODO status."""
+        async with self._session(commit=True) as session:
+            row = (await session.execute(
+                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
+                {"id": task_id},
+            )).fetchone()
+            if not row:
+                return False
+            task = self._deserialize_task(row[0])
+            if task.status != TaskStatus.BLOCKED:
+                return False
+            updated = replace(
+                task,
+                status=TaskStatus.TODO,
+                blocked_reason="",
+                updated_at=time.time(),
+            )
+            await session.execute(
+                text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
+                {"id": task_id, "data": json.dumps(self._serialize_task(updated))},
+            )
+            return True
 
     # --- GraphTaskScheduler ---
 
@@ -316,34 +376,41 @@ class PostgresGraphTaskBoard:
 
     # --- Internal ---
 
-    async def _propagate_completion(self, session: AsyncSession, parent_id: str) -> None:
-        # Lock all sibling rows to prevent concurrent propagation race
+    async def _propagate_parent(self, session: AsyncSession, parent_id: str) -> None:
+        """Recalculate parent progress from children and auto-complete if all DONE.
+
+        Always recurses to grandparent since progress changes even with partial completion.
+        """
+        # Lock all children to prevent concurrent propagation race
         rows = (await session.execute(
             text("SELECT data FROM graph_tasks WHERE parent_task_id = :id FOR UPDATE"),
             {"id": parent_id},
         )).fetchall()
         if not rows:
             return
-        all_done = all(
-            self._deserialize_task(r[0]).status == TaskStatus.DONE for r in rows
+        children = [self._deserialize_task(r[0]) for r in rows]
+        progress = sum(c.progress for c in children) / len(children)
+        parent_row = (await session.execute(
+            text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
+            {"id": parent_id},
+        )).fetchone()
+        if not parent_row:
+            return
+        parent = self._deserialize_task(parent_row[0])
+        if all(c.status == TaskStatus.DONE for c in children):
+            updated = replace(
+                parent,
+                status=TaskStatus.DONE,
+                completed_at=time.time(),
+                updated_at=time.time(),
+                progress=progress,
+            )
+        else:
+            updated = replace(parent, progress=progress, updated_at=time.time())
+        await session.execute(
+            text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
+            {"id": parent_id, "data": json.dumps(self._serialize_task(updated))},
         )
-        if all_done:
-            parent_row = (await session.execute(
-                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
-                {"id": parent_id},
-            )).fetchone()
-            if parent_row:
-                parent = self._deserialize_task(parent_row[0])
-                if parent.status != TaskStatus.DONE:
-                    updated = replace(
-                        parent,
-                        status=TaskStatus.DONE,
-                        completed_at=time.time(),
-                        updated_at=time.time(),
-                    )
-                    await session.execute(
-                        text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
-                        {"id": parent_id, "data": json.dumps(self._serialize_task(updated))},
-                    )
-                    if parent.parent_task_id:
-                        await self._propagate_completion(session, parent.parent_task_id)
+        # Always recurse — progress changes even with partial completion
+        if parent.parent_task_id:
+            await self._propagate_parent(session, parent.parent_task_id)

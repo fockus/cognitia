@@ -30,6 +30,9 @@ class GraphTaskItem:
     estimated_effort: str | None = None  # XS/S/M/L/XL
     started_at: float | None = None  # set on checkout
     completed_at: float | None = None  # set on complete
+    progress: float = 0.0
+    stage: str = ""
+    blocked_reason: str = ""
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -56,3 +59,29 @@ class GoalAncestry:
     @property
     def depth(self) -> int:
         return len(self.chain)
+
+
+@dataclass(frozen=True)
+class WorkflowStage:
+    """A named stage in a custom workflow, mapped to a core TaskStatus."""
+
+    name: str
+    maps_to: TaskStatus
+    order: int = 0
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class WorkflowConfig:
+    """Consumer-defined workflow with custom stages mapped to core statuses."""
+
+    name: str
+    stages: tuple[WorkflowStage, ...] = ()
+
+    def stage_for(self, name: str) -> WorkflowStage | None:
+        """Lookup a stage by name. Returns None if not found."""
+        return next((s for s in self.stages if s.name == name), None)
+
+    def stages_for_status(self, status: TaskStatus) -> tuple[WorkflowStage, ...]:
+        """Get all stages mapped to a given TaskStatus."""
+        return tuple(s for s in self.stages if s.maps_to == status)

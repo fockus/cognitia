@@ -36,6 +36,7 @@ class DelegationRequest:
     agent_id: str
     goal: str
     parent_task_id: str | None = None
+    stage: str = ""
     max_retries: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 

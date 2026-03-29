@@ -49,10 +49,10 @@ class InMemoryGraphTaskBoard:
             if task is None:
                 return False
             self._tasks[task_id] = replace(
-                task, status=TaskStatus.DONE, completed_at=time.time(),
+                task, status=TaskStatus.DONE, completed_at=time.time(), progress=1.0,
             )
-            # Auto-propagate: check if parent's subtasks are all done
-            self._propagate_completion(task.parent_task_id)
+            # Auto-propagate progress and completion upward
+            self._propagate_parent(task.parent_task_id)
             return True
 
     async def get_subtasks(self, task_id: str) -> list[GraphTaskItem]:
@@ -115,6 +115,41 @@ class InMemoryGraphTaskBoard:
                 return False
         return True
 
+    # --- GraphTaskBlocker (2 methods) ---
+
+    async def block_task(self, task_id: str, reason: str) -> bool:
+        """Block a task with a mandatory reason."""
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return False
+            if not reason or not reason.strip():
+                return False
+            if task.status not in (TaskStatus.TODO, TaskStatus.IN_PROGRESS):
+                return False
+            self._tasks[task_id] = replace(
+                task,
+                status=TaskStatus.BLOCKED,
+                blocked_reason=reason.strip(),
+                checkout_agent_id=None,  # release checkout if blocked
+            )
+            return True
+
+    async def unblock_task(self, task_id: str) -> bool:
+        """Unblock a task, returning it to TODO status."""
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return False
+            if task.status != TaskStatus.BLOCKED:
+                return False
+            self._tasks[task_id] = replace(
+                task,
+                status=TaskStatus.TODO,
+                blocked_reason="",
+            )
+            return True
+
     # --- Extra: GoalAncestry ---
 
     async def get_goal_ancestry(self, task_id: str) -> GoalAncestry | None:
@@ -142,19 +177,25 @@ class InMemoryGraphTaskBoard:
 
     # --- Internal ---
 
-    def _propagate_completion(self, parent_id: str | None) -> None:
-        """If all subtasks of parent are DONE, auto-complete parent (recursive)."""
+    def _propagate_parent(self, parent_id: str | None) -> None:
+        """Recalculate parent progress from children and auto-complete if all DONE (recursive)."""
         if parent_id is None:
             return
         parent = self._tasks.get(parent_id)
         if parent is None:
             return
-        subtasks = [t for t in self._tasks.values() if t.parent_task_id == parent_id]
-        if not subtasks:
+        children = [t for t in self._tasks.values() if t.parent_task_id == parent_id]
+        if not children:
             return
-        if all(t.status == TaskStatus.DONE for t in subtasks):
-            self._tasks[parent_id] = replace(parent, status=TaskStatus.DONE)
-            self._propagate_completion(parent.parent_task_id)
+        progress = sum(c.progress for c in children) / len(children)
+        if all(c.status == TaskStatus.DONE for c in children):
+            self._tasks[parent_id] = replace(
+                parent, status=TaskStatus.DONE, completed_at=time.time(), progress=progress,
+            )
+        else:
+            self._tasks[parent_id] = replace(parent, progress=progress)
+        # Always recurse — progress changes even with partial completion
+        self._propagate_parent(parent.parent_task_id)
 
     def _collect_subtree_task_ids(self, task_id: str) -> set[str]:
         """BFS to collect task_id and all descendant task IDs."""
