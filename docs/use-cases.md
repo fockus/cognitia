@@ -170,6 +170,50 @@ Coordinate more than one agent over a queue, workflow, or task graph.
 
 ---
 
+## 7. Code agent infrastructure (Claude Code, Codex, OpenCode)
+
+**Typical goal**
+
+Give your code agent (Claude Code, Codex CLI, OpenCode, or any MCP-compatible client) persistent memory, structured planning, team coordination, and safe code execution — without any LLM cost from Cognitia itself.
+
+**Why Cognitia fits**
+
+- the MCP server exposes 20 tools over STDIO — zero configuration beyond `pip install`
+- headless mode (default) adds zero LLM calls — the code agent is the brain, Cognitia is the hands
+- memory persists facts, messages, and summaries across tool calls within a session
+- plans provide a state machine (draft → approved → step-by-step execution) for structured work
+- team tools let multiple agents coordinate via a task queue with priority and claiming
+- full mode (opt-in) enables sub-agent creation using your own API key
+
+**Good starting stack**
+
+- install: `pip install cognitia[code-agent]`
+- MCP config: add `cognitia-mcp --mode auto` to your client's MCP settings
+- start with memory tools for cross-session knowledge
+- add plans when tasks have 3+ steps
+- add team tools when coordinating multiple agents
+
+**Example scenarios**
+
+| Scenario | Tools Used |
+|----------|-----------|
+| Research swarm — 3 agents investigate different aspects | team + memory |
+| Persistent brain — recall architecture decisions across sessions | memory |
+| Code review pipeline — distribute files to reviewers | team + memory |
+| Resumable refactoring — 10-step plan survives interruptions | plans |
+| Analysis scripts — count lines, check dependencies | code execution |
+| Feature development — frontend + backend agents share context | plans + team + memory |
+| Learning agent — store and recall coding patterns | memory |
+
+**Docs to open**
+
+- [MCP Server](mcp-server.md)
+- [CLI Reference](cli.md)
+- [Claude Code Integration](claude-code-integration.md)
+- [Codex Integration](codex-integration.md)
+
+---
+
 ## When Cognitia is the wrong tool
 
 You may not need Cognitia if:

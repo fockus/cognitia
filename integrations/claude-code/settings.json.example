@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cognitia": {
+      "command": "cognitia-mcp",
+      "args": ["--mode", "auto"],
+      "env": {}
+    }
+  }
+}

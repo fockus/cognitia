@@ -1,0 +1,7 @@
+# Codex CLI MCP configuration for Cognitia
+# Add to your Codex CLI config file
+
+[mcp.cognitia]
+transport = "stdio"
+command = "cognitia-mcp"
+args = ["--mode", "auto"]

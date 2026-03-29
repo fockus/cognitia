@@ -107,3 +107,12 @@
 - ✅ Этап 8: mkdocs site audit и актуализация
 - ⬜ Этап 9: Version bump 0.5.0 → 1.0.0 + PyPI release
 - ✅ Этап 10: Финальная проверка (all gates green)
+
+## Phase 16: Code Agent Integration
+
+- ✅ Wave 1: HeadlessRuntime + MCP Types + StatefulSession — 24 tests
+- ✅ Wave 2: Headless Tools (memory 6 + plans 5 + team 5 + code 1) — 57 tests
+- ✅ Wave 3: Agent Tools 3 + MCP Server Assembly + pyproject.toml — 11 tests
+- ✅ Wave 4: CLI Client (Click app + 6 command groups) — 32 tests
+- ✅ Wave 5: SKILL.md + 10 references + integration configs (claude-code/codex/opencode) + docs (4 files)
+- ✅ Wave 6: 7 E2E Use Case Tests (31 tests) + docs/use-cases.md update

@@ -1,0 +1,6 @@
+# OpenCode MCP configuration for Cognitia
+mcp_servers:
+  cognitia:
+    command: cognitia-mcp
+    args: ["--mode", "auto"]
+    transport: stdio
