@@ -10,7 +10,6 @@ from cognitia.pipeline.runner import PipelineRunner
 from cognitia.pipeline.types import (
     BudgetPolicy,
     PhaseStatus,
-    PipelinePhase,
 )
 
 
@@ -172,8 +171,9 @@ class TestPipelineRun:
         result = await pipeline.run("Test goal")
         assert result.status == "failed"
         assert result.phases[0].status == PhaseStatus.FAILED
-        # Phase 2 should not have run (pipeline breaks on first failure)
-        assert len(result.phases) == 1
+        # Phase 2 should be recorded as SKIPPED (not executed)
+        assert len(result.phases) == 2
+        assert result.phases[1].status == PhaseStatus.SKIPPED
 
     async def test_gate_pass_continues(self) -> None:
         async def pass_gate(phase_id: str, results: dict) -> bool:

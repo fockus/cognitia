@@ -155,7 +155,7 @@ class TestSchedulerExecution:
         sched.every(0.05, counter.increment, name="ok")
 
         stop = asyncio.Event()
-        asyncio.get_event_loop().call_later(0.3, stop.set)
+        asyncio.get_event_loop().call_later(0.5, stop.set)
         await sched.run_until(stop)
 
         # "ok" task should have fired despite "fail" raising

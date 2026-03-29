@@ -90,8 +90,9 @@ class SqliteEpisodicMemory:
     async def recall(self, query: str, *, top_k: int = 5) -> list[Episode]:
         def _search() -> list[Episode]:
             conn = self._get_conn()
-            # FTS5 query — escape special characters
-            safe_query = query.replace('"', '""')
+            # FTS5 query — sanitize to prevent operator injection
+            sanitized = query.replace('"', '""')
+            safe_query = f'"{sanitized}"'
             try:
                 rows = conn.execute(
                     """SELECT e.* FROM episodes e
@@ -99,15 +100,16 @@ class SqliteEpisodicMemory:
                        WHERE episodes_fts MATCH ?
                        ORDER BY rank
                        LIMIT ?""",
-                    (f'"{safe_query}"', top_k),
+                    (safe_query, top_k),
                 ).fetchall()
             except sqlite3.OperationalError:
-                # Fallback to LIKE if FTS fails
+                # Fallback to LIKE if FTS fails — escape LIKE wildcards
+                escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                 rows = conn.execute(
                     """SELECT * FROM episodes
-                       WHERE summary LIKE ?
+                       WHERE summary LIKE ? ESCAPE '\\'
                        LIMIT ?""",
-                    (f"%{query}%", top_k),
+                    (f"%{escaped}%", top_k),
                 ).fetchall()
             return [self._row_to_episode(r) for r in rows]
 

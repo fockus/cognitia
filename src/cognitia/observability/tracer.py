@@ -144,10 +144,18 @@ class TracingSubscriber:
 
     def _on_llm_start(self, data: dict[str, Any]) -> None:
         span_id = self._tracer.start_span("llm_call", data)
-        self._active_spans["llm_call"] = span_id
+        key = f"llm_call:{data.get('correlation_id', span_id)}"
+        self._active_spans[key] = span_id
 
     def _on_llm_end(self, data: dict[str, Any]) -> None:
-        span_id = self._active_spans.pop("llm_call", None)
+        key = f"llm_call:{data.get('correlation_id', '')}"
+        span_id = self._active_spans.pop(key, None)
+        if span_id is None:
+            # Fallback: find any llm_call span
+            for k in list(self._active_spans):
+                if k.startswith("llm_call:"):
+                    span_id = self._active_spans.pop(k)
+                    break
         if span_id is not None:
             self._tracer.add_event(span_id, "llm_call_end", data)
             self._tracer.end_span(span_id)

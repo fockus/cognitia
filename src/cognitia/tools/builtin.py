@@ -9,6 +9,7 @@ KISS: each executor <=30 lines.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Callable
@@ -274,13 +275,26 @@ def _create_grep_executor(sandbox: SandboxProvider) -> Callable:
         path = args.get("path")
         if not pattern:
             return _make_json_error("pattern обязателен")
+        if len(pattern) > 500:
+            return _make_json_error("pattern слишком длинный (макс 500 символов)")
+        try:
+            # Validate regex before use to catch malformed patterns early
+            compiled = re.compile(pattern)
+        except re.error as e:
+            return _make_json_error(f"Некорректный regex: {e}")
         try:
             if path:
                 content = await sandbox.read_file(path)
-                matches = re.findall(pattern, content)
+                # Run regex in thread with timeout to prevent ReDoS
+                matches = await asyncio.wait_for(
+                    asyncio.to_thread(compiled.findall, content),
+                    timeout=10.0,
+                )
                 return json.dumps({"status": "ok", "matches": matches, "path": path})
             # Without a path, search across all workspace files (basic implementation)
             return json.dumps({"status": "ok", "matches": [], "note": "path рекомендуется"})
+        except TimeoutError:
+            return _make_json_error("Regex timeout — возможно catastrophic backtracking")
         except Exception as e:
             return _make_json_error(str(e))
 

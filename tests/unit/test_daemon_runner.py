@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-import signal
 import time
-from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
-from cognitia.daemon.health import HealthServer
 from cognitia.daemon.pid import PidFile
 from cognitia.daemon.runner import DaemonRunner
 from cognitia.daemon.scheduler import Scheduler

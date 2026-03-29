@@ -33,8 +33,9 @@ class InMemoryMemoryProvider:
         self._users: set[str] = set()
         # phase_state: user_id -> PhaseState
         self._phase_states: dict[str, PhaseState] = {}
-        # tool_events: list
-        self._tool_events: list[dict[str, Any]] = []
+        # tool_events: bounded deque to prevent memory leak
+        from collections import deque
+        self._tool_events: deque[dict[str, Any]] = deque(maxlen=10000)
 
     @staticmethod
     def _copy_session_state(state: dict[str, Any]) -> dict[str, Any]:

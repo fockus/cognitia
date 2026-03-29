@@ -299,17 +299,17 @@ class TestFailureHandling:
 
     async def test_retry_on_failure(self, make_orchestrator) -> None:
         """Agent fails first, succeeds on retry."""
-        call_count = 0
+        task_calls: dict[str, int] = {}
 
         async def flaky_runner(agent_id, task_id, goal, system_prompt):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
+            task_calls[task_id] = task_calls.get(task_id, 0) + 1
+            if task_calls[task_id] == 1:
                 raise RuntimeError("Transient error")
             return "Recovered"
 
         orch = make_orchestrator(agent_runner=flaky_runner, max_retries=2)
         run_id = await orch.start("Build")
+        await asyncio.sleep(0.1)  # Let root agent execution settle
         status = await orch.get_status(run_id)
 
         req = DelegationRequest(
@@ -321,7 +321,7 @@ class TestFailureHandling:
 
         result = await orch.collect_result("sub-1")
         assert result == "Recovered"
-        assert call_count == 2
+        assert task_calls["sub-1"] == 2
 
     async def test_escalate_after_max_retries(self, make_orchestrator, event_bus) -> None:
         """After exhausting retries, escalation event is emitted."""
@@ -361,8 +361,9 @@ class TestConcurrency:
             execution_order.append(f"end:{agent_id}")
             return f"Done by {agent_id}"
 
-        orch = make_orchestrator(agent_runner=slow_runner, max_concurrent=3)
+        orch = make_orchestrator(agent_runner=slow_runner, max_concurrent=5)
         run_id = await orch.start("Build")
+        await asyncio.sleep(0.1)  # Let root agent execution settle
         status = await orch.get_status(run_id)
 
         reqs = [
@@ -374,9 +375,9 @@ class TestConcurrency:
             await orch.delegate(req)
         await asyncio.sleep(0.3)
 
-        # All should have started (parallel)
-        starts = [e for e in execution_order if e.startswith("start:")]
-        assert len(starts) == 3
+        # Root + 3 delegated = 4 total starts (root now auto-launches)
+        delegate_starts = [e for e in execution_order if e.startswith("start:eng")]
+        assert len(delegate_starts) == 3
 
 
 # ---------------------------------------------------------------------------

@@ -177,13 +177,20 @@ class PostgresGraphTaskBoard:
 
     async def list_tasks(self, **filters: Any) -> list[GraphTaskItem]:
         async with self._session() as session:
-            rows = (await session.execute(text("SELECT data FROM graph_tasks"))).fetchall()
-            tasks = [self._deserialize_task(r[0]) for r in rows]
-        if "status" in filters:
-            tasks = [t for t in tasks if t.status == filters["status"]]
-        if "assignee_agent_id" in filters:
-            tasks = [t for t in tasks if t.assignee_agent_id == filters["assignee_agent_id"]]
-        return tasks
+            conditions: list[str] = []
+            params: dict[str, Any] = {}
+            if "status" in filters:
+                conditions.append("data->>'status' = :status")
+                params["status"] = filters["status"].value if hasattr(filters["status"], "value") else str(filters["status"])
+            if "assignee_agent_id" in filters:
+                conditions.append("data->>'assignee_agent_id' = :assignee")
+                params["assignee"] = filters["assignee_agent_id"]
+            where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+            rows = (await session.execute(
+                text(f"SELECT data FROM graph_tasks{where}"),  # noqa: S608
+                params,
+            )).fetchall()
+            return [self._deserialize_task(r[0]) for r in rows]
 
     # --- GraphTaskScheduler ---
 
@@ -310,8 +317,9 @@ class PostgresGraphTaskBoard:
     # --- Internal ---
 
     async def _propagate_completion(self, session: AsyncSession, parent_id: str) -> None:
+        # Lock all sibling rows to prevent concurrent propagation race
         rows = (await session.execute(
-            text("SELECT data FROM graph_tasks WHERE parent_task_id = :id"),
+            text("SELECT data FROM graph_tasks WHERE parent_task_id = :id FOR UPDATE"),
             {"id": parent_id},
         )).fetchall()
         if not rows:

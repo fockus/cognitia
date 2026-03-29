@@ -157,6 +157,8 @@ class PipelineBuilder:
         """
         if self._runner is None:
             raise ValueError("Runner is required — call .with_runner()")
+        if not self._phases:
+            raise ValueError("At least one phase is required — call .add_phase()")
 
         # 1. Graph store
         graph = await self._build_graph()

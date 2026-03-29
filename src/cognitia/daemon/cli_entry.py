@@ -151,14 +151,22 @@ def _cmd_status(args: argparse.Namespace) -> None:
 
 def _cmd_pause(args: argparse.Namespace) -> None:
     """Pause daemon scheduler."""
-    data = _http_post(args.host, args.port, "/pause", token=args.token)
-    print(json.dumps(data, indent=2))  # noqa: T201
+    try:
+        data = _http_post(args.host, args.port, "/pause", token=args.token)
+        print(json.dumps(data, indent=2))  # noqa: T201
+    except Exception as exc:
+        print(f"Daemon unreachable at {args.host}:{args.port}: {exc}")  # noqa: T201
+        raise SystemExit(1) from None
 
 
 def _cmd_resume(args: argparse.Namespace) -> None:
     """Resume daemon scheduler."""
-    data = _http_post(args.host, args.port, "/resume", token=args.token)
-    print(json.dumps(data, indent=2))  # noqa: T201
+    try:
+        data = _http_post(args.host, args.port, "/resume", token=args.token)
+        print(json.dumps(data, indent=2))  # noqa: T201
+    except Exception as exc:
+        print(f"Daemon unreachable at {args.host}:{args.port}: {exc}")  # noqa: T201
+        raise SystemExit(1) from None
 
 
 def _load_config(args: argparse.Namespace) -> DaemonConfig:

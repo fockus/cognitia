@@ -74,7 +74,12 @@ class Pipeline:
             self._phase_results.append(result)
 
             if result.status == PhaseStatus.FAILED:
-                # Skip remaining phases
+                # Record remaining phases as SKIPPED
+                idx = self._phases.index(phase)
+                for remaining in self._phases[idx + 1:]:
+                    self._phase_results.append(PhaseResult(
+                        phase_id=remaining.id, status=PhaseStatus.SKIPPED,
+                    ))
                 break
 
         total_duration = time.monotonic() - start_time
@@ -125,6 +130,22 @@ class Pipeline:
                 pass
         await self._emit("pipeline.stopped", {})
 
+    async def _execute_phase_orchestration(self, phase: PipelinePhase, goal: str) -> str:
+        """Run orchestration for a single phase. Returns run_id."""
+        phase_goal = f"[{phase.name}] {goal}" if phase.goal == goal else phase.goal
+        run_id = await self._orch.start(phase_goal)
+        self._current_run_id = run_id
+
+        # Wait for root agent to complete (start() now launches root automatically)
+        root_task_id = f"root-{run_id}"
+        bg = getattr(self._orch, "_bg_tasks", {}).get(root_task_id)
+        if bg is not None:
+            try:
+                await bg
+            except Exception:  # noqa: BLE001
+                pass
+        return run_id
+
     async def _run_single_phase(
         self, phase: PipelinePhase, goal: str,
     ) -> PhaseResult:
@@ -157,30 +178,25 @@ class Pipeline:
             })
             return result
 
-        # Run phase via orchestrator
+        # Run phase via orchestrator (with optional timeout)
+        run_id: str | None = None
         try:
-            phase_goal = f"[{phase.name}] {goal}" if phase.goal == goal else phase.goal
-            run_id = await self._orch.start(phase_goal)
-            self._current_run_id = run_id
+            phase_coro = self._execute_phase_orchestration(phase, goal)
+            if phase.timeout_seconds and phase.timeout_seconds > 0:
+                run_id = await asyncio.wait_for(phase_coro, timeout=phase.timeout_seconds)
+            else:
+                run_id = await phase_coro
 
-            # Delegate to root agent
-            root = await self._orch._graph.get_root()
-            if root is not None:
-                from cognitia.multi_agent.graph_orchestrator_types import DelegationRequest
-                await self._orch.delegate(DelegationRequest(
-                    task_id=f"{phase.id}-{run_id}",
-                    agent_id=root.id,
-                    goal=phase.goal,
-                    parent_task_id=f"root-{run_id}",
-                ))
-                # Wait for completion
-                bg = self._orch._bg_tasks.get(f"{phase.id}-{run_id}")
-                if bg is not None:
-                    try:
-                        await bg
-                    except Exception:  # noqa: BLE001
-                        pass
-
+        except TimeoutError:
+            result = PhaseResult(
+                phase_id=phase.id, status=PhaseStatus.FAILED,
+                error=f"Phase timed out after {phase.timeout_seconds}s",
+                duration_seconds=time.monotonic() - phase_start,
+            )
+            await self._emit("pipeline.phase.failed", {
+                "phase_id": phase.id, "error": result.error,
+            })
+            return result
         except asyncio.CancelledError:
             result = PhaseResult(
                 phase_id=phase.id, status=PhaseStatus.FAILED,

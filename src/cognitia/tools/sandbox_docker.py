@@ -145,13 +145,21 @@ class DockerSandboxProvider:
 
         safe_path = self._resolve_path(path)
         full_path = f"{self._workspace}/{safe_path}"
-        # Pass content through base64 to avoid escaping issues
+        # Write via Python in container — no shell wrapper, content passed as argv
+        # base64 encoding ensures no special characters in the argument
         encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-        quoted_path = shlex.quote(full_path)
-        cmd = (
-            f"mkdir -p $(dirname {quoted_path}) " f"&& echo '{encoded}' | base64 -d > {quoted_path}"
+        await self._exec(
+            [
+                "python3", "-c",
+                "import base64,os,sys;"
+                "p=sys.argv[1];d=sys.argv[2];"
+                "os.makedirs(os.path.dirname(p),exist_ok=True);"
+                "open(p,'wb').write(base64.b64decode(d))",
+                full_path,
+                encoded,
+            ],
+            timeout_seconds=self._config.timeout_seconds,
         )
-        await self._exec(["sh", "-c", cmd], timeout_seconds=self._config.timeout_seconds)
 
     async def execute(self, command: str) -> ExecutionResult:
         """Execute a command via docker exec."""

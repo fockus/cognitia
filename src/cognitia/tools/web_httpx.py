@@ -7,7 +7,9 @@ Optional dependency: httpx, trafilatura.
 
 from __future__ import annotations
 
+import ipaddress
 import re
+from urllib.parse import urlparse
 
 import structlog
 
@@ -58,12 +60,42 @@ class HttpxWebProvider:
         self._search_provider = search_provider
         self._fetch_provider = fetch_provider
 
+    @staticmethod
+    def _validate_url(url: str) -> str | None:
+        """Return rejection reason if URL targets a private/reserved network, else None."""
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname or ""
+        except Exception:
+            return "Invalid URL"
+
+        # Block cloud metadata endpoints
+        _BLOCKED_HOSTS = {"169.254.169.254", "metadata.google.internal", "100.100.100.200"}
+        if hostname in _BLOCKED_HOSTS:
+            return f"Blocked host: {hostname}"
+
+        # Check if hostname resolves to a private/reserved IP
+        try:
+            addr = ipaddress.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return f"Private/reserved IP blocked: {hostname}"
+        except ValueError:
+            pass  # hostname is a domain, not IP — OK
+
+        return None
+
     async def fetch(self, url: str) -> str:
         """Load a URL and return text content.
 
         If fetch_provider (Jina/Crawl4AI) is set, delegate to it.
         Otherwise, use httpx GET + trafilatura/regex.
         """
+        # SSRF protection — block private IPs and cloud metadata
+        rejection = self._validate_url(url)
+        if rejection:
+            _log.warning("ssrf_blocked", url=url[:200], reason=rejection)
+            return f"URL blocked: {rejection}"
+
         if self._fetch_provider is not None:
             return await self._fetch_provider.fetch(url)
 

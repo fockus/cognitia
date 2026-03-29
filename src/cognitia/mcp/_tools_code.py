@@ -1,21 +1,72 @@
-"""Code execution tool for Cognitia MCP server."""
+"""Code execution tool for Cognitia MCP server.
+
+WARNING: Executes code in a subprocess on the host. This is intended for
+use within a trusted MCP environment where the caller is verified.
+Consider using a SandboxProvider (Docker, E2B) for untrusted code.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import os
+import tempfile
 from typing import Any
 
 import structlog
 
 logger = structlog.get_logger(__name__)
 
+# Blocklist of dangerous patterns in code
+_DANGEROUS_PATTERNS = (
+    "import shutil",
+    "shutil.rmtree",
+    "os.remove",
+    "os.unlink",
+    "os.rmdir",
+    "os.system(",
+    "subprocess.call(",
+    "subprocess.run(",
+    "subprocess.Popen(",
+    "__import__('subprocess')",
+    "__import__('shutil')",
+)
+
+
+def _check_code_safety(code: str) -> str | None:
+    """Return a rejection reason if code contains dangerous patterns, else None."""
+    for pattern in _DANGEROUS_PATTERNS:
+        if pattern in code:
+            return f"Blocked dangerous pattern: {pattern}"
+    return None
+
 
 async def exec_code(code: str, timeout_seconds: int = 30) -> dict[str, Any]:
-    """Execute Python code in a subprocess and return stdout/stderr.
+    """Execute Python code in a restricted subprocess and return stdout/stderr.
 
-    Uses asyncio.create_subprocess_exec with python -c for isolation.
-    Captures stdout and stderr separately.
+    Safety measures:
+    - Dangerous pattern blocklist
+    - Restricted environment (no inherited secrets)
+    - Timeout enforcement
+    - Temporary working directory
     """
+    # Check for dangerous patterns
+    rejection = _check_code_safety(code)
+    if rejection:
+        return {"ok": False, "error": rejection}
+
+    # Restricted environment — inherit PATH (for pyenv etc.) but strip secrets
+    _secret_prefixes = ("AWS_", "AZURE_", "GCP_", "OPENAI_", "ANTHROPIC_", "API_KEY", "SECRET", "TOKEN", "PASSWORD")
+    safe_env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin"),
+        "HOME": tempfile.gettempdir(),
+        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+    }
+    # Explicitly exclude secret-bearing env vars
+    for key in os.environ:
+        upper = key.upper()
+        if any(upper.startswith(p) or upper.endswith(p) for p in _secret_prefixes):
+            safe_env.pop(key, None)
+
     try:
         process = await asyncio.create_subprocess_exec(
             "python",
@@ -23,6 +74,8 @@ async def exec_code(code: str, timeout_seconds: int = 30) -> dict[str, Any]:
             code,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=safe_env,
+            cwd=tempfile.gettempdir(),
         )
         try:
             stdout, stderr = await asyncio.wait_for(

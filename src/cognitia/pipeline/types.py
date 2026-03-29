@@ -98,4 +98,4 @@ class PipelineResult:
     phases: tuple[PhaseResult, ...]
     total_duration_seconds: float = 0.0
     total_cost_usd: float = 0.0
-    status: str = "completed"  # completed | failed | stopped
+    status: str = "completed"  # completed | failed | stopped (str for backward compat)

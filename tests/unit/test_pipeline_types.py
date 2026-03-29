@@ -27,7 +27,7 @@ class TestTypes:
         assert p.timeout_seconds is None
 
     def test_goal_hierarchy(self) -> None:
-        root = Goal(id="g1", title="Root")
+        Goal(id="g1", title="Root")  # parent exists in domain
         child = Goal(id="g2", title="Child", parent_goal_id="g1", phase_id="p1")
         assert child.parent_goal_id == "g1"
         assert child.phase_id == "p1"

@@ -183,9 +183,11 @@ class SqliteAgentGraph:
 
     def _find_by_role_sync(self, role: str) -> list[AgentNode]:
         with self._lock:
-            cur = self._conn.execute("SELECT data FROM agent_nodes")
-            nodes = [self._deserialize(r[0]) for r in cur.fetchall()]
-        return [n for n in nodes if n.role == role]
+            cur = self._conn.execute(
+                "SELECT data FROM agent_nodes WHERE json_extract(data, '$.role') = ?",
+                (role,),
+            )
+            return [self._deserialize(r[0]) for r in cur.fetchall()]
 
     def _update_sync(self, node_id: str, **updates: Any) -> AgentNode | None:
         with self._lock:

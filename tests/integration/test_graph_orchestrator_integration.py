@@ -200,11 +200,12 @@ class TestSevenAgentOrchestration:
     async def test_failure_with_escalation(self, seven_agent_org, task_board, event_bus) -> None:
         """Agent failure triggers escalation event."""
         comm = InMemoryGraphCommunication(graph_query=seven_agent_org, event_bus=event_bus)
-        call_count = 0
+        delegate_call_count = 0
 
         async def failing_runner(agent_id, task_id, goal, system_prompt):
-            nonlocal call_count
-            call_count += 1
+            nonlocal delegate_call_count
+            if agent_id == "be-dev1":
+                delegate_call_count += 1
             raise RuntimeError("DB connection failed")
 
         orch = DefaultGraphOrchestrator(
@@ -217,6 +218,7 @@ class TestSevenAgentOrchestration:
         )
 
         run_id = await orch.start("Build")
+        await asyncio.sleep(0.2)  # Let root agent execution settle
         status = await orch.get_status(run_id)
 
         await orch.delegate(DelegationRequest(
@@ -226,8 +228,8 @@ class TestSevenAgentOrchestration:
         ))
         await asyncio.sleep(0.3)
 
-        # Should have retried once (2 attempts total)
-        assert call_count == 2
+        # Should have retried once (2 attempts total) for the delegated agent
+        assert delegate_call_count == 2
 
         # Escalation message should reach ancestors (be-lead, cto, ceo)
         be_lead_inbox = await comm.get_inbox("be-lead")

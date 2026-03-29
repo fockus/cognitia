@@ -8,6 +8,8 @@ Requires ``redis[hiredis]`` (lazy import).
 
 from __future__ import annotations
 
+import json
+import time
 import uuid
 from typing import Any
 
@@ -71,6 +73,8 @@ class RedisGraphCommunication:
             "id": msg.id, "from": msg.from_agent_id, "to": msg.to_agent_id,
             "channel": msg.channel.value, "content": msg.content,
             "task_id": msg.task_id or "",
+            "created_at": str(msg.created_at),
+            "metadata": json.dumps(msg.metadata) if msg.metadata else "{}",
         }
         # Add to inbox
         await self._redis.xadd(
@@ -84,10 +88,18 @@ class RedisGraphCommunication:
 
     @staticmethod
     def _parse_msg(entry: dict[str, str]) -> GraphMessage:
+        metadata: dict[str, Any] = {}
+        if entry.get("metadata"):
+            try:
+                metadata = json.loads(entry["metadata"])
+            except (json.JSONDecodeError, TypeError):
+                pass
         return GraphMessage(
             id=entry["id"], from_agent_id=entry["from"],
             to_agent_id=entry["to"], channel=ChannelType(entry["channel"]),
             content=entry["content"], task_id=entry["task_id"] or None,
+            created_at=float(entry.get("created_at", 0)) or time.time(),
+            metadata=metadata,
         )
 
     async def send_direct(self, msg: GraphMessage) -> None:

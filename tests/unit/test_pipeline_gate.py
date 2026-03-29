@@ -6,7 +6,6 @@ from typing import Any
 
 from cognitia.pipeline.gate import CallbackGate, CompositeGate
 from cognitia.pipeline.protocols import QualityGate
-from cognitia.pipeline.types import GateResult
 
 
 class TestCallbackGate:

@@ -25,12 +25,29 @@ def _parse_dt(value: str | datetime) -> datetime:
         return datetime.now(tz=UTC)
 
 
+_SAFE_NAME_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+
+
+def _validate_path_segment(name: str, label: str) -> None:
+    """Validate that a path segment contains only safe characters."""
+    if not name or ".." in name or "/" in name or "\\" in name:
+        raise ValueError(f"Invalid {label}: {name!r}")
+    if not all(c in _SAFE_NAME_CHARS for c in name):
+        raise ValueError(f"Invalid characters in {label}: {name!r}")
+
+
 class FilesystemTodoProvider:
     """TodoProvider via a JSON file."""
 
     def __init__(self, root_path: Path, user_id: str, topic_id: str, max_todos: int = 100) -> None:
+        _validate_path_segment(user_id, "user_id")
+        _validate_path_segment(topic_id, "topic_id")
         self._max_todos = max_todos
-        self._file = Path(root_path) / user_id / topic_id / "todos.json"
+        root = Path(root_path).resolve()
+        self._file = root / user_id / topic_id / "todos.json"
+        # Verify path stays within root
+        if not self._file.resolve().is_relative_to(root):
+            raise ValueError(f"Path traversal detected: {self._file}")
 
     async def read_todos(self) -> list[TodoItem]:
         """Read todos from the file."""

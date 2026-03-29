@@ -104,7 +104,8 @@ class InMemorySessionManager:
             "runtime_messages": [message.to_dict() for message in state.runtime_messages],
             "is_rehydrated": state.is_rehydrated,
             "tool_failure_count": state.tool_failure_count,
-            "last_activity_at": state.last_activity_at,
+            # Serialize as wall-clock so it survives process restarts
+            "last_activity_at": time.time() - (time.monotonic() - state.last_activity_at),
             "delegated_from": state.delegated_from,
             "delegation_summary": state.delegation_summary,
             "delegation_turn_count": state.delegation_turn_count,
@@ -132,7 +133,8 @@ class InMemorySessionManager:
             ],
             is_rehydrated=bool(payload.get("is_rehydrated", False)),
             tool_failure_count=int(payload.get("tool_failure_count", 0)),
-            last_activity_at=float(payload.get("last_activity_at", time.monotonic())),
+            # Convert wall-clock back to monotonic for TTL checks
+            last_activity_at=time.monotonic() - (time.time() - float(payload.get("last_activity_at", time.time()))),
             delegated_from=payload.get("delegated_from"),
             delegation_summary=payload.get("delegation_summary"),
             delegation_turn_count=int(payload.get("delegation_turn_count", 0)),
@@ -212,7 +214,7 @@ class InMemorySessionManager:
         self._locks.pop(ks, None)
 
     async def close_all(self) -> None:
-        """Close all sessions."""
+        """Close all sessions. Backend snapshots are preserved for rehydration."""
         keys = list(self._sessions.keys())
         for ks in keys:
             state = self._sessions.pop(ks, None)

@@ -161,11 +161,19 @@ class OTelExporter:
             name=f"cognitia.llm.{model}",
             attributes=attrs,
         )
-        self._active_spans["llm_call"] = span
+        span_key = f"llm_call:{data.get('correlation_id', id(span))}"
+        self._active_spans[span_key] = span
 
     def _on_llm_end(self, data: dict[str, Any]) -> None:
         """Handle llm_call_end event -- end OTel span."""
-        span = self._active_spans.pop("llm_call", None)
+        span_key = f"llm_call:{data.get('correlation_id', '')}"
+        span = self._active_spans.pop(span_key, None)
+        if span is None:
+            # Fallback: find any llm_call span (backward compat)
+            for k in list(self._active_spans):
+                if k.startswith("llm_call:"):
+                    span = self._active_spans.pop(k)
+                    break
         if span is None:
             return
 

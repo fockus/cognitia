@@ -111,6 +111,13 @@ class DefaultGraphOrchestrator:
             "goal": goal,
         })
 
+        # Launch root agent execution
+        run_state = self._runs[run_id]
+        task = asyncio.create_task(
+            self._execute_agent(root.id, root_task_id, goal, self._max_retries, run_state)
+        )
+        self._bg_tasks[root_task_id] = task
+
         return run_id
 
     # ------------------------------------------------------------------

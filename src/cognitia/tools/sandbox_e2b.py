@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 from typing import Any
 
 from cognitia.tools.types import ExecutionResult, SandboxConfig, SandboxViolation
@@ -65,9 +66,20 @@ class E2BSandboxProvider:
         """Limit the operation timeout from SandboxConfig."""
         return await asyncio.wait_for(awaitable, timeout=self._config.timeout_seconds)
 
+    @staticmethod
+    def _validate_glob_pattern(pattern: str) -> None:
+        if os.path.isabs(pattern):
+            raise SandboxViolation(f"Абсолютный путь запрещён: {pattern}", path=pattern)
+        parts = [p for p in pattern.split("/") if p]
+        if any(part == ".." for part in parts):
+            raise SandboxViolation(f"Path traversal запрещён: {pattern}", path=pattern)
+
     def _check_denied_command(self, command: str) -> None:
         denied = self._config.denied_commands or frozenset()
-        words = command.split()
+        try:
+            words = shlex.split(command)
+        except ValueError:
+            words = command.split()
         for word in words:
             if os.path.basename(word) in denied:
                 raise SandboxViolation(f"Command '{word}' is denied", path=command)
@@ -125,10 +137,12 @@ class E2BSandboxProvider:
 
     async def glob_files(self, pattern: str) -> list[str]:
         """Glob via a find command in E2B."""
+        self._validate_glob_pattern(pattern)
         sandbox = await self._ensure_sandbox()
+        safe_pattern = shlex.quote(pattern)
         proc = await self._with_timeout(
             sandbox.process.start(
-                f"find {self._workspace} -name '{pattern}' -type f",
+                f"find {shlex.quote(self._workspace)} -name {safe_pattern} -type f",
                 cwd=self._workspace,
             )
         )
