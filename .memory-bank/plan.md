@@ -9,17 +9,43 @@ Master Plan v3.2 → `plans/2026-03-18_masterplan_v3.md`
 **v1.0.0-core Release Pipeline** → `plans/2026-03-18_feature_v1-release-pipeline.md`
 10 этапов: ruff/mypy cleanup → Wave 2/3 remediation → docs → PyPI release
 
-## Следующий шаг (после v1.0.0 release)
+## Следующий шаг
 
-1. **Phase 9 Full** — Enterprise tasks (priority/deadline scheduling, hierarchy, delegation, distributed scheduler)
-2. **Phase 10 rest** — MCP server, credential proxy, OAuth, RTK integration, `cognitia init` CLI, LiteLLM adapter
+**Master Plan v4** → `plans/2026-03-29_masterplan_v4.md`
+
+### Iteration 1 (highest ROI):
+1. QW-1/2/3: py.typed, badges, deprecation cleanup
+2. **11.1** OTel Exporter
+3. **11.2** Structured Output (Pydantic-level)
+4. **12.1** `cognitia init` CLI
+5. **12.3** API Docs + Community infra
+
+### Iteration 2 (differentiation):
+6. **13.1** Eval Framework Core
+7. **12.2** Production Templates (5 шт)
+8. **15.1** `cognitia serve` HTTP API
+
+### Iteration 3 (advanced):
+9. **11.3** A2A Protocol
+10. **15.2** HITL Patterns
+11. **14.1** Episodic Memory
+12. **14.2** Procedural Memory
+
+### Iteration 4 (polish):
+13. **13.2** Eval Compare
+14. **14.3** Memory Consolidation
+15. **15.3** Plugin Registry
+16. **15.4** Benchmarks
 
 ## Направление
 cognitia = **простая библиотека** (не фреймворк) для AI агентов.
 - Core (Phases 6-8): ✅ DONE → v1.0.0-core
 - Enterprise extras (Phase 9): tasks, hierarchy, delegation, scheduler
 - Platform (Phase 10): CLI, MCP, plugins
-- Ecosystem (Phase 11): OpenAI Agents SDK
+- Ecosystem (Phase 11): OpenTelemetry, Structured Output, A2A
+- Evaluation (Phase 13): Agent eval framework
+- Advanced Memory (Phase 14): Episodic, Procedural, Consolidation
+- Deployment (Phase 15): serve, HITL, plugins, benchmarks
 
 ## Ключевые изменения v3 vs v2
 - Core/Enterprise разделение (optional extras)

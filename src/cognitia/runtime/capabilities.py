@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-VALID_RUNTIME_NAMES = frozenset({"claude_sdk", "deepagents", "thin", "cli", "openai_agents"})
+VALID_RUNTIME_NAMES = frozenset({"claude_sdk", "deepagents", "thin", "cli", "openai_agents", "headless"})
 RUNTIME_TIERS = frozenset({"full", "light"})
 VALID_FEATURE_MODES = frozenset({"portable", "hybrid", "native_first"})
 RUNTIME_CAPABILITY_FLAGS = frozenset(
@@ -147,6 +147,10 @@ _CAPABILITIES_BY_RUNTIME: dict[str, RuntimeCapabilities] = {
         tier="full",
         supports_mcp=True,
         supports_provider_override=True,
+    ),
+    "headless": RuntimeCapabilities(
+        runtime_name="headless",
+        tier="light",
     ),
 }
 

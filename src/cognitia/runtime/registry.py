@@ -1,6 +1,6 @@
 """RuntimeRegistry - extensible adapter registry for runtime factories.
 
-Built-in runtimes (`claude_sdk`, `deepagents`, `thin`, `cli`, `openai_agents`)
+Built-in runtimes (`claude_sdk`, `deepagents`, `thin`, `cli`, `openai_agents`, `headless`)
 are registered automatically. Third-party runtimes can be registered via
 register() or entry points (group="cognitia.runtimes").
 """
@@ -121,6 +121,13 @@ def _create_cli(config: RuntimeConfig, **kwargs: Any) -> Any:
     return CliAgentRuntime(config=config, **kwargs)
 
 
+def _create_headless(config: RuntimeConfig, **kwargs: Any) -> Any:
+    """Lazy factory for HeadlessRuntime."""
+    from cognitia.runtime.headless import HeadlessRuntime
+
+    return HeadlessRuntime(config, **kwargs)
+
+
 def _create_openai_agents(config: RuntimeConfig, **kwargs: Any) -> Any:
     """Lazy factory for OpenAIAgentsRuntime."""
     from cognitia.runtime.openai_agents.runtime import OpenAIAgentsRuntime
@@ -140,7 +147,7 @@ def _create_openai_agents(config: RuntimeConfig, **kwargs: Any) -> Any:
 
 
 def _register_builtins(registry: RuntimeRegistry) -> None:
-    """Register built-in runtimes: claude_sdk, deepagents, thin, cli, openai_agents."""
+    """Register built-in runtimes: claude_sdk, deepagents, thin, cli, openai_agents, headless."""
     registry.register(
         "claude_sdk",
         _create_claude_sdk,
@@ -165,6 +172,11 @@ def _register_builtins(registry: RuntimeRegistry) -> None:
         "openai_agents",
         _create_openai_agents,
         capabilities=get_runtime_capabilities("openai_agents"),
+    )
+    registry.register(
+        "headless",
+        _create_headless,
+        capabilities=get_runtime_capabilities("headless"),
     )
 
 
@@ -237,7 +249,7 @@ def reset_default_registry() -> None:
 # Dynamic valid runtime names
 # ---------------------------------------------------------------------------
 
-_BUILTIN_NAMES = frozenset({"claude_sdk", "deepagents", "thin", "cli", "openai_agents"})
+_BUILTIN_NAMES = frozenset({"claude_sdk", "deepagents", "thin", "cli", "openai_agents", "headless"})
 
 
 def get_valid_runtime_names() -> frozenset[str]:
