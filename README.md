@@ -1,26 +1,39 @@
 # Cognitia
 
-**LLM-agnostic Python framework for building AI agents** with pluggable runtimes, persistent memory, tool management, and structured observability.
+**Production-grade Python framework for multi-agent AI systems** — hierarchical agent graphs, knowledge banks, pluggable runtimes, and LLM-agnostic architecture.
 
 [![PyPI version](https://img.shields.io/pypi/v/cognitia.svg)](https://pypi.org/project/cognitia/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2946%20passed-brightgreen.svg)](https://github.com/fockus/cognitia)
+[![Tests](https://img.shields.io/badge/tests-3200%2B%20passed-brightgreen.svg)](https://github.com/fockus/cognitia)
 [![Docs](https://img.shields.io/badge/docs-readthedocs-blue.svg)](https://cognitia.readthedocs.io/)
 
 ## Why Cognitia?
 
-Building production AI agents requires more than an LLM API call. You need memory, tool management, security policies, session handling, observability, and the ability to swap providers without rewriting your app.
+Modern AI applications need more than a single agent calling tools. They need **teams of agents** that coordinate, delegate, share knowledge, and recover from failures — all while staying provider-agnostic and production-safe.
 
-**Cognitia solves this** by providing a modular, protocol-driven framework where every component is pluggable:
+**Cognitia is built for multi-agent orchestration from the ground up:**
 
-- **Switch LLM providers** (Anthropic, OpenAI, Google, DeepSeek) with one config change — no code modifications
-- **Swap runtimes** — from a lightweight built-in loop to Claude Agent SDK to LangChain — same business code
-- **Pick your storage** — InMemory for prototyping, SQLite for single-user, PostgreSQL for production
-- **Compose capabilities** — sandbox, web search, todo lists, memory bank, planning — enable only what you need
-- **Stay secure** — default-deny tool policy, sandboxed execution, input validation built-in
+- **Agent Graph System** — build hierarchical agent organizations with governance, delegation, and inter-agent communication across 5 backends (InMemory, SQLite, Postgres, Redis, NATS)
+- **Knowledge Bank** — universal structured knowledge storage shared across agents with search, consolidation, and verification
+- **Pipeline Engine** — multi-phase execution with budget gates, quality checks, and automatic rollback
+- **Memory that learns** — episodic + procedural + consolidation pipeline: agents remember experiences and learn tool patterns
+- **4 pluggable runtimes** — Anthropic, OpenAI, Google, DeepSeek through `thin`, `claude_sdk`, `deepagents`, or `cli` — swap with one config line
+- **Human-in-the-Loop** — approval patterns at tool, plan, and output level
+- **Default-secure** — deny-all tool policy, sandboxed execution, input validation, SSRF protection
 
-Unlike monolithic agent frameworks, cognitia follows **Clean Architecture**: your business logic depends on protocols (abstractions), not implementations. Swap any layer without touching the rest.
+Unlike monolithic agent frameworks, Cognitia follows **Clean Architecture** with 20+ ISP-compliant protocols. Swap any component — runtime, memory, communication backend — without touching business code.
+
+### Key Differentiators
+
+| vs. | Cognitia advantage |
+|-----|-------------------|
+| **LangChain/LangGraph** | True multi-provider (not just wrapper), Clean Architecture, governance built-in, no vendor lock-in |
+| **CrewAI** | Protocol-first (swap any layer), hierarchical graphs (not flat crews), persistent memory with consolidation |
+| **AutoGen (Microsoft)** | Structured task boards with DAG dependencies, budget enforcement, knowledge bank with search |
+| **Claude Code SDK** | LLM-agnostic (4 providers), multi-agent graphs, pipeline engine, evaluation framework |
+| **OpenAI Agents SDK** | Multi-runtime (not locked to OpenAI), persistent episodic/procedural memory, HITL approval patterns |
+| **Semantic Kernel** | Python-native (not C# port), simpler API (3-line agent), built-in knowledge consolidation |
 
 ## Install
 
@@ -150,6 +163,57 @@ result = await agent.query("Hello")
 print(tracker.total_cost_usd)  # 0.002
 ```
 
+### Agent graph (multi-agent hierarchy)
+
+```python
+from cognitia.multi_agent.graph_builder import GraphBuilder
+from cognitia.multi_agent.graph_orchestrator import GraphOrchestrator
+
+# Build an agent org chart
+graph = (
+    GraphBuilder()
+    .add_agent("lead", role="lead", capabilities={"can_delegate": True, "can_hire": True})
+    .add_agent("researcher", role="researcher")
+    .add_agent("coder", role="coder")
+    .set_root("lead")
+    .connect("lead", "researcher")
+    .connect("lead", "coder")
+    .build()
+)
+
+# Run with task delegation
+orchestrator = GraphOrchestrator(graph=graph, runner=my_runner)
+result = await orchestrator.run("Build a REST API for user management")
+```
+
+### Knowledge Bank (shared agent memory)
+
+```python
+from cognitia.memory_bank.knowledge_inmemory import InMemoryKnowledgeStore
+
+store = InMemoryKnowledgeStore()
+await store.save("api-patterns", "REST API best practices: versioning, pagination, error handling",
+                 kind="reference", tags=["api", "patterns"])
+
+results = await store.search("REST API versioning")
+```
+
+### Pipeline (multi-phase execution)
+
+```python
+from cognitia.pipeline.builder import PipelineBuilder
+
+pipeline = (
+    PipelineBuilder("deploy-pipeline")
+    .add_phase("test", handler=run_tests)
+    .add_phase("build", handler=build_artifacts, depends_on=["test"])
+    .add_phase("deploy", handler=deploy_to_prod, depends_on=["build"])
+    .set_budget(max_cost_usd=5.0)
+    .build()
+)
+result = await pipeline.run()
+```
+
 ## Features
 
 ### Core
@@ -163,12 +227,29 @@ print(tracker.total_cost_usd)  # 0.002
 | **14 ISP Protocols** | Every interface has ≤5 methods. Depend on abstractions, swap implementations freely |
 | **Multi-provider Models** | Anthropic, OpenAI, Google, DeepSeek — alias resolution (`"sonnet"` → `claude-sonnet-4-20250514`) |
 
+### Multi-Agent & Orchestration (v1.2.0)
+
+| Feature | Description |
+|---------|-------------|
+| **Agent Graph System** | Hierarchical multi-agent with org charts, governance, delegation, and task boards |
+| **Graph Builder DSL** | Declarative agent hierarchy construction with YAML/dict support |
+| **Agent Governance** | Capabilities (can_hire, can_delegate, max_children), permission enforcement |
+| **Graph Task Board** | Hierarchical tasks with DAG dependencies, progress auto-calculation, BLOCKED status |
+| **Graph Communication** | Inter-agent messaging (InMemory, SQLite, Postgres, Redis, NATS) |
+| **Knowledge Bank** | Universal domain-agnostic structured knowledge storage with 5 ISP protocols |
+| **Pipeline Engine** | Multi-phase execution with budget gates, builder DSL |
+| **Human-in-the-Loop** | Approval patterns for tool-level, plan-level, and output-level human review |
+| **Plugin Runner** | Subprocess JSON-RPC plugin host for extensible agent capabilities |
+
 ### Memory & Persistence
 
 | Feature | Description |
 |---------|-------------|
 | **3 Memory Providers** | InMemory (dev), SQLite (single-user), PostgreSQL (production) — same 8 protocols |
 | **8 Memory Protocols** | `MessageStore`, `FactStore`, `GoalStore`, `SummaryStore`, `UserStore`, `SessionStateStore`, `PhaseStore`, `ToolEventStore` |
+| **Episodic Memory** | Store and recall past agent experiences with InMemory, SQLite, PostgreSQL backends |
+| **Procedural Memory** | Learn from repeated tool use patterns — automatic tool sequence recognition |
+| **Memory Consolidation** | Pipeline from episodic memory to long-term knowledge bank |
 | **Memory Bank** | Long-term file-based memory across sessions (filesystem or database backend) |
 | **Auto-summarization** | Template-based or LLM-powered conversation summarization |
 
@@ -193,7 +274,10 @@ print(tracker.total_cost_usd)  # 0.002
 | **Role Routing** | Keyword-based automatic role switching with per-role tool/skill mapping |
 | **Context Builder** | Token-budget-aware system prompt assembly with priority-based overflow |
 | **Hooks** | Lifecycle hooks: `PreToolUse`, `PostToolUse`, `Stop`, `UserPromptSubmit` |
-| **Observability** | Structured JSON logging via structlog |
+| **Observability** | Structured JSON logging via structlog + OpenTelemetry export + ActivityLog audit trail |
+| **Evaluation Framework** | Agent eval with custom scorers, compare/history, console + JSON reporters |
+| **HTTP API** | `cognitia serve` — REST API for agent interaction |
+| **Daemon** | Universal long-running process manager with health checks, scheduler, PID management |
 | **Circuit Breaker** | Resilience pattern for external service calls |
 | **Session Management** | Multi-session support with rehydration from persistent storage |
 | **Orchestration** | Subagents, team mode (lead + workers), planning mode |
@@ -334,7 +418,11 @@ Your Application
 ║  ┌─────────────────▼───────────────────────────────────┐ ║
 ║  │  Implementations                                    │ ║
 ║  │  memory/      InMemory │ PostgreSQL │ SQLite        │ ║
+║  │               + Episodic · Procedural · Consolidation│ ║
 ║  │  runtime/     thin │ claude_sdk │ deepagents │ cli  │ ║
+║  │  multi_agent/ AgentGraph · TaskBoard · Communication│ ║
+║  │               Governance · Knowledge Bank            │ ║
+║  │  pipeline/    Pipeline · Builder · Budget · Gates   │ ║
 ║  │  context/     DefaultContextBuilder (token budget)  │ ║
 ║  │  policy/      DefaultToolPolicy (default-deny)      │ ║
 ║  │  routing/     KeywordRoleRouter                     │ ║
@@ -342,7 +430,10 @@ Your Application
 ║  │  hooks/       HookRegistry + SDK bridge             │ ║
 ║  │  tools/       Sandbox · Web · Todo · MemoryBank     │ ║
 ║  │  orchestration/  Planning · Subagents · Team        │ ║
-║  │  observability/  AgentLogger (structlog)            │ ║
+║  │  observability/  Logging · Tracing · OTel · Activity│ ║
+║  │  daemon/      Process manager · Scheduler · Health  │ ║
+║  │  eval/        EvalRunner · Scorers · Reporters      │ ║
+║  │  plugins/     PluginRunner (subprocess JSON-RPC)    │ ║
 ║  └─────────────────────────────────────────────────────┘ ║
 ╚══════════════════════════════════════════════════════════╝
 ```
@@ -447,23 +538,88 @@ Supported providers: **Anthropic** (Claude), **OpenAI** (GPT-4o, o3), **Google**
 | `web-crawl4ai` | crawl4ai | Crawl4AI (Playwright-based) |
 | `e2b` | e2b | E2B cloud sandbox |
 | `docker` | docker | Docker sandbox |
+| `otel` | opentelemetry-api, opentelemetry-sdk | OpenTelemetry tracing export |
+| `a2a` | starlette, httpx | Agent-to-Agent protocol |
+| `mcp` | fastmcp | MCP server for code agents |
+| `redis` | redis | Redis EventBus + Graph Communication |
+| `nats` | nats-py | NATS EventBus + Graph Communication |
 | `all` | All of the above | Development convenience |
+
+## Framework Comparison
+
+How Cognitia compares to popular agent frameworks:
+
+```
+┌───────────────────────────┬───────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+│ Capability                │ Cognitia  │ LangGraph│ CrewAI   │ AutoGen  │ OpenAI   │ Claude   │
+│                           │           │          │          │(Microsoft│ Agents   │ Code SDK │
+│                           │           │          │          │)         │ SDK      │          │
+├───────────────────────────┼───────────┼──────────┼──────────┼──────────┼──────────┼──────────┤
+│ Multi-provider (4+ LLMs)  │ ✅        │ ✅       │ ✅       │ ✅       │ ❌ OpenAI│ ❌ Claude│
+│ Hierarchical agent graph  │ ✅        │ ⚠️ manual│ ❌ flat  │ ⚠️ manual│ ❌       │ ❌       │
+│ Agent governance          │ ✅        │ ❌       │ ❌       │ ❌       │ ❌       │ ❌       │
+│ Task board + DAG deps     │ ✅        │ ⚠️ graph │ ❌       │ ⚠️       │ ❌       │ ❌       │
+│ Knowledge bank + search   │ ✅        │ ❌       │ ❌       │ ❌       │ ❌       │ ❌       │
+│ Episodic + procedural mem │ ✅        │ ❌       │ ⚠️ basic │ ❌       │ ❌       │ ❌       │
+│ Memory consolidation      │ ✅        │ ❌       │ ❌       │ ❌       │ ❌       │ ❌       │
+│ Pipeline + budget gates   │ ✅        │ ❌       │ ❌       │ ❌       │ ❌       │ ❌       │
+│ Human-in-the-Loop         │ ✅        │ ✅       │ ⚠️       │ ✅       │ ❌       │ ✅       │
+│ Evaluation framework      │ ✅        │ ⚠️ langsmith│ ❌    │ ❌       │ ❌       │ ❌       │
+│ Clean Architecture        │ ✅ ISP    │ ❌       │ ❌       │ ❌       │ ❌       │ ❌       │
+│ Default-deny security     │ ✅        │ ❌       │ ❌       │ ❌       │ ❌       │ ✅       │
+│ OpenTelemetry             │ ✅        │ ✅       │ ❌       │ ❌       │ ❌       │ ❌       │
+│ MCP support               │ ✅        │ ❌       │ ❌       │ ❌       │ ❌       │ ✅ native│
+│ Swappable storage backends│ ✅ 3      │ ⚠️ CP   │ ❌       │ ❌       │ ❌       │ ❌       │
+│ A2A protocol              │ ✅        │ ❌       │ ❌       │ ❌       │ ❌       │ ❌       │
+│ Structured output         │ ✅        │ ✅       │ ✅       │ ✅       │ ✅       │ ✅       │
+│ 3-line quick start        │ ✅        │ ❌       │ ✅       │ ❌       │ ✅       │ ✅       │
+└───────────────────────────┴───────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+
+Legend: ✅ Built-in  ⚠️ Partial/manual  ❌ Not available  CP = Checkpointer
+```
+
+**When to choose Cognitia:**
+- You need **multi-agent teams** with governance, delegation, and hierarchical task management
+- You want **LLM-agnostic** code that works across Anthropic, OpenAI, Google, and DeepSeek
+- You need agents that **learn and remember** across sessions (episodic + procedural memory)
+- You want **Clean Architecture** — protocol-driven, testable, swappable at every layer
+- You need **production safety** — budget enforcement, default-deny tools, HITL approvals
+
+**When other frameworks may be better:**
+- **LangGraph** — if you need the LangSmith ecosystem and are OK with LangChain lock-in
+- **CrewAI** — if you prefer declarative YAML agent definitions and simpler flat teams
+- **Claude Code SDK** — if you only use Claude and want maximum native integration
+- **AutoGen** — if you need Microsoft ecosystem integration
 
 ## Documentation
 
+### Getting Started
 - [Why Cognitia?](docs/why-cognitia.md) — value proposition, design philosophy
 - [Getting Started](docs/getting-started.md) — installation, first agent, step-by-step
 - [Agent Facade API](docs/agent-facade.md) — Agent, AgentConfig, @tool, Result, Conversation, Middleware
+
+### Core
 - [Runtimes](docs/runtimes.md) — Claude SDK vs ThinRuntime vs DeepAgents
-- [Memory](docs/memory.md) — InMemory, PostgreSQL, SQLite providers
+- [Memory](docs/memory.md) — InMemory, PostgreSQL, SQLite + Episodic, Procedural, Consolidation
 - [Tools & Skills](docs/tools-and-skills.md) — @tool decorator, MCP skills, tool policy
 - [Capabilities](docs/capabilities.md) — sandbox, web, todo, memory bank, planning, thinking
-- [Web Tools](docs/web-tools.md) — search and fetch providers
 - [Configuration](docs/configuration.md) — CognitiaStack, RuntimeConfig, environment variables
+
+### Multi-Agent (v1.2.0)
+- [Agent Graph System](docs/graph-agents.md) — hierarchical multi-agent with governance, task boards, communication
+- [Knowledge Bank](docs/knowledge-bank.md) — universal structured knowledge storage
+- [Multi-Agent Coordination](docs/multi-agent.md) — agent-as-tool, task queues, agent registry
+- [Pipeline Engine](docs/pipeline.md) — multi-phase execution with budget gates
+- [Human-in-the-Loop](docs/hitl.md) — approval patterns for agent actions
+
+### Advanced
 - [Orchestration](docs/orchestration.md) — planning, subagents, team mode
+- [Evaluation](docs/evaluation.md) — agent quality measurement framework
+- [Observability](docs/observability.md) — EventBus, tracing, OpenTelemetry, ActivityLog
 - [Architecture](docs/architecture.md) — layers, protocols, packages
+- [Web Tools](docs/web-tools.md) — search and fetch providers
+- [Advanced](docs/advanced.md) — hooks, circuit breaker, context builder
 - [API Reference](docs/api-reference.md) — comprehensive API documentation
-- [Advanced](docs/advanced.md) — hooks, observability, circuit breaker, context builder
 - [Examples](docs/examples.md) — integration examples for different domains
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)

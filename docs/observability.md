@@ -254,3 +254,89 @@ otel.detach()    # unsubscribes, ends any orphaned spans
 ```
 
 `attach()` / `detach()` mirror the `TracingSubscriber` API. The exporter can be reattached after detaching.
+
+---
+
+## Activity Log (v1.2.0)
+
+Persistent structured audit trail for agent actions. Tracks who did what to which entity with timestamps and metadata. Useful for compliance, debugging, and understanding agent behavior.
+
+### Domain Types
+
+```python
+from cognitia.observability.activity_types import ActivityEntry, ActivityFilter, ActorType
+
+# Create an audit entry
+entry = ActivityEntry(
+    id="act-001",
+    actor_type=ActorType.AGENT,
+    actor_id="researcher-1",
+    action="task.delegated",
+    entity_type="task",
+    entity_id="task-42",
+    details={"target_agent": "coder-1", "reason": "code implementation needed"},
+)
+
+# Filter entries
+recent_agent_actions = ActivityFilter(
+    actor_type=ActorType.AGENT,
+    since=1711700000.0,
+)
+```
+
+**ActorType** values: `AGENT`, `USER`, `SYSTEM`.
+
+### ActivityLog Protocol
+
+3-method ISP-compliant protocol:
+
+```python
+from cognitia.observability.activity_log import ActivityLog
+
+class ActivityLog(Protocol):
+    async def log(self, entry: ActivityEntry) -> None: ...
+    async def query(self, filter: ActivityFilter) -> list[ActivityEntry]: ...
+    async def count(self, filter: ActivityFilter) -> int: ...
+```
+
+### Implementations
+
+**InMemoryActivityLog** -- zero-dependency, thread-safe:
+
+```python
+from cognitia.observability.activity_log import InMemoryActivityLog
+
+log = InMemoryActivityLog()
+await log.log(entry)
+entries = await log.query(ActivityFilter(actor_type=ActorType.AGENT))
+```
+
+**SqliteActivityLog** -- persistent:
+
+```python
+from cognitia.observability.activity_log import SqliteActivityLog
+
+log = SqliteActivityLog(db_path="activity.db")
+await log.log(entry)
+```
+
+### ActivityLogSubscriber
+
+Auto-bridges EventBus events to ActivityLog entries. Subscribes to graph and pipeline lifecycle events:
+
+```python
+from cognitia.observability.activity_subscriber import ActivityLogSubscriber
+from cognitia.observability.activity_log import InMemoryActivityLog
+from cognitia.observability.event_bus import InMemoryEventBus
+
+bus = InMemoryEventBus()
+activity_log = InMemoryActivityLog()
+
+subscriber = ActivityLogSubscriber(bus, activity_log)
+subscriber.attach()
+# Graph/pipeline events are now automatically logged as ActivityEntries
+```
+
+Default topic mappings include: `graph.orchestrator.started`, `graph.orchestrator.delegated`, `graph.orchestrator.agent_completed`, `pipeline.phase.started`, `pipeline.phase.completed`, and more.
+
+Custom mappers can be added via the `extra_mappers` parameter for domain-specific events.

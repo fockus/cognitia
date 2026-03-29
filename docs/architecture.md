@@ -32,9 +32,11 @@ Cognitia is built on Clean Architecture and SOLID:
 | ------- | ------- | ------------ |
 | `bootstrap` | Facade: `CognitiaStack.create()`, capabilities wiring | core |
 | `context` | System prompt assembly with token budget | core |
-| `session` | SessionManager, Rehydrator (history management) | memory |
-| `memory` | Message, fact, goal storage (InMemory, Postgres, SQLite) | core |
-| `memory_bank` | Long-term file-based memory (FS, DB) | core |
+| `session` | SessionManager, Rehydrator, TaskSessionStore | memory |
+| `memory` | Message, fact, goal storage + Episodic, Procedural, Consolidation | core |
+| `memory_bank` | Long-term file-based memory (FS, DB) + Knowledge Bank | core |
+| `multi_agent` | Agent Graph, TaskBoard, Communication, Governance, Registry, TaskQueue | core |
+| `pipeline` | Multi-phase execution engine with budget gates, builder DSL | core |
 | `todo` | Checklists / task tracking (InMemory, FS, DB) | core |
 | `tools` | Sandbox isolation, builtin tools, web, thinking | core |
 | `orchestration` | Planning, subagents, team mode, message bus | core |
@@ -43,9 +45,14 @@ Cognitia is built on Clean Architecture and SOLID:
 | `skills` | SkillRegistry, LoadedSkill, SkillSpec, McpServerSpec; YAML loader helper in `skills.loader` | core |
 | `runtime` | AgentRuntime (Claude SDK, ThinRuntime, CLI, DeepAgents) | extras |
 | `resilience` | Circuit breaker for external calls | core |
-| `observability` | Structured JSON logging | structlog |
+| `observability` | Structured logging, EventBus, Tracing, OTel, ActivityLog | structlog |
 | `hooks` | Lifecycle hooks (pre/post turn) | core |
 | `commands` | CommandRegistry (slash-commands) | core |
+| `daemon` | Long-running process manager, scheduler, health checks | core |
+| `eval` | Agent evaluation: EvalRunner, Scorers, Reporters, Compare | core |
+| `plugins` | PluginRunner (subprocess JSON-RPC), worker shim | core |
+| `a2a` | Agent-to-Agent protocol (JSON-RPC 2.0 / SSE) | starlette, httpx |
+| `serve` | HTTP API (`cognitia serve`) | starlette |
 
 ## Protocol Map
 
@@ -57,6 +64,16 @@ SummaryStore ─────┤
 SessionStateStore ┘
 
 MemoryBankProvider ── memory_bank providers (FS, DB)
+
+KnowledgeStore ───┐
+KnowledgeSearcher ┤── knowledge providers (InMemory, FS, SQLite, Postgres)
+ProgressLog ──────┤
+ChecklistManager ─┤
+VerificationStrategy ┘
+
+GraphStore ───────┐
+GraphTaskBoard ───┤── graph backends (InMemory, SQLite, Postgres)
+GraphCommunication┘
 
 TodoProvider ──────── todo providers (InMemory, FS, DB)
 
@@ -71,6 +88,10 @@ PlannerMode ───────── planners (Thin, DeepAgents)
 
 SubagentOrchestrator ── subagent orchestrators (Thin, DeepAgents, Claude)
 TeamOrchestrator ────── team orchestrators (DeepAgents, Claude)
+
+TaskQueue ─────────── task queues (InMemory, SQLite, Postgres)
+AgentRegistry ─────── registries (InMemory, SQLite, Postgres)
+EventBus ──────────── event buses (InMemory, Redis, NATS)
 ```
 
 ## Dependency Direction

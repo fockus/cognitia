@@ -2,6 +2,8 @@
 
 Cognitia provides building blocks for multi-agent systems: **agent-as-tool** invocation, **task queues** for work distribution, and an **agent registry** for lifecycle management. All components follow the protocol-first approach with swappable implementations.
 
+> **New in v1.2.0**: For hierarchical multi-agent organizations with governance, delegation, and inter-agent communication, see the [Agent Graph System](graph-agents.md).
+
 ## Overview
 
 Multi-agent coordination in Cognitia is built around three primitives:
@@ -11,6 +13,16 @@ Multi-agent coordination in Cognitia is built around three primitives:
 | **Agent-as-Tool** | Run one agent as a tool callable by another | `AgentTool` |
 | **Task Queue** | Distribute work items between agents | `TaskQueue` |
 | **Agent Registry** | Track agent lifecycle and metadata | `AgentRegistry` |
+
+For more advanced scenarios, v1.2.0 adds:
+
+| Primitive | Purpose | Documentation |
+|-----------|---------|---------------|
+| **Agent Graph** | Hierarchical org charts with governance | [Graph Agents](graph-agents.md) |
+| **Graph Task Board** | DAG tasks with progress tracking | [Graph Agents](graph-agents.md#task-board) |
+| **Graph Communication** | Inter-agent messaging | [Graph Agents](graph-agents.md#communication) |
+| **Knowledge Bank** | Shared structured knowledge | [Knowledge Bank](knowledge-bank.md) |
+| **Pipeline Engine** | Multi-phase execution | [Pipeline](pipeline.md) |
 
 Each primitive has a protocol in `cognitia.protocols.multi_agent` and one or more implementations in `cognitia.multi_agent`.
 

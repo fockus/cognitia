@@ -104,6 +104,76 @@ class MyCustomScorer:
         )
 ```
 
+## Compare (v1.2.0)
+
+Compare two eval runs to track regressions and improvements:
+
+```python
+from cognitia.eval.compare import EvalComparator
+
+comparison = EvalComparator.compare(baseline_report, new_report, threshold=0.05)
+
+print(comparison.format_summary())
+# Comparison: 3 improved, 1 regressed, 6 unchanged
+# Mean score: 0.82 -> 0.87 (+0.05)
+# Pass rate:  80% -> 90% (+10%)
+# --------------------------------------------------
+#   [+] geo-1: 0.75 -> 1.00
+#   [-] math-3: 1.00 -> 0.50
+#   [=] code-1: 0.90 -> 0.90
+```
+
+### ComparisonReport
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `cases` | `tuple[CaseComparison, ...]` | Per-case comparison results |
+| `mean_score_delta` | `float` | Change in mean score |
+| `pass_rate_delta` | `float` | Change in pass rate |
+| `improved` | `int` | Cases that improved |
+| `regressed` | `int` | Cases that regressed |
+| `unchanged` | `int` | Cases within threshold |
+
+### CaseComparison
+
+| Field | Description |
+|-------|-------------|
+| `status` | `"improved"`, `"regressed"`, `"unchanged"`, `"new"`, `"removed"` |
+| `delta` | Score difference (target - base) |
+| `score_deltas` | Per-scorer delta dict |
+
+## History (v1.2.0)
+
+Persist eval reports to JSON for tracking over time:
+
+```python
+from cognitia.eval.history import EvalHistory
+
+# Save
+EvalHistory.save(
+    report,
+    "evals/run-2026-03-30.json",
+    run_id="v1.2.0-baseline",
+    metadata={"model": "sonnet", "runtime": "thin"},
+)
+
+# Load
+loaded = EvalHistory.load("evals/run-2026-03-30.json")
+print(loaded.pass_rate)
+```
+
+Use `EvalHistory` with `EvalComparator` for CI/CD regression testing:
+
+```python
+baseline = EvalHistory.load("evals/baseline.json")
+current = await runner.run(agent=agent, suite=suite, scorers=scorers)
+
+comparison = EvalComparator.compare(baseline, current)
+if comparison.regressed > 0:
+    print(f"REGRESSION: {comparison.regressed} cases regressed")
+    print(comparison.format_summary())
+```
+
 ## Example
 
 See [`examples/32_agent_evaluation.py`](https://github.com/fockus/cognitia/blob/main/examples/32_agent_evaluation.py) for a complete runnable example.
