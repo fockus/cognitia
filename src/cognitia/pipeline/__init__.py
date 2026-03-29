@@ -20,6 +20,21 @@ Quick start::
 """
 
 from cognitia.pipeline.budget import BudgetExceededError, BudgetTracker
+from cognitia.pipeline.budget_store import (
+    InMemoryPersistentBudgetStore,
+    PersistentBudgetStore,
+    SqlitePersistentBudgetStore,
+)
+from cognitia.pipeline.budget_types import (
+    BudgetIncident,
+    BudgetScope,
+    BudgetScopeType,
+    BudgetThreshold,
+    BudgetWindow,
+    CostEvent,
+    ThresholdAction,
+    ThresholdResult,
+)
 from cognitia.pipeline.builder import PipelineBuilder
 from cognitia.pipeline.gate import CallbackGate, CompositeGate
 from cognitia.pipeline.pipeline import Pipeline
@@ -38,15 +53,23 @@ from cognitia.pipeline.types import (
 
 __all__ = [
     "BudgetExceededError",
+    "BudgetIncident",
     "BudgetPolicy",
+    "BudgetScope",
+    "BudgetScopeType",
+    "BudgetThreshold",
     "BudgetTracker",
+    "BudgetWindow",
     "CallbackGate",
     "CompositeGate",
+    "CostEvent",
     "CostRecord",
     "CostTracker",
     "GateResult",
     "Goal",
     "GoalDecomposer",
+    "InMemoryPersistentBudgetStore",
+    "PersistentBudgetStore",
     "PhaseResult",
     "PhaseStatus",
     "Pipeline",
@@ -55,4 +78,7 @@ __all__ = [
     "PipelineResult",
     "PipelineRunner",
     "QualityGate",
+    "SqlitePersistentBudgetStore",
+    "ThresholdAction",
+    "ThresholdResult",
 ]

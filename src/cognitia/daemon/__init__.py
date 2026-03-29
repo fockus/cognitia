@@ -21,6 +21,13 @@ from cognitia.daemon.protocols import (
     RunnableScheduler,
     TaskScheduler,
 )
+from cognitia.daemon.routine_bridge import RoutineBridge, RoutineManager
+from cognitia.daemon.routine_types import (
+    Routine,
+    RoutineRun,
+    RoutineStatus,
+    RunStatus,
+)
 from cognitia.daemon.runner import DaemonRunner
 from cognitia.daemon.scheduler import Scheduler
 from cognitia.daemon.types import (
@@ -41,11 +48,18 @@ __all__ = [
     "Scheduler",
     "HealthServer",
     "PidFile",
+    # Routine bridge
+    "RoutineBridge",
+    "Routine",
+    "RoutineRun",
+    "RoutineStatus",
+    "RunStatus",
     # Protocols
     "ProcessLock",
     "HealthEndpoint",
     "TaskScheduler",
     "RunnableScheduler",
+    "RoutineManager",
     # Errors
     "DaemonAlreadyRunningError",
 ]

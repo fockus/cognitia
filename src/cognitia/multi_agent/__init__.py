@@ -16,6 +16,12 @@ from cognitia.multi_agent.task_types import (
 )
 from cognitia.multi_agent.graph_task_types import WorkflowConfig, WorkflowStage
 from cognitia.multi_agent.types import AgentToolResult
+from cognitia.multi_agent.workspace import ExecutionWorkspace, LocalWorkspace
+from cognitia.multi_agent.workspace_types import (
+    WorkspaceHandle,
+    WorkspaceSpec,
+    WorkspaceStrategy,
+)
 
 __all__ = [
     "InMemoryAgentRegistry",
@@ -33,4 +39,9 @@ __all__ = [
     "WorkflowStage",
     "create_agent_tool_spec",
     "execute_agent_tool",
+    "ExecutionWorkspace",
+    "LocalWorkspace",
+    "WorkspaceHandle",
+    "WorkspaceSpec",
+    "WorkspaceStrategy",
 ]
