@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import replace
 from typing import Any
 
@@ -37,6 +38,7 @@ class InMemoryGraphTaskBoard:
                 task,
                 checkout_agent_id=agent_id,
                 status=TaskStatus.IN_PROGRESS,
+                started_at=time.time(),
             )
             self._tasks[task_id] = updated
             return updated
@@ -46,7 +48,9 @@ class InMemoryGraphTaskBoard:
             task = self._tasks.get(task_id)
             if task is None:
                 return False
-            self._tasks[task_id] = replace(task, status=TaskStatus.DONE)
+            self._tasks[task_id] = replace(
+                task, status=TaskStatus.DONE, completed_at=time.time(),
+            )
             # Auto-propagate: check if parent's subtasks are all done
             self._propagate_completion(task.parent_task_id)
             return True
@@ -76,6 +80,40 @@ class InMemoryGraphTaskBoard:
         """Get all comments for a task and its subtasks (recursive)."""
         task_ids = self._collect_subtree_task_ids(task_id)
         return [c for c in self._comments if c.task_id in task_ids]
+
+    # --- GraphTaskScheduler (2 methods) ---
+
+    async def get_ready_tasks(self) -> list[GraphTaskItem]:
+        """Return tasks that are TODO, not checked out, and have all dependencies DONE."""
+        ready: list[GraphTaskItem] = []
+        for task in self._tasks.values():
+            if task.status != TaskStatus.TODO:
+                continue
+            if task.checkout_agent_id is not None:
+                continue
+            if task.dependencies and not self._all_deps_done(task.dependencies):
+                continue
+            ready.append(task)
+        return ready
+
+    async def get_blocked_by(self, task_id: str) -> list[GraphTaskItem]:
+        """Return dependency tasks that are not yet DONE."""
+        task = self._tasks.get(task_id)
+        if task is None:
+            return []
+        blockers: list[GraphTaskItem] = []
+        for dep_id in task.dependencies:
+            dep = self._tasks.get(dep_id)
+            if dep is not None and dep.status != TaskStatus.DONE:
+                blockers.append(dep)
+        return blockers
+
+    def _all_deps_done(self, dep_ids: tuple[str, ...]) -> bool:
+        for dep_id in dep_ids:
+            dep = self._tasks.get(dep_id)
+            if dep is None or dep.status != TaskStatus.DONE:
+                return False
+        return True
 
     # --- Extra: GoalAncestry ---
 

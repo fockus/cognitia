@@ -32,7 +32,7 @@ class InMemoryGraphCommunication:
             if node.id == from_id:
                 continue  # skip self
             msg = GraphMessage(
-                id=uuid.uuid4().hex[:12],
+                id=uuid.uuid4().hex,
                 from_agent_id=from_id,
                 to_agent_id=node.id,
                 channel=ChannelType.BROADCAST,
@@ -49,7 +49,7 @@ class InMemoryGraphCommunication:
         # Skip self (first in chain), send to all ancestors
         for node in chain[1:]:
             msg = GraphMessage(
-                id=uuid.uuid4().hex[:12],
+                id=uuid.uuid4().hex,
                 from_agent_id=from_id,
                 to_agent_id=node.id,
                 channel=ChannelType.ESCALATION,

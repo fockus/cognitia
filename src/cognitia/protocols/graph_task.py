@@ -20,6 +20,14 @@ class GraphTaskBoard(Protocol):
 
 
 @runtime_checkable
+class GraphTaskScheduler(Protocol):
+    """DAG-aware task scheduling — dependency resolution. ISP: 2 methods."""
+
+    async def get_ready_tasks(self) -> list[GraphTaskItem]: ...
+    async def get_blocked_by(self, task_id: str) -> list[GraphTaskItem]: ...
+
+
+@runtime_checkable
 class TaskCommentStore(Protocol):
     """Persistent comment threads on tasks. ISP: 3 methods."""
 

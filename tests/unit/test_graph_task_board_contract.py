@@ -8,7 +8,7 @@ import pytest
 
 from cognitia.multi_agent.graph_task_types import GraphTaskItem, TaskComment
 from cognitia.multi_agent.task_types import TaskStatus
-from cognitia.protocols.graph_task import GraphTaskBoard, TaskCommentStore
+from cognitia.protocols.graph_task import GraphTaskBoard, GraphTaskScheduler, TaskCommentStore
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +36,10 @@ def _task(
     goal_id: str | None = None,
     dod: tuple[str, ...] = (),
     status: TaskStatus = TaskStatus.TODO,
+    dependencies: tuple[str, ...] = (),
+    delegated_by: str | None = None,
+    delegation_reason: str | None = None,
+    estimated_effort: str | None = None,
 ) -> GraphTaskItem:
     return GraphTaskItem(
         id=id,
@@ -45,6 +49,10 @@ def _task(
         goal_id=goal_id,
         dod_criteria=dod,
         status=status,
+        dependencies=dependencies,
+        delegated_by=delegated_by,
+        delegation_reason=delegation_reason,
+        estimated_effort=estimated_effort,
     )
 
 
@@ -244,3 +252,153 @@ class TestComments:
     async def test_comments_empty(self, board) -> None:
         await board.create_task(_task("t1", "Task"))
         assert await board.get_comments("t1") == []
+
+
+# ---------------------------------------------------------------------------
+# Dependencies (DAG)
+# ---------------------------------------------------------------------------
+
+
+class TestDependencies:
+
+    def test_scheduler_protocol(self, board) -> None:
+        assert isinstance(board, GraphTaskScheduler)
+
+    async def test_get_ready_tasks_no_deps(self, board) -> None:
+        await board.create_task(_task("t1", "A"))
+        await board.create_task(_task("t2", "B"))
+        ready = await board.get_ready_tasks()
+        ids = {t.id for t in ready}
+        assert ids == {"t1", "t2"}
+
+    async def test_get_ready_tasks_with_deps_blocked(self, board) -> None:
+        await board.create_task(_task("t1", "Build"))
+        await board.create_task(_task("t2", "Test", dependencies=("t1",)))
+        ready = await board.get_ready_tasks()
+        assert len(ready) == 1
+        assert ready[0].id == "t1"
+
+    async def test_get_ready_tasks_deps_resolved(self, board) -> None:
+        await board.create_task(_task("t1", "Build"))
+        await board.create_task(_task("t2", "Test", dependencies=("t1",)))
+        await board.checkout_task("t1", "agent1")
+        await board.complete_task("t1")
+        ready = await board.get_ready_tasks()
+        ids = {t.id for t in ready}
+        assert "t2" in ids
+
+    async def test_get_ready_excludes_checked_out(self, board) -> None:
+        await board.create_task(_task("t1", "A"))
+        await board.checkout_task("t1", "agent1")
+        ready = await board.get_ready_tasks()
+        assert all(t.id != "t1" for t in ready)
+
+    async def test_get_ready_excludes_done(self, board) -> None:
+        await board.create_task(_task("t1", "A"))
+        await board.checkout_task("t1", "agent1")
+        await board.complete_task("t1")
+        ready = await board.get_ready_tasks()
+        assert all(t.id != "t1" for t in ready)
+
+    async def test_get_blocked_by_returns_blockers(self, board) -> None:
+        await board.create_task(_task("t1", "Build"))
+        await board.create_task(_task("t2", "Deploy"))
+        await board.create_task(_task("t3", "Smoke", dependencies=("t1", "t2")))
+        blockers = await board.get_blocked_by("t3")
+        blocker_ids = {b.id for b in blockers}
+        assert blocker_ids == {"t1", "t2"}
+
+    async def test_get_blocked_by_partial(self, board) -> None:
+        await board.create_task(_task("t1", "Build"))
+        await board.create_task(_task("t2", "Deploy"))
+        await board.create_task(_task("t3", "Smoke", dependencies=("t1", "t2")))
+        await board.checkout_task("t1", "a1")
+        await board.complete_task("t1")
+        blockers = await board.get_blocked_by("t3")
+        assert len(blockers) == 1
+        assert blockers[0].id == "t2"
+
+    async def test_get_blocked_by_all_done_empty(self, board) -> None:
+        await board.create_task(_task("t1", "Build"))
+        await board.create_task(_task("t2", "Test", dependencies=("t1",)))
+        await board.checkout_task("t1", "a1")
+        await board.complete_task("t1")
+        blockers = await board.get_blocked_by("t2")
+        assert blockers == []
+
+    async def test_get_blocked_by_no_deps(self, board) -> None:
+        await board.create_task(_task("t1", "Build"))
+        blockers = await board.get_blocked_by("t1")
+        assert blockers == []
+
+    async def test_get_blocked_by_missing_task(self, board) -> None:
+        blockers = await board.get_blocked_by("nonexistent")
+        assert blockers == []
+
+
+# ---------------------------------------------------------------------------
+# Delegation metadata
+# ---------------------------------------------------------------------------
+
+
+class TestDelegationMetadata:
+
+    async def test_delegated_by_preserved(self, board) -> None:
+        await board.create_task(_task(
+            "t1", "Task", delegated_by="ceo", delegation_reason="need frontend help",
+        ))
+        tasks = await board.list_tasks()
+        assert tasks[0].delegated_by == "ceo"
+        assert tasks[0].delegation_reason == "need frontend help"
+
+    async def test_estimated_effort_preserved(self, board) -> None:
+        await board.create_task(_task("t1", "Task", estimated_effort="M"))
+        tasks = await board.list_tasks()
+        assert tasks[0].estimated_effort == "M"
+
+    async def test_dependencies_preserved(self, board) -> None:
+        await board.create_task(_task("t1", "Build"))
+        await board.create_task(_task("t2", "Test", dependencies=("t1",)))
+        tasks = await board.list_tasks()
+        t2 = next(t for t in tasks if t.id == "t2")
+        assert t2.dependencies == ("t1",)
+
+
+# ---------------------------------------------------------------------------
+# Timestamps
+# ---------------------------------------------------------------------------
+
+
+class TestTimestamps:
+
+    async def test_started_at_set_on_checkout(self, board) -> None:
+        await board.create_task(_task("t1", "Task"))
+        task = await board.checkout_task("t1", "agent1")
+        assert task is not None
+        assert task.started_at is not None
+        assert task.started_at > 0
+
+    async def test_completed_at_set_on_complete(self, board) -> None:
+        await board.create_task(_task("t1", "Task"))
+        await board.checkout_task("t1", "agent1")
+        await board.complete_task("t1")
+        tasks = await board.list_tasks()
+        t = tasks[0]
+        assert t.completed_at is not None
+        assert t.completed_at > 0
+
+    async def test_started_before_completed(self, board) -> None:
+        await board.create_task(_task("t1", "Task"))
+        await board.checkout_task("t1", "agent1")
+        await board.complete_task("t1")
+        tasks = await board.list_tasks()
+        t = tasks[0]
+        assert t.started_at is not None
+        assert t.completed_at is not None
+        assert t.started_at <= t.completed_at
+
+    async def test_initially_no_timestamps(self, board) -> None:
+        await board.create_task(_task("t1", "Task"))
+        tasks = await board.list_tasks()
+        assert tasks[0].started_at is None
+        assert tasks[0].completed_at is None

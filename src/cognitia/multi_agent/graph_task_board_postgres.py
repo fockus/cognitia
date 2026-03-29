@@ -1,0 +1,341 @@
+"""Postgres-backed graph task board — hierarchical tasks with atomic checkout."""
+
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from typing import Any
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from cognitia.multi_agent.graph_task_types import GoalAncestry, GraphTaskItem, TaskComment
+from cognitia.multi_agent.task_types import TaskPriority, TaskStatus
+
+POSTGRES_GRAPH_TASK_SCHEMA = """
+CREATE TABLE IF NOT EXISTS graph_tasks (
+    id TEXT PRIMARY KEY,
+    parent_task_id TEXT REFERENCES graph_tasks(id),
+    data JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_graph_tasks_parent ON graph_tasks(parent_task_id);
+
+CREATE TABLE IF NOT EXISTS graph_task_comments (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES graph_tasks(id) ON DELETE CASCADE,
+    data JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_graph_task_comments_task ON graph_task_comments(task_id);
+"""
+
+
+class PostgresGraphTaskBoard:
+    """Postgres implementation of GraphTaskBoard + TaskCommentStore."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._sf = session_factory
+
+    @asynccontextmanager
+    async def _session(self, *, commit: bool = False) -> AsyncIterator[AsyncSession]:
+        async with self._sf() as session:
+            yield session
+            if commit:
+                await session.commit()
+
+    # --- Serialization ---
+
+    @staticmethod
+    def _serialize_task(task: GraphTaskItem) -> dict[str, Any]:
+        return {
+            "id": task.id, "title": task.title, "description": task.description,
+            "status": task.status.value, "priority": task.priority.value,
+            "assignee_agent_id": task.assignee_agent_id,
+            "parent_task_id": task.parent_task_id,
+            "goal_id": task.goal_id, "dod_criteria": list(task.dod_criteria),
+            "dod_verified": task.dod_verified,
+            "checkout_agent_id": task.checkout_agent_id,
+            "dependencies": list(task.dependencies),
+            "delegated_by": task.delegated_by,
+            "delegation_reason": task.delegation_reason,
+            "estimated_effort": task.estimated_effort,
+            "started_at": task.started_at,
+            "completed_at": task.completed_at,
+            "created_at": task.created_at, "updated_at": task.updated_at,
+            "metadata": task.metadata,
+        }
+
+    @staticmethod
+    def _deserialize_task(data: dict[str, Any]) -> GraphTaskItem:
+        return GraphTaskItem(
+            id=data["id"], title=data["title"],
+            description=data.get("description", ""),
+            status=TaskStatus(data.get("status", "todo")),
+            priority=TaskPriority(data.get("priority", "medium")),
+            assignee_agent_id=data.get("assignee_agent_id"),
+            parent_task_id=data.get("parent_task_id"),
+            goal_id=data.get("goal_id"),
+            dod_criteria=tuple(data.get("dod_criteria", ())),
+            dod_verified=data.get("dod_verified", False),
+            checkout_agent_id=data.get("checkout_agent_id"),
+            dependencies=tuple(data.get("dependencies", ())),
+            delegated_by=data.get("delegated_by"),
+            delegation_reason=data.get("delegation_reason"),
+            estimated_effort=data.get("estimated_effort"),
+            started_at=data.get("started_at"),
+            completed_at=data.get("completed_at"),
+            created_at=data.get("created_at", 0.0),
+            updated_at=data.get("updated_at", 0.0),
+            metadata=data.get("metadata", {}),
+        )
+
+    @staticmethod
+    def _serialize_comment(comment: TaskComment) -> dict[str, Any]:
+        return {
+            "id": comment.id, "task_id": comment.task_id,
+            "author_agent_id": comment.author_agent_id,
+            "content": comment.content, "created_at": comment.created_at,
+        }
+
+    @staticmethod
+    def _deserialize_comment(data: dict[str, Any]) -> TaskComment:
+        return TaskComment(**data)
+
+    # --- GraphTaskBoard ---
+
+    async def create_task(self, task: GraphTaskItem) -> None:
+        async with self._session(commit=True) as session:
+            await session.execute(
+                text(
+                    "INSERT INTO graph_tasks (id, parent_task_id, data) "
+                    "VALUES (:id, :parent_task_id, CAST(:data AS jsonb))"
+                ),
+                {"id": task.id, "parent_task_id": task.parent_task_id,
+                 "data": json.dumps(self._serialize_task(task))},
+            )
+
+    async def checkout_task(self, task_id: str, agent_id: str) -> GraphTaskItem | None:
+        async with self._session(commit=True) as session:
+            row = (await session.execute(
+                text(
+                    "SELECT data FROM graph_tasks WHERE id = :id "
+                    "AND (data->>'checkout_agent_id') IS NULL "
+                    "FOR UPDATE"
+                ),
+                {"id": task_id},
+            )).fetchone()
+            if not row:
+                return None
+            task = self._deserialize_task(row[0])
+            updated = replace(
+                task,
+                status=TaskStatus.IN_PROGRESS,
+                checkout_agent_id=agent_id,
+                started_at=time.time(),
+                updated_at=time.time(),
+            )
+            await session.execute(
+                text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
+                {"id": task_id, "data": json.dumps(self._serialize_task(updated))},
+            )
+            return updated
+
+    async def complete_task(self, task_id: str) -> bool:
+        async with self._session(commit=True) as session:
+            row = (await session.execute(
+                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
+                {"id": task_id},
+            )).fetchone()
+            if not row:
+                return False
+            task = self._deserialize_task(row[0])
+            updated = replace(
+                task,
+                status=TaskStatus.DONE,
+                completed_at=time.time(),
+                updated_at=time.time(),
+            )
+            await session.execute(
+                text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
+                {"id": task_id, "data": json.dumps(self._serialize_task(updated))},
+            )
+            # Propagate to parent
+            if task.parent_task_id:
+                await self._propagate_completion(session, task.parent_task_id)
+            return True
+
+    async def get_subtasks(self, task_id: str) -> list[GraphTaskItem]:
+        async with self._session() as session:
+            rows = (await session.execute(
+                text("SELECT data FROM graph_tasks WHERE parent_task_id = :id"),
+                {"id": task_id},
+            )).fetchall()
+            return [self._deserialize_task(r[0]) for r in rows]
+
+    async def list_tasks(self, **filters: Any) -> list[GraphTaskItem]:
+        async with self._session() as session:
+            rows = (await session.execute(text("SELECT data FROM graph_tasks"))).fetchall()
+            tasks = [self._deserialize_task(r[0]) for r in rows]
+        if "status" in filters:
+            tasks = [t for t in tasks if t.status == filters["status"]]
+        if "assignee_agent_id" in filters:
+            tasks = [t for t in tasks if t.assignee_agent_id == filters["assignee_agent_id"]]
+        return tasks
+
+    # --- GraphTaskScheduler ---
+
+    async def get_ready_tasks(self) -> list[GraphTaskItem]:
+        async with self._session() as session:
+            rows = (await session.execute(
+                text(
+                    "SELECT data FROM graph_tasks "
+                    "WHERE data->>'status' = 'todo' "
+                    "AND (data->>'checkout_agent_id') IS NULL"
+                ),
+            )).fetchall()
+            candidates = [self._deserialize_task(r[0]) for r in rows]
+            if not candidates:
+                return []
+            # Load all tasks for dep resolution
+            all_rows = (await session.execute(
+                text("SELECT data FROM graph_tasks"),
+            )).fetchall()
+            statuses: dict[str, Any] = {}
+            for r in all_rows:
+                t = self._deserialize_task(r[0])
+                statuses[t.id] = t.status
+        ready: list[GraphTaskItem] = []
+        for task in candidates:
+            if not task.dependencies:
+                ready.append(task)
+                continue
+            all_done = all(
+                statuses.get(dep_id) == TaskStatus.DONE
+                for dep_id in task.dependencies
+            )
+            if all_done:
+                ready.append(task)
+        return ready
+
+    async def get_blocked_by(self, task_id: str) -> list[GraphTaskItem]:
+        async with self._session() as session:
+            row = (await session.execute(
+                text("SELECT data FROM graph_tasks WHERE id = :id"),
+                {"id": task_id},
+            )).fetchone()
+            if not row:
+                return []
+            task = self._deserialize_task(row[0])
+            if not task.dependencies:
+                return []
+            rows = (await session.execute(
+                text("SELECT data FROM graph_tasks WHERE id = ANY(:ids)"),
+                {"ids": list(task.dependencies)},
+            )).fetchall()
+            blockers: list[GraphTaskItem] = []
+            for r in rows:
+                t = self._deserialize_task(r[0])
+                if t.status != TaskStatus.DONE:
+                    blockers.append(t)
+            return blockers
+
+    # --- TaskCommentStore ---
+
+    async def add_comment(self, comment: TaskComment) -> None:
+        async with self._session(commit=True) as session:
+            await session.execute(
+                text(
+                    "INSERT INTO graph_task_comments (id, task_id, data) "
+                    "VALUES (:id, :task_id, CAST(:data AS jsonb))"
+                ),
+                {"id": comment.id, "task_id": comment.task_id,
+                 "data": json.dumps(self._serialize_comment(comment))},
+            )
+
+    async def get_comments(self, task_id: str) -> list[TaskComment]:
+        async with self._session() as session:
+            rows = (await session.execute(
+                text("SELECT data FROM graph_task_comments WHERE task_id = :id ORDER BY created_at"),
+                {"id": task_id},
+            )).fetchall()
+            return [self._deserialize_comment(r[0]) for r in rows]
+
+    async def get_thread(self, task_id: str) -> list[TaskComment]:
+        """Get all comments for a task and its subtasks (recursive)."""
+        async with self._session() as session:
+            rows = (await session.execute(
+                text("""
+                    WITH RECURSIVE sub(id) AS (
+                        SELECT id FROM graph_tasks WHERE id = :id
+                        UNION ALL
+                        SELECT t.id FROM graph_tasks t JOIN sub s ON t.parent_task_id = s.id
+                    )
+                    SELECT c.data FROM graph_task_comments c
+                    WHERE c.task_id IN (SELECT id FROM sub)
+                    ORDER BY c.created_at
+                """),
+                {"id": task_id},
+            )).fetchall()
+            return [self._deserialize_comment(r[0]) for r in rows]
+
+    # --- GoalAncestry ---
+
+    async def get_goal_ancestry(self, task_id: str) -> GoalAncestry | None:
+        async with self._session() as session:
+            rows = (await session.execute(
+                text("""
+                    WITH RECURSIVE ancestry(id, parent_task_id, data) AS (
+                        SELECT id, parent_task_id, data FROM graph_tasks WHERE id = :id
+                        UNION ALL
+                        SELECT t.id, t.parent_task_id, t.data
+                        FROM graph_tasks t JOIN ancestry a ON t.id = a.parent_task_id
+                    )
+                    SELECT data FROM ancestry
+                """),
+                {"id": task_id},
+            )).fetchall()
+        if not rows:
+            return None
+        tasks = [self._deserialize_task(r[0]) for r in rows]
+        root = tasks[-1]
+        goal_id = root.goal_id
+        if not goal_id:
+            return None
+        chain = tuple(t.id for t in reversed(tasks))
+        return GoalAncestry(root_goal_id=goal_id, chain=chain)
+
+    # --- Internal ---
+
+    async def _propagate_completion(self, session: AsyncSession, parent_id: str) -> None:
+        rows = (await session.execute(
+            text("SELECT data FROM graph_tasks WHERE parent_task_id = :id"),
+            {"id": parent_id},
+        )).fetchall()
+        if not rows:
+            return
+        all_done = all(
+            self._deserialize_task(r[0]).status == TaskStatus.DONE for r in rows
+        )
+        if all_done:
+            parent_row = (await session.execute(
+                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
+                {"id": parent_id},
+            )).fetchone()
+            if parent_row:
+                parent = self._deserialize_task(parent_row[0])
+                if parent.status != TaskStatus.DONE:
+                    updated = replace(
+                        parent,
+                        status=TaskStatus.DONE,
+                        completed_at=time.time(),
+                        updated_at=time.time(),
+                    )
+                    await session.execute(
+                        text("UPDATE graph_tasks SET data = CAST(:data AS jsonb) WHERE id = :id"),
+                        {"id": parent_id, "data": json.dumps(self._serialize_task(updated))},
+                    )
+                    if parent.parent_task_id:
+                        await self._propagate_completion(session, parent.parent_task_id)

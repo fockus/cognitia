@@ -24,6 +24,12 @@ class GraphTaskItem:
     dod_criteria: tuple[str, ...] = ()
     dod_verified: bool = False
     checkout_agent_id: str | None = None  # atomic lock
+    dependencies: tuple[str, ...] = ()  # IDs of tasks that must be DONE first (DAG edges)
+    delegated_by: str | None = None  # agent_id who delegated this task
+    delegation_reason: str | None = None  # why it was delegated
+    estimated_effort: str | None = None  # XS/S/M/L/XL
+    started_at: float | None = None  # set on checkout
+    completed_at: float | None = None  # set on complete
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     metadata: dict[str, Any] = field(default_factory=dict)

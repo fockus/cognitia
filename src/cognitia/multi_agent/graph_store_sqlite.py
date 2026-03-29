@@ -7,6 +7,9 @@ import json
 import sqlite3
 import threading
 
+from dataclasses import replace
+from typing import Any
+
 from cognitia.multi_agent.graph_types import AgentNode, EdgeType, GraphEdge, GraphSnapshot
 from cognitia.multi_agent.registry_types import AgentStatus
 
@@ -28,6 +31,7 @@ class SqliteAgentGraph:
                 data TEXT NOT NULL,
                 FOREIGN KEY(parent_id) REFERENCES agent_nodes(id)
             );
+            CREATE INDEX IF NOT EXISTS idx_an_parent ON agent_nodes(parent_id);
         """)
         self._conn.commit()
 
@@ -183,6 +187,32 @@ class SqliteAgentGraph:
             nodes = [self._deserialize(r[0]) for r in cur.fetchall()]
         return [n for n in nodes if n.role == role]
 
+    def _update_sync(self, node_id: str, **updates: Any) -> AgentNode | None:
+        with self._lock:
+            cur = self._conn.execute("SELECT data FROM agent_nodes WHERE id=?", (node_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            node = self._deserialize(row[0])
+            new_parent = updates.get("parent_id", node.parent_id)
+            if new_parent != node.parent_id:
+                if new_parent is not None:
+                    p_cur = self._conn.execute("SELECT 1 FROM agent_nodes WHERE id=?", (new_parent,))
+                    if not p_cur.fetchone():
+                        raise ValueError(f"Parent '{new_parent}' does not exist")
+                    subtree_ids = set(self._subtree_ids_sync(node_id))
+                    if new_parent in subtree_ids:
+                        raise ValueError(
+                            f"Cannot set parent to '{new_parent}' — would create a cycle"
+                        )
+            updated = replace(node, **updates)
+            self._conn.execute(
+                "UPDATE agent_nodes SET parent_id = ?, data = ? WHERE id = ?",
+                (updated.parent_id, self._serialize(updated), node_id),
+            )
+            self._conn.commit()
+            return updated
+
     # --- AgentGraphStore (async) ---
 
     async def add_node(self, node: AgentNode) -> None:
@@ -213,3 +243,6 @@ class SqliteAgentGraph:
 
     async def find_by_role(self, role: str) -> list[AgentNode]:
         return await asyncio.to_thread(self._find_by_role_sync, role)
+
+    async def update_node(self, node_id: str, **updates: Any) -> AgentNode | None:
+        return await asyncio.to_thread(self._update_sync, node_id, **updates)

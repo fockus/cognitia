@@ -1,0 +1,375 @@
+"""Default graph orchestrator — hierarchical multi-agent execution engine.
+
+Flow: start(goal) → root agent assigned → delegate subtasks →
+agents execute in parallel (bounded semaphore) → results bubble up →
+EventBus events at each lifecycle point.
+
+Failure: retry per-agent → escalate to parent after exhausting retries.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+import uuid
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any, Callable, Awaitable
+
+if TYPE_CHECKING:
+    from cognitia.protocols.agent_graph import AgentGraphQuery, AgentGraphStore
+    from cognitia.protocols.graph_task import GraphTaskBoard
+
+from cognitia.multi_agent.graph_context import GraphContextBuilder
+from cognitia.multi_agent.graph_orchestrator_types import (
+    AgentExecution,
+    AgentRunState,
+    DelegationRequest,
+    OrchestratorRunState,
+    OrchestratorRunStatus,
+)
+from cognitia.multi_agent.graph_runtime_config import GraphRuntimeResolver
+from cognitia.multi_agent.graph_task_types import GraphTaskItem
+
+# Type alias for the agent runner callback.
+# Signature: (agent_id, task_id, goal, system_prompt) -> result_text
+AgentRunner = Callable[[str, str, str, str], Awaitable[str]]
+
+
+class DefaultGraphOrchestrator:
+    """Concrete orchestrator that ties graph components together.
+
+    Requires:
+        - graph: AgentGraphStore + AgentGraphQuery (InMemory/SQLite)
+        - task_board: GraphTaskBoard
+        - agent_runner: async callable (agent_id, task_id, goal, system_prompt) -> str
+        - event_bus: optional EventBus for lifecycle events
+        - approval_gate: optional gate with async check(action, context) -> bool
+    """
+
+    def __init__(
+        self,
+        graph: AgentGraphStore | AgentGraphQuery | Any,
+        task_board: GraphTaskBoard | Any,
+        agent_runner: AgentRunner,
+        *,
+        event_bus: Any | None = None,
+        communication: Any | None = None,
+        max_concurrent: int = 5,
+        max_retries: int = 2,
+        approval_gate: Any | None = None,
+    ) -> None:
+        self._graph = graph
+        self._task_board = task_board
+        self._runner = agent_runner
+        self._bus = event_bus
+        self._comm = communication
+        self._max_concurrent = max_concurrent
+        self._max_retries = max_retries
+        self._gate = approval_gate
+
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._context_builder = GraphContextBuilder(graph_query=graph, task_board=task_board)
+        self._config_resolver = GraphRuntimeResolver(graph_query=graph)
+
+        # run_id -> mutable run state
+        self._runs: dict[str, _RunState] = {}
+        # task_id -> result
+        self._results: dict[str, str] = {}
+        # Background tasks for cancellation
+        self._bg_tasks: dict[str, asyncio.Task[None]] = {}
+
+    # ------------------------------------------------------------------
+    # Protocol: start
+    # ------------------------------------------------------------------
+
+    async def start(self, goal: str) -> str:
+        """Start an orchestration run. Finds graph root, creates root task."""
+        root = await self._graph.get_root()
+        if root is None:
+            raise ValueError("Graph has no root agent")
+
+        run_id = uuid.uuid4().hex[:12]
+        root_task_id = f"root-{run_id}"
+
+        # Create root task on the board
+        await self._task_board.create_task(GraphTaskItem(
+            id=root_task_id,
+            title=goal,
+            assignee_agent_id=root.id,
+        ))
+
+        self._runs[run_id] = _RunState(
+            run_id=run_id,
+            state=OrchestratorRunState.RUNNING,
+            root_task_id=root_task_id,
+            root_agent_id=root.id,
+            started_at=time.time(),
+        )
+
+        await self._emit("graph.orchestrator.started", {
+            "run_id": run_id,
+            "goal": goal,
+        })
+
+        return run_id
+
+    # ------------------------------------------------------------------
+    # Protocol: delegate
+    # ------------------------------------------------------------------
+
+    async def delegate(self, request: DelegationRequest) -> None:
+        """Delegate a task to an agent. Creates subtask and launches execution."""
+        # Create subtask on the board
+        await self._task_board.create_task(GraphTaskItem(
+            id=request.task_id,
+            title=request.goal,
+            assignee_agent_id=request.agent_id,
+            parent_task_id=request.parent_task_id,
+        ))
+
+        await self._emit("graph.orchestrator.delegated", {
+            "task_id": request.task_id,
+            "agent_id": request.agent_id,
+            "goal": request.goal,
+        })
+
+        # Find run for this delegation
+        run = self._find_run_for_task(request.parent_task_id)
+
+        # Record execution
+        execution = AgentExecution(
+            agent_id=request.agent_id,
+            task_id=request.task_id,
+        )
+        if run:
+            run.executions.append(execution)
+
+        # Check approval gate
+        if self._gate is not None:
+            approved = await self._gate.check(
+                "delegate",
+                {"agent_id": request.agent_id, "goal": request.goal},
+            )
+            if not approved:
+                await self._emit("graph.orchestrator.denied", {
+                    "task_id": request.task_id,
+                    "agent_id": request.agent_id,
+                })
+                if run:
+                    idx = self._find_execution_index(run, request.task_id)
+                    if idx is not None:
+                        run.executions[idx] = replace(
+                            run.executions[idx], state=AgentRunState.FAILED,
+                            error="Denied by approval gate",
+                        )
+                return
+
+        # Launch async execution
+        max_retries = request.max_retries if request.max_retries is not None else self._max_retries
+        task = asyncio.create_task(
+            self._execute_agent(request.agent_id, request.task_id, request.goal, max_retries, run)
+        )
+        self._bg_tasks[request.task_id] = task
+
+    # ------------------------------------------------------------------
+    # Protocol: collect_result
+    # ------------------------------------------------------------------
+
+    async def collect_result(self, task_id: str) -> str | None:
+        """Return the result for a task, or None if not yet complete."""
+        return self._results.get(task_id)
+
+    # ------------------------------------------------------------------
+    # Protocol: get_status
+    # ------------------------------------------------------------------
+
+    async def get_status(self, run_id: str) -> OrchestratorRunStatus:
+        """Return a frozen snapshot of the run state."""
+        run = self._runs.get(run_id)
+        if run is None:
+            raise KeyError(f"Run '{run_id}' not found")
+
+        return OrchestratorRunStatus(
+            run_id=run.run_id,
+            state=run.state,
+            root_task_id=run.root_task_id,
+            root_agent_id=run.root_agent_id,
+            executions=tuple(run.executions),
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            error=run.error,
+        )
+
+    # ------------------------------------------------------------------
+    # Protocol: stop
+    # ------------------------------------------------------------------
+
+    async def stop(self, run_id: str) -> None:
+        """Stop an orchestration run. Cancel pending background tasks."""
+        run = self._runs.get(run_id)
+        if run is None:
+            raise KeyError(f"Run '{run_id}' not found")
+
+        run.state = OrchestratorRunState.STOPPED
+        run.finished_at = time.time()
+
+        # Cancel background tasks for this run
+        for execution in run.executions:
+            bg = self._bg_tasks.pop(execution.task_id, None)
+            if bg and not bg.done():
+                bg.cancel()
+
+        await self._emit("graph.orchestrator.stopped", {
+            "run_id": run_id,
+        })
+
+    # ------------------------------------------------------------------
+    # Internal: agent execution with retry
+    # ------------------------------------------------------------------
+
+    async def _execute_agent(
+        self,
+        agent_id: str,
+        task_id: str,
+        goal: str,
+        max_retries: int,
+        run: _RunState | None,
+    ) -> None:
+        """Execute an agent with semaphore-bounded concurrency and retry."""
+        attempt = 0
+        last_error: str | None = None
+
+        try:
+            while attempt <= max_retries:
+                async with self._semaphore:
+                    try:
+                        # Update state
+                        if run:
+                            idx = self._find_execution_index(run, task_id)
+                            if idx is not None:
+                                state = AgentRunState.RETRYING if attempt > 0 else AgentRunState.RUNNING
+                                run.executions[idx] = replace(
+                                    run.executions[idx],
+                                    state=state,
+                                    retries=attempt,
+                                    started_at=time.time(),
+                                )
+
+                        # Build context-aware system prompt
+                        try:
+                            ctx = await self._context_builder.build_context(agent_id, task_id=task_id)
+                            system_prompt = self._context_builder.render_system_prompt(ctx)
+                        except ValueError:
+                            system_prompt = ""
+
+                        # Run the agent
+                        result = await self._runner(agent_id, task_id, goal, system_prompt)
+
+                        # Success
+                        self._results[task_id] = result
+                        await self._task_board.complete_task(task_id)
+
+                        if run:
+                            idx = self._find_execution_index(run, task_id)
+                            if idx is not None:
+                                run.executions[idx] = replace(
+                                    run.executions[idx],
+                                    state=AgentRunState.COMPLETED,
+                                    result=result,
+                                    finished_at=time.time(),
+                                )
+
+                        await self._emit("graph.orchestrator.agent_completed", {
+                            "agent_id": agent_id,
+                            "task_id": task_id,
+                        })
+                        return
+
+                    except Exception as exc:  # noqa: BLE001
+                        last_error = str(exc)
+                        attempt += 1
+
+            # Exhausted retries → mark failed, escalate
+            if run:
+                idx = self._find_execution_index(run, task_id)
+                if idx is not None:
+                    run.executions[idx] = replace(
+                        run.executions[idx],
+                        state=AgentRunState.FAILED,
+                        error=last_error,
+                        finished_at=time.time(),
+                    )
+
+            await self._emit("graph.orchestrator.escalated", {
+                "agent_id": agent_id,
+                "task_id": task_id,
+                "error": last_error,
+            })
+
+            # Escalate via communication if available
+            if self._comm is not None:
+                await self._comm.escalate(
+                    agent_id, f"Failed after {max_retries} retries: {last_error}",
+                    task_id=task_id,
+                )
+
+        except asyncio.CancelledError:
+            # Graceful stop �� do NOT retry
+            return
+        finally:
+            self._bg_tasks.pop(task_id, None)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _find_run_for_task(self, parent_task_id: str | None) -> _RunState | None:
+        """Find the run that owns a given root task."""
+        if parent_task_id is None:
+            return None
+        for run in self._runs.values():
+            if run.root_task_id == parent_task_id:
+                return run
+            # Also check if any execution owns this parent
+            if any(e.task_id == parent_task_id for e in run.executions):
+                return run
+        return None
+
+    @staticmethod
+    def _find_execution_index(run: _RunState, task_id: str) -> int | None:
+        for i, e in enumerate(run.executions):
+            if e.task_id == task_id:
+                return i
+        return None
+
+    async def _emit(self, topic: str, data: dict[str, Any]) -> None:
+        if self._bus is not None:
+            await self._bus.emit(topic, data)
+
+
+class _RunState:
+    """Mutable internal state for an orchestration run."""
+
+    __slots__ = (
+        "run_id", "state", "root_task_id", "root_agent_id",
+        "executions", "started_at", "finished_at", "error",
+    )
+
+    def __init__(
+        self,
+        run_id: str,
+        state: OrchestratorRunState,
+        root_task_id: str,
+        root_agent_id: str,
+        started_at: float,
+        finished_at: float | None = None,
+        error: str | None = None,
+    ) -> None:
+        self.run_id = run_id
+        self.state = state
+        self.root_task_id = root_task_id
+        self.root_agent_id = root_agent_id
+        self.executions: list[AgentExecution] = []
+        self.started_at = started_at
+        self.finished_at = finished_at
+        self.error = error

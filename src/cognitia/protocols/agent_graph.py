@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from cognitia.multi_agent.graph_types import AgentNode, GraphSnapshot
@@ -27,3 +27,10 @@ class AgentGraphQuery(Protocol):
     async def get_subtree(self, node_id: str) -> list[AgentNode]: ...
     async def get_root(self) -> AgentNode | None: ...
     async def find_by_role(self, role: str) -> list[AgentNode]: ...
+
+
+@runtime_checkable
+class AgentNodeUpdater(Protocol):
+    """Partial update of agent nodes without remove+add. ISP: 1 method."""
+
+    async def update_node(self, node_id: str, **updates: Any) -> AgentNode | None: ...

@@ -6,7 +6,7 @@ import pytest
 
 from cognitia.multi_agent.graph_types import AgentNode, EdgeType
 from cognitia.multi_agent.registry_types import AgentStatus
-from cognitia.protocols.agent_graph import AgentGraphQuery, AgentGraphStore
+from cognitia.protocols.agent_graph import AgentGraphQuery, AgentGraphStore, AgentNodeUpdater
 
 
 # ---------------------------------------------------------------------------
@@ -268,3 +268,84 @@ class TestSnapshot:
         assert edge.source_id == "cto"
         assert edge.target_id == "ceo"
         assert edge.edge_type == EdgeType.REPORTS_TO
+
+
+# ---------------------------------------------------------------------------
+# Update node
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateNode:
+
+    def test_updater_protocol(self, store) -> None:
+        assert isinstance(store, AgentNodeUpdater)
+
+    async def test_update_name(self, store) -> None:
+        await store.add_node(_node("a1", "Agent 1", "worker"))
+        result = await store.update_node("a1", name="Agent One Updated")
+        assert result is not None
+        assert result.name == "Agent One Updated"
+        assert result.id == "a1"
+        # Verify persisted
+        fetched = await store.get_node("a1")
+        assert fetched is not None
+        assert fetched.name == "Agent One Updated"
+
+    async def test_update_role_and_prompt(self, store) -> None:
+        await store.add_node(_node("a1", "Agent", "worker"))
+        result = await store.update_node(
+            "a1", role="manager", system_prompt="You manage things",
+        )
+        assert result is not None
+        assert result.role == "manager"
+        assert result.system_prompt == "You manage things"
+
+    async def test_update_missing_returns_none(self, store) -> None:
+        result = await store.update_node("nonexistent", name="X")
+        assert result is None
+
+    async def test_update_parent_id(self, store) -> None:
+        await store.add_node(_node("ceo", "CEO", "exec"))
+        await store.add_node(_node("cto", "CTO", "tech", parent_id="ceo"))
+        await store.add_node(_node("cpo", "CPO", "product", parent_id="ceo"))
+        await store.add_node(_node("eng", "Engineer", "worker", parent_id="cto"))
+        # Move engineer from CTO to CPO
+        result = await store.update_node("eng", parent_id="cpo")
+        assert result is not None
+        assert result.parent_id == "cpo"
+        # CTO should have no children now
+        children = await store.get_children("cto")
+        assert all(c.id != "eng" for c in children)
+        # CPO should have engineer
+        children = await store.get_children("cpo")
+        assert any(c.id == "eng" for c in children)
+
+    async def test_update_parent_nonexistent_raises(self, store) -> None:
+        await store.add_node(_node("a1", "Agent", "worker"))
+        with pytest.raises(ValueError, match="does not exist"):
+            await store.update_node("a1", parent_id="nonexistent")
+
+    async def test_update_parent_cycle_raises(self, store) -> None:
+        await store.add_node(_node("ceo", "CEO", "exec"))
+        await store.add_node(_node("cto", "CTO", "tech", parent_id="ceo"))
+        await store.add_node(_node("eng", "Eng", "worker", parent_id="cto"))
+        # Trying to make CEO report to its grandchild = cycle
+        with pytest.raises(ValueError, match="cycle"):
+            await store.update_node("ceo", parent_id="eng")
+
+    async def test_update_preserves_unchanged_fields(self, store) -> None:
+        node = AgentNode(
+            id="rich", name="Rich", role="manager",
+            system_prompt="Manage", allowed_tools=("web",),
+            skills=("planning",), budget_limit_usd=5.0,
+            status=AgentStatus.RUNNING, metadata={"team": "alpha"},
+        )
+        await store.add_node(node)
+        result = await store.update_node("rich", name="Rich Updated")
+        assert result is not None
+        assert result.name == "Rich Updated"
+        assert result.role == "manager"
+        assert result.system_prompt == "Manage"
+        assert result.allowed_tools == ("web",)
+        assert result.budget_limit_usd == 5.0
+        assert result.metadata["team"] == "alpha"

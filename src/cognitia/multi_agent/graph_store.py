@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from dataclasses import replace
+from typing import Any
 
 from cognitia.multi_agent.graph_types import AgentNode, EdgeType, GraphEdge, GraphSnapshot
 
@@ -43,6 +45,29 @@ class InMemoryAgentGraph:
 
     async def get_children(self, node_id: str) -> list[AgentNode]:
         return [n for n in self._nodes.values() if n.parent_id == node_id]
+
+    async def update_node(self, node_id: str, **updates: Any) -> AgentNode | None:
+        async with self._lock:
+            node = self._nodes.get(node_id)
+            if node is None:
+                return None
+            # Validate parent_id change
+            new_parent = updates.get("parent_id", node.parent_id)
+            if new_parent != node.parent_id:
+                if new_parent is not None and new_parent not in self._nodes:
+                    raise ValueError(
+                        f"Parent '{new_parent}' does not exist"
+                    )
+                # Cycle check: new parent must not be in this node's subtree
+                if new_parent is not None:
+                    subtree_ids = {n for n in self._collect_subtree_ids(node_id)}
+                    if new_parent in subtree_ids:
+                        raise ValueError(
+                            f"Cannot set parent to '{new_parent}' — would create a cycle"
+                        )
+            updated = replace(node, **updates)
+            self._nodes[node_id] = updated
+            return updated
 
     async def snapshot(self) -> GraphSnapshot:
         nodes = tuple(self._nodes.values())
