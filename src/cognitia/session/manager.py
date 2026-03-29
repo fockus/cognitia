@@ -296,7 +296,7 @@ class InMemorySessionManager:
         logger.info("run_turn[%s]: waiting for lock (locked=%s)", ks, lock.locked())
         async with lock:
             logger.info("run_turn[%s]: lock acquired", ks)
-            state = self.get(key)
+            state = await self.aget(key)
             if state:
                 state.last_activity_at = time.monotonic()
                 await self._persist_state(state)
@@ -355,7 +355,7 @@ class InMemorySessionManager:
         """Legacy API: send a message and stream the response (RuntimePort/adapter path)."""
         lock = self._get_lock(key)
         async with lock:
-            state = self.get(key)
+            state = await self.aget(key)
             if not state:
                 yield StreamEvent(type="error", text="Session not found")
                 return

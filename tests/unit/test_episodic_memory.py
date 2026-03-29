@@ -176,3 +176,32 @@ class TestEpisodicContract:
         # All episodes should be stored
         final_count = await store.count()
         assert final_count == 30  # 20 initial + 10 extra
+
+
+# ---------------------------------------------------------------------------
+# SQLite-specific: FTS5 dedup on INSERT OR REPLACE
+# ---------------------------------------------------------------------------
+
+
+class TestSqliteFtsDedup:
+    """Verify FTS5 triggers correctly remove stale entries on replace."""
+
+    async def test_store_replace_same_id_deduplicates_fts(self, sqlite_store) -> None:
+        """INSERT OR REPLACE must not leave stale FTS entries.
+
+        Store episode, replace with same ID but different summary,
+        recall must return exactly one result with the new summary.
+        """
+        ep_v1 = _ep("dup-1", summary="Old summary about apples")
+        await sqlite_store.store(ep_v1)
+
+        ep_v2 = _ep("dup-1", summary="New summary about oranges")
+        await sqlite_store.store(ep_v2)
+
+        assert await sqlite_store.count() == 1
+
+        results_old = await sqlite_store.recall("apples")
+        results_new = await sqlite_store.recall("oranges")
+        assert len(results_new) == 1
+        assert results_new[0].summary == "New summary about oranges"
+        assert len(results_old) == 0, "Stale FTS entry for old summary should be gone"

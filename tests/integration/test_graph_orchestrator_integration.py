@@ -226,7 +226,7 @@ class TestSevenAgentOrchestration:
             goal="Connect to DB", parent_task_id=status.root_task_id,
             max_retries=1,
         ))
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(1.0)  # backoff: 0.5s before retry
 
         # Should have retried once (2 attempts total) for the delegated agent
         assert delegate_call_count == 2

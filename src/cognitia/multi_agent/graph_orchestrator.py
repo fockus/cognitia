@@ -352,6 +352,9 @@ class DefaultGraphOrchestrator:
                     except Exception as exc:  # noqa: BLE001
                         last_error = str(exc)
                         attempt += 1
+                        if attempt <= max_retries:
+                            backoff = min(2 ** (attempt - 1) * 0.5, 30.0)
+                            await asyncio.sleep(backoff)
 
             # Exhausted retries → mark failed on board and in run state, escalate
             if hasattr(self._task_board, "cancel_task"):

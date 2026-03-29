@@ -331,7 +331,7 @@ class TestFailureHandling:
             goal="Code", parent_task_id=status.root_task_id,
         )
         await orch.delegate(req)
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(1.0)  # backoff: 0.5s before retry
 
         result = await orch.collect_result("sub-1")
         assert result == "Recovered"
@@ -352,7 +352,7 @@ class TestFailureHandling:
             max_retries=1,
         )
         await orch.delegate(req)
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(1.0)  # backoff: 0.5s before retry
 
         calls = [c[0][0] for c in event_bus.emit.call_args_list]
         assert "graph.orchestrator.escalated" in calls
@@ -361,6 +361,50 @@ class TestFailureHandling:
 # ---------------------------------------------------------------------------
 # Concurrency
 # ---------------------------------------------------------------------------
+
+
+class TestRetryBackoff:
+
+    async def test_retry_uses_exponential_backoff(self, make_orchestrator) -> None:
+        """After a transient failure, the orchestrator sleeps with exponential backoff
+        before retrying (0.5s, 1s, 2s, ...)."""
+        import unittest.mock
+
+        task_calls: dict[str, int] = {}
+
+        async def flaky_runner(agent_id, task_id, goal, system_prompt):
+            task_calls[task_id] = task_calls.get(task_id, 0) + 1
+            if task_calls[task_id] <= 2:
+                raise RuntimeError("Transient error")
+            return "Recovered"
+
+        orch = make_orchestrator(agent_runner=flaky_runner, max_retries=3)
+
+        sleep_calls: list[float] = []
+        original_sleep = asyncio.sleep
+
+        async def mock_sleep(delay, *args, **kwargs):
+            sleep_calls.append(delay)
+            await original_sleep(0)  # yield control without actual delay
+
+        with unittest.mock.patch("cognitia.multi_agent.graph_orchestrator.asyncio.sleep", side_effect=mock_sleep):
+            run_id = await orch.start("Build")
+            await asyncio.sleep(0.3)
+            status = await orch.get_status(run_id)
+
+            req = DelegationRequest(
+                task_id="backoff-task", agent_id="eng1",
+                goal="Code", parent_task_id=status.root_task_id,
+            )
+            await orch.delegate(req)
+            await asyncio.sleep(0.3)
+
+        # eng1 failed twice then succeeded on 3rd attempt, so 2 backoff sleeps
+        eng_sleeps = [s for s in sleep_calls if s >= 0.5]
+        assert len(eng_sleeps) >= 2, f"Expected at least 2 backoff sleeps, got {eng_sleeps}"
+        # First backoff: 0.5s, second: 1.0s
+        assert eng_sleeps[0] == pytest.approx(0.5)
+        assert eng_sleeps[1] == pytest.approx(1.0)
 
 
 class TestConcurrency:
@@ -669,7 +713,7 @@ class TestTaskBoardConsistency:
             max_retries=0,
         )
         await orch.delegate(req)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.5)  # max_retries=0 means no backoff, just immediate fail
 
         tasks = await task_board.list_tasks()
         failed = next((t for t in tasks if t.id == "fail-task"), None)

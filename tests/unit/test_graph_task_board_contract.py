@@ -584,3 +584,38 @@ class TestProgress:
         parent = next(t for t in tasks if t.id == "parent")
         assert parent.progress == pytest.approx(2.0 / 3.0)
         assert parent.status != TaskStatus.DONE
+
+
+# ---------------------------------------------------------------------------
+# Concurrent read + write safety
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentReadWrite:
+
+    async def test_concurrent_reads_and_writes_no_errors(self, board) -> None:
+        """Concurrent list/get/complete must not raise due to dict mutation during iteration."""
+        for i in range(20):
+            await board.create_task(_task(f"t{i}", f"Task {i}"))
+
+        async def writer() -> None:
+            for i in range(20):
+                await board.checkout_task(f"t{i}", f"agent-{i}")
+                await board.complete_task(f"t{i}")
+
+        async def reader() -> list[GraphTaskItem]:
+            results: list[GraphTaskItem] = []
+            for _ in range(30):
+                results.extend(await board.list_tasks())
+                await board.get_subtasks("t0")
+                await board.get_ready_tasks()
+                await board.get_blocked_by("t1")
+            return results
+
+        errors: list[Exception] = []
+        try:
+            await asyncio.gather(writer(), reader(), reader())
+        except Exception as exc:
+            errors.append(exc)
+
+        assert errors == [], f"Concurrent read/write raised: {errors}"

@@ -53,6 +53,18 @@ class SqliteEpisodicMemory:
                 INSERT INTO episodes_fts(rowid, id, summary, key_decisions, tags)
                 VALUES (new.rowid, new.id, new.summary, new.key_decisions, new.tags);
             END;
+            CREATE TRIGGER IF NOT EXISTS episodes_bd BEFORE DELETE ON episodes BEGIN
+                INSERT INTO episodes_fts(episodes_fts, rowid, id, summary, key_decisions, tags)
+                VALUES('delete', old.rowid, old.id, old.summary, old.key_decisions, old.tags);
+            END;
+            CREATE TRIGGER IF NOT EXISTS episodes_bu BEFORE UPDATE ON episodes BEGIN
+                INSERT INTO episodes_fts(episodes_fts, rowid, id, summary, key_decisions, tags)
+                VALUES('delete', old.rowid, old.id, old.summary, old.key_decisions, old.tags);
+            END;
+            CREATE TRIGGER IF NOT EXISTS episodes_au AFTER UPDATE ON episodes BEGIN
+                INSERT INTO episodes_fts(rowid, id, summary, key_decisions, tags)
+                VALUES (new.rowid, new.id, new.summary, new.key_decisions, new.tags);
+            END;
         """)
 
     def _row_to_episode(self, row: tuple) -> Episode:

@@ -56,17 +56,19 @@ class InMemoryGraphTaskBoard:
             return True
 
     async def get_subtasks(self, task_id: str) -> list[GraphTaskItem]:
-        return [t for t in self._tasks.values() if t.parent_task_id == task_id]
+        async with self._lock:
+            return [t for t in self._tasks.values() if t.parent_task_id == task_id]
 
     async def list_tasks(self, **filters: Any) -> list[GraphTaskItem]:
-        result = list(self._tasks.values())
-        if "status" in filters:
-            result = [t for t in result if t.status == filters["status"]]
-        if "assignee_agent_id" in filters:
-            result = [t for t in result if t.assignee_agent_id == filters["assignee_agent_id"]]
-        if "priority" in filters:
-            result = [t for t in result if t.priority == filters["priority"]]
-        return result
+        async with self._lock:
+            result = list(self._tasks.values())
+            if "status" in filters:
+                result = [t for t in result if t.status == filters["status"]]
+            if "assignee_agent_id" in filters:
+                result = [t for t in result if t.assignee_agent_id == filters["assignee_agent_id"]]
+            if "priority" in filters:
+                result = [t for t in result if t.priority == filters["priority"]]
+            return result
 
     # --- TaskCommentStore (3 methods) ---
 
@@ -78,35 +80,38 @@ class InMemoryGraphTaskBoard:
 
     async def get_thread(self, task_id: str) -> list[TaskComment]:
         """Get all comments for a task and its subtasks (recursive)."""
-        task_ids = self._collect_subtree_task_ids(task_id)
-        return [c for c in self._comments if c.task_id in task_ids]
+        async with self._lock:
+            task_ids = self._collect_subtree_task_ids(task_id)
+            return [c for c in self._comments if c.task_id in task_ids]
 
     # --- GraphTaskScheduler (2 methods) ---
 
     async def get_ready_tasks(self) -> list[GraphTaskItem]:
         """Return tasks that are TODO, not checked out, and have all dependencies DONE."""
-        ready: list[GraphTaskItem] = []
-        for task in self._tasks.values():
-            if task.status != TaskStatus.TODO:
-                continue
-            if task.checkout_agent_id is not None:
-                continue
-            if task.dependencies and not self._all_deps_done(task.dependencies):
-                continue
-            ready.append(task)
-        return ready
+        async with self._lock:
+            ready: list[GraphTaskItem] = []
+            for task in self._tasks.values():
+                if task.status != TaskStatus.TODO:
+                    continue
+                if task.checkout_agent_id is not None:
+                    continue
+                if task.dependencies and not self._all_deps_done(task.dependencies):
+                    continue
+                ready.append(task)
+            return ready
 
     async def get_blocked_by(self, task_id: str) -> list[GraphTaskItem]:
         """Return dependency tasks that are not yet DONE."""
-        task = self._tasks.get(task_id)
-        if task is None:
-            return []
-        blockers: list[GraphTaskItem] = []
-        for dep_id in task.dependencies:
-            dep = self._tasks.get(dep_id)
-            if dep is not None and dep.status != TaskStatus.DONE:
-                blockers.append(dep)
-        return blockers
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return []
+            blockers: list[GraphTaskItem] = []
+            for dep_id in task.dependencies:
+                dep = self._tasks.get(dep_id)
+                if dep is not None and dep.status != TaskStatus.DONE:
+                    blockers.append(dep)
+            return blockers
 
     def _all_deps_done(self, dep_ids: tuple[str, ...]) -> bool:
         for dep_id in dep_ids:
@@ -176,26 +181,27 @@ class InMemoryGraphTaskBoard:
 
     async def get_goal_ancestry(self, task_id: str) -> GoalAncestry | None:
         """Walk parent_task_id chain to build goal ancestry."""
-        chain: list[str] = []
-        current_id: str | None = task_id
-        goal_id: str | None = None
-        visited: set[str] = set()
+        async with self._lock:
+            chain: list[str] = []
+            current_id: str | None = task_id
+            goal_id: str | None = None
+            visited: set[str] = set()
 
-        while current_id and current_id not in visited:
-            visited.add(current_id)
-            task = self._tasks.get(current_id)
-            if task is None:
-                break
-            chain.append(current_id)
-            if task.goal_id and goal_id is None:
-                goal_id = task.goal_id
-            current_id = task.parent_task_id
+            while current_id and current_id not in visited:
+                visited.add(current_id)
+                task = self._tasks.get(current_id)
+                if task is None:
+                    break
+                chain.append(current_id)
+                if task.goal_id and goal_id is None:
+                    goal_id = task.goal_id
+                current_id = task.parent_task_id
 
-        if goal_id is None:
-            return None
+            if goal_id is None:
+                return None
 
-        chain.reverse()  # root to leaf
-        return GoalAncestry(root_goal_id=goal_id, chain=tuple(chain))
+            chain.reverse()  # root to leaf
+            return GoalAncestry(root_goal_id=goal_id, chain=tuple(chain))
 
     # --- Internal ---
 
