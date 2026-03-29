@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from dataclasses import replace
+from typing import Any, TypeVar
 
 from cognitia.agent.config import AgentConfig
 from cognitia.agent.result import Result
 from cognitia.runtime.types import Message
+
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,65 @@ class Agent:
             object.__setattr__(result, "new_messages", new_messages)
 
         return result
+
+    async def query_structured(
+        self,
+        prompt: str,
+        output_type: type[T],
+        *,
+        max_retries: int | None = None,
+    ) -> T:
+        """One-shot request returning a validated Pydantic model.
+
+        Creates a temporary AgentConfig with output_type set,
+        runs query(), and returns the validated structured_output.
+
+        Parameters
+        ----------
+        prompt:
+            The user prompt.
+        output_type:
+            A Pydantic BaseModel subclass. The LLM response is parsed
+            and validated against this type. Retry on validation error.
+        max_retries:
+            Override max_model_retries for structured output validation.
+            Default: uses the runtime's default (2).
+
+        Returns
+        -------
+        T
+            A validated instance of ``output_type``.
+
+        Raises
+        ------
+        StructuredOutputError
+            If all retries are exhausted and validation still fails.
+        """
+        from cognitia.agent.structured import StructuredOutputError
+
+        # Build a temporary config with output_type set
+        overrides: dict[str, Any] = {"output_type": output_type}
+        if self._config.output_format is None:
+            schema_builder = getattr(output_type, "model_json_schema", None)
+            if callable(schema_builder):
+                overrides["output_format"] = schema_builder()
+        config = replace(self._config, **overrides)
+
+        # Swap config temporarily
+        original_config = self._config
+        self._config = config
+        try:
+            result = await self.query(prompt)
+        finally:
+            self._config = original_config
+
+        if result.structured_output is not None:
+            return result.structured_output  # type: ignore[return-value]
+
+        raise StructuredOutputError(
+            f"Failed to parse structured output as {output_type.__name__}. "
+            f"Raw text: {result.text[:200]}"
+        )
 
     async def stream(self, prompt: str) -> AsyncIterator[Any]:
         """Streaming request -> AsyncIterator[StreamEvent].

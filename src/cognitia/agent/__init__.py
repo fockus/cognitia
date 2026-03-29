@@ -12,6 +12,7 @@ from cognitia.agent.middleware import (
     build_middleware_stack,
 )
 from cognitia.agent.result import Result
+from cognitia.agent.structured import StructuredOutputError
 from cognitia.agent.tool import ToolDefinition, tool
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "CostTracker",
     "Middleware",
     "Result",
+    "StructuredOutputError",
     "SecurityGuard",
     "ToolOutputCompressor",
     "build_middleware_stack",

@@ -51,6 +51,11 @@ class AgentConfig:
     # Structured output (JSON Schema)
     output_format: dict[str, Any] | None = None
 
+    # Pydantic model type for automatic structured output validation.
+    # If set and output_format is None, output_format is auto-generated
+    # from model_json_schema(). Runtime validates and retries on error.
+    output_type: type | None = None
+
     # Working directory
     cwd: str | None = None
 

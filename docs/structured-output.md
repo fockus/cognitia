@@ -144,3 +144,56 @@ Or via the Agent facade:
 result = await agent.query("...")
 result.structured_output  # the validated model instance
 ```
+
+## Agent.query_structured() (Recommended)
+
+The simplest way to get type-safe structured output:
+
+```python
+from pydantic import BaseModel
+from cognitia.agent import Agent, AgentConfig, StructuredOutputError
+
+class Sentiment(BaseModel):
+    label: str
+    score: float
+    reasoning: str
+
+agent = Agent(AgentConfig(
+    system_prompt="Analyze sentiment of the given text.",
+    runtime="thin",
+))
+
+# Returns a validated Sentiment instance — not Result, not str
+sentiment = await agent.query_structured(
+    "I love sunny days!",
+    Sentiment,
+)
+print(sentiment.label)   # "positive"
+print(sentiment.score)   # 0.95
+```
+
+`query_structured()` handles:
+
+1. Setting `output_type` and `output_format` on a temporary config
+2. Running the query through the normal pipeline (with retry)
+3. Extracting and returning `result.structured_output` as type `T`
+4. Raising `StructuredOutputError` if validation fails after all retries
+
+### Error Handling
+
+```python
+try:
+    result = await agent.query_structured("...", Sentiment)
+except StructuredOutputError as exc:
+    print(f"Failed: {exc}")
+    # exc.raw_text — the raw LLM response that failed validation
+```
+
+### Differences from query()
+
+| | `query()` | `query_structured()` |
+|---|-----------|---------------------|
+| Return type | `Result` | `T` (Pydantic model) |
+| Access output | `result.structured_output` | direct |
+| Requires `output_type` in config | yes | no (set automatically) |
+| Error on validation failure | `result.text` has raw text | raises `StructuredOutputError` |

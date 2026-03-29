@@ -31,6 +31,7 @@ def build_portable_runtime_plan(
         runtime_name=runtime_name,
         model=agent_config.resolved_model,
         output_format=agent_config.output_format,
+        output_type=agent_config.output_type,
         feature_mode=agent_config.feature_mode,
         required_capabilities=agent_config.require_capabilities,
         allow_native_features=agent_config.allow_native_features,

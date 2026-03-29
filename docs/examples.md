@@ -92,6 +92,7 @@ Default behavior:
 | # | File | What it demonstrates |
 |---|------|----------------------|
 | 28 | `28_opentelemetry_tracing.py` | OpenTelemetry span export from EventBus events |
+| 29 | `29_structured_output_pydantic.py` | Type-safe structured output with `Agent.query_structured()` |
 
 ## Picking a Starting Point
 
