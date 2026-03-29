@@ -1,18 +1,18 @@
-# Cognitia
+# Swarmline
 
-**Provider-agnostic Python framework for AI agents** — from a single assistant to hierarchical multi-agent systems.
+**Build AI agents in Python** — from a single assistant to hierarchical multi-agent systems.
 
-[![PyPI version](https://img.shields.io/pypi/v/cognitia.svg)](https://pypi.org/project/cognitia/)
+[![PyPI version](https://img.shields.io/pypi/v/swarmline.svg)](https://pypi.org/project/swarmline/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-3200%2B%20passed-brightgreen.svg)](https://github.com/fockus/cognitia)
-[![Docs](https://img.shields.io/badge/docs-readthedocs-blue.svg)](https://cognitia.readthedocs.io/)
+[![Tests](https://img.shields.io/badge/tests-3200%2B%20passed-brightgreen.svg)](https://github.com/fockus/swarmline)
+[![Docs](https://img.shields.io/badge/docs-readthedocs-blue.svg)](https://swarmline.readthedocs.io/)
 
-> Pluggable runtimes (Anthropic, OpenAI, Google, DeepSeek), persistent memory, agent graphs with governance, knowledge banks, pipeline execution, and Clean Architecture — all in one library.
+> Provider-agnostic, pluggable runtimes (Anthropic, OpenAI, Google, DeepSeek), persistent memory, agent graphs with governance, knowledge banks, pipeline execution, and Clean Architecture.
 
-## Why Cognitia?
+## Why Swarmline?
 
-Cognitia covers the full spectrum: **simple single-agent assistants** that you build in 3 lines, and **complex multi-agent systems** with org charts, task delegation, and shared knowledge — using the same API.
+Swarmline covers the full spectrum: **simple single-agent assistants** that you build in 3 lines, and **complex multi-agent systems** with org charts, task delegation, and shared knowledge — using the same API.
 
 **For simple agents:**
 - 3-line quick start — `Agent` + `AgentConfig` + `query()`
@@ -34,7 +34,7 @@ Cognitia covers the full spectrum: **simple single-agent assistants** that you b
 
 ### Key Differentiators
 
-| vs. | Cognitia advantage |
+| vs. | Swarmline advantage |
 |-----|-------------------|
 | **LangChain/LangGraph** | True multi-provider (not just wrapper), Clean Architecture, governance built-in, no vendor lock-in |
 | **CrewAI** | Protocol-first (swap any layer), hierarchical graphs (not flat crews), persistent memory with consolidation |
@@ -297,7 +297,7 @@ result = await pipeline.run()
 
 ## Runtimes
 
-Cognitia supports 4 interchangeable runtimes. Switch with a single config change — your business code stays the same:
+Swarmline supports 4 interchangeable runtimes. Switch with a single config change — your business code stays the same:
 
 ```python
 # Built-in lightweight loop (direct multi-provider API)
@@ -327,11 +327,11 @@ export COGNITIA_RUNTIME=thin
 
 ### Runtime Feature Matrix
 
-Each runtime brings unique native strengths. Cognitia's library layer fills the gaps — so your code works the same regardless of which runtime is active.
+Each runtime brings unique native strengths. Swarmline's library layer fills the gaps — so your code works the same regardless of which runtime is active.
 
 ```
 ┌──────────────────────────┬──────────┬───────────┬───────┬──────────────┐
-│ Feature                  │ claude   │ deep      │ thin  │ Cognitia     │
+│ Feature                  │ claude   │ deep      │ thin  │ Swarmline    │
 │                          │ _sdk     │ agents    │       │ library      │
 ├──────────────────────────┼──────────┼───────────┼───────┼──────────────┤
 │ MCP Servers              │ ✅ SDK   │ ❌        │ ✅    │ ✅ bridge    │
@@ -360,7 +360,7 @@ Legend: ✅ = Supported  ⚠️ = Partial  ❌ = Not supported  — = N/A
 CP = Checkpointer  LG = LangGraph  int = interrupt_on
 ```
 
-The **Cognitia library** column shows what works with **any** runtime — memory bank, planning, DoD verification, context builder, middleware, and orchestration are all runtime-agnostic.
+The **Swarmline library** column shows what works with **any** runtime — memory bank, planning, DoD verification, context builder, middleware, and orchestration are all runtime-agnostic.
 
 ### Portable Matrix
 
@@ -370,7 +370,7 @@ The **Cognitia library** column shows what works with **any** runtime — memory
 - DeepAgents provider notes:
   - `cognitia[deepagents]` installs the baseline runtime and Anthropic-ready path.
   - OpenAI and Google paths require `langchain-openai` / `openai` or `langchain-google-genai`.
-  - Native built-ins require an explicit `native_config["backend"]`; without it Cognitia now fails fast instead of silently falling back to DeepAgents `StateBackend`.
+  - Native built-ins require an explicit `native_config["backend"]`; without it Swarmline now fails fast instead of silently falling back to DeepAgents `StateBackend`.
   - Tool-heavy Gemini built-ins remain a provider-specific limitation today; use `feature_mode="portable"` when you need the strongest parity guarantees.
 
 ### DeepAgents Portable Quick Start
@@ -411,7 +411,7 @@ Your Application
        │ depends on protocols (DIP)
        ▼
 ╔══════════════════════════════════════════════════════════╗
-║                      Cognitia                            ║
+║                      Swarmline                           ║
 ║                                                          ║
 ║  ┌─────────────────────────────────────────────────────┐ ║
 ║  │  Agent Facade                                       │ ║
@@ -559,11 +559,11 @@ Supported providers: **Anthropic** (Claude), **OpenAI** (GPT-4o, o3), **Google**
 
 ## Framework Comparison
 
-How Cognitia compares to popular agent frameworks:
+How Swarmline compares to popular agent frameworks:
 
 ```
 ┌───────────────────────────┬───────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
-│ Capability                │ Cognitia  │ LangGraph│ CrewAI   │ AutoGen  │ OpenAI   │ Claude   │
+│ Capability                │ Swarmline │ LangGraph│ CrewAI   │ AutoGen  │ OpenAI   │ Claude   │
 │                           │           │          │          │(Microsoft│ Agents   │ Code SDK │
 │                           │           │          │          │)         │ SDK      │          │
 ├───────────────────────────┼───────────┼──────────┼──────────┼──────────┼──────────┼──────────┤
@@ -590,7 +590,7 @@ How Cognitia compares to popular agent frameworks:
 Legend: ✅ Built-in  ⚠️ Partial/manual  ❌ Not available  CP = Checkpointer
 ```
 
-**When to choose Cognitia:**
+**When to choose Swarmline:**
 - You need **multi-agent teams** with governance, delegation, and hierarchical task management
 - You want **LLM-agnostic** code that works across Anthropic, OpenAI, Google, and DeepSeek
 - You need agents that **learn and remember** across sessions (episodic + procedural memory)
@@ -606,7 +606,7 @@ Legend: ✅ Built-in  ⚠️ Partial/manual  ❌ Not available  CP = Checkpointe
 ## Documentation
 
 ### Getting Started
-- [Why Cognitia?](docs/why-cognitia.md) — value proposition, design philosophy
+- [Why Swarmline?](docs/why-cognitia.md) — value proposition, design philosophy
 - [Getting Started](docs/getting-started.md) — installation, first agent, step-by-step
 - [Agent Facade API](docs/agent-facade.md) — Agent, AgentConfig, @tool, Result, Conversation, Middleware
 
