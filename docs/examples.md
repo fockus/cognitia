@@ -95,6 +95,7 @@ Default behavior:
 | 29 | `29_structured_output_pydantic.py` | Type-safe structured output with `Agent.query_structured()` |
 | 30 | `30_a2a_agent.py` | A2A protocol: expose agent as service, send tasks, streaming |
 | 32 | `32_agent_evaluation.py` | Eval framework: run suite with multiple scorers, console/JSON reports |
+| 33 | `33_eval_comparison.py` | A/B model comparison with EvalComparator |
 
 ## Picking a Starting Point
 
