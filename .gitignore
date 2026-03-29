@@ -45,3 +45,7 @@ Thumbs.db
 
 # Project-specific
 RELEASE.md
+
+# MCP server artifacts
+.playwright-mcp/
+claude-talk-to-figma-mcp/
