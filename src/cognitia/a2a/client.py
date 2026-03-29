@@ -96,7 +96,7 @@ class A2AClient:
         """
         httpx = _try_import_httpx()
 
-        task_data = {
+        task_data: dict[str, Any] = {
             "id": task_id or str(uuid.uuid4()),
             "messages": [
                 Message(role="user", parts=[TextPart(text=message)]).model_dump()

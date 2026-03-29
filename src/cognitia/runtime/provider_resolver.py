@@ -24,8 +24,8 @@ class ResolvedProvider:
 _OPENAI_COMPAT_PROVIDERS: dict[str, str | None] = {
     "openai": None,  # standard OpenAI endpoint
     "openrouter": "https://openrouter.ai/api/v1",
-    "ollama": "http://localhost:11434/v1",
-    "local": "http://localhost:8000/v1",
+    "ollama": "http://localhost:11434/v1",  # dev-only default (local Ollama)
+    "local": "http://localhost:8000/v1",  # dev-only default (local OpenAI-compat server)
     "together": "https://api.together.xyz/v1",
     "groq": "https://api.groq.com/openai/v1",
     "fireworks": "https://api.fireworks.ai/inference/v1",

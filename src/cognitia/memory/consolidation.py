@@ -37,7 +37,7 @@ class KeywordFactExtractor:
         # Count keyword co-occurrences across episodes
         word_counts: Counter[str] = Counter()
         for ep in episodes:
-            words = set()
+            words: set[str] = set()
             for text in [ep.summary, *ep.key_decisions, *ep.tags]:
                 words.update(w.lower() for w in text.split() if len(w) > 3)
             for w in words:

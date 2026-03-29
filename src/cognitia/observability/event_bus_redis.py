@@ -8,7 +8,7 @@ Usage::
 
     from cognitia.observability.event_bus_redis import RedisEventBus
 
-    bus = RedisEventBus(redis_url="redis://localhost:6379/0")
+    bus = RedisEventBus(redis_url="redis://my-redis:6379/0")
     await bus.connect()
     bus.subscribe("llm_call_end", my_callback)
     await bus.emit("llm_call_end", {"model": "sonnet"})
@@ -35,7 +35,7 @@ class RedisEventBus:
 
     def __init__(
         self,
-        redis_url: str = "redis://localhost:6379/0",
+        redis_url: str,
         *,
         channel_prefix: str = "cognitia",
     ) -> None:

@@ -130,4 +130,4 @@ class PostgresAgentRegistry:
                 text("DELETE FROM agent_registry WHERE id = :id"),
                 {"id": agent_id},
             )
-            return result.rowcount > 0
+            return result.rowcount > 0  # type: ignore[attr-defined]

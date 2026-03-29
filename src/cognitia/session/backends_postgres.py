@@ -58,7 +58,7 @@ class PostgresSessionBackend:
                 text("DELETE FROM sessions WHERE key = :key"),
                 {"key": key},
             )
-            return result.rowcount > 0
+            return result.rowcount > 0  # type: ignore[attr-defined]
 
     async def list_keys(self) -> list[str]:
         async with self._session() as session:

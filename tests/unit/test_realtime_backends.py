@@ -61,12 +61,12 @@ class TestEventBusConstructors:
 
     def test_redis_custom_prefix(self) -> None:
         from cognitia.observability.event_bus_redis import RedisEventBus
-        bus = RedisEventBus(channel_prefix="myapp")
+        bus = RedisEventBus(redis_url="redis://test:6379/0", channel_prefix="myapp")
         assert bus is not None
 
     def test_nats_custom_prefix(self) -> None:
         from cognitia.observability.event_bus_nats import NatsEventBus
-        bus = NatsEventBus(subject_prefix="myapp")
+        bus = NatsEventBus(nats_url="nats://test:4222", subject_prefix="myapp")
         assert bus is not None
 
 
@@ -75,7 +75,7 @@ class TestLocalDispatchWithoutConnection:
 
     async def test_redis_local_subscribe_emit(self) -> None:
         from cognitia.observability.event_bus_redis import RedisEventBus
-        bus = RedisEventBus()
+        bus = RedisEventBus(redis_url="redis://test:6379/0")
         received: list[dict] = []
         bus.subscribe("test.event", lambda d: received.append(d))
         # emit without connect — local dispatch only, no Redis publish
@@ -85,7 +85,7 @@ class TestLocalDispatchWithoutConnection:
 
     async def test_nats_local_subscribe_emit(self) -> None:
         from cognitia.observability.event_bus_nats import NatsEventBus
-        bus = NatsEventBus()
+        bus = NatsEventBus(nats_url="nats://test:4222")
         received: list[dict] = []
         bus.subscribe("test.event", lambda d: received.append(d))
         await bus._dispatch_local("test.event", {"key": "val"})
@@ -93,7 +93,7 @@ class TestLocalDispatchWithoutConnection:
 
     async def test_redis_unsubscribe(self) -> None:
         from cognitia.observability.event_bus_redis import RedisEventBus
-        bus = RedisEventBus()
+        bus = RedisEventBus(redis_url="redis://test:6379/0")
         received: list[dict] = []
         sub_id = bus.subscribe("test.event", lambda d: received.append(d))
         bus.unsubscribe(sub_id)
@@ -102,7 +102,7 @@ class TestLocalDispatchWithoutConnection:
 
     async def test_nats_unsubscribe(self) -> None:
         from cognitia.observability.event_bus_nats import NatsEventBus
-        bus = NatsEventBus()
+        bus = NatsEventBus(nats_url="nats://test:4222")
         received: list[dict] = []
         sub_id = bus.subscribe("test.event", lambda d: received.append(d))
         bus.unsubscribe(sub_id)

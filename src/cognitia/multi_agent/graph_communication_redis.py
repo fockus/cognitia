@@ -76,7 +76,9 @@ class RedisGraphCommunication:
             "created_at": str(msg.created_at),
             "metadata": json.dumps(msg.metadata) if msg.metadata else "{}",
         }
-        # Add to inbox
+        # Add to inbox (to_agent_id=None means broadcast — skip direct inbox)
+        if msg.to_agent_id is None:
+            return
         await self._redis.xadd(
             self._inbox_key(msg.to_agent_id), fields, maxlen=self._max_len,
         )

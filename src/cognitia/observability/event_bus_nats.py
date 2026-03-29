@@ -8,7 +8,7 @@ Usage::
 
     from cognitia.observability.event_bus_nats import NatsEventBus
 
-    bus = NatsEventBus(nats_url="nats://localhost:4222")
+    bus = NatsEventBus(nats_url="nats://my-nats:4222")
     await bus.connect()
     bus.subscribe("llm_call_end", my_callback)
     await bus.emit("llm_call_end", {"model": "sonnet"})
@@ -35,7 +35,7 @@ class NatsEventBus:
 
     def __init__(
         self,
-        nats_url: str = "nats://localhost:4222",
+        nats_url: str,
         *,
         subject_prefix: str = "cognitia",
     ) -> None:

@@ -14,10 +14,9 @@ import inspect
 import time
 import uuid
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Callable, Awaitable
+from typing import TYPE_CHECKING, Any, Callable, Awaitable, cast
 
 if TYPE_CHECKING:
-    from cognitia.protocols.agent_graph import AgentGraphQuery, AgentGraphStore
     from cognitia.protocols.graph_task import GraphTaskBoard
 
 from cognitia.multi_agent.graph_context import GraphContextBuilder
@@ -54,7 +53,7 @@ class DefaultGraphOrchestrator:
 
     def __init__(
         self,
-        graph: AgentGraphStore | AgentGraphQuery | Any,
+        graph: Any,  # AgentGraphStore + AgentGraphQuery in practice
         task_board: GraphTaskBoard | Any,
         agent_runner: AgentRunner | ContextAwareRunner,
         *,
@@ -320,9 +319,11 @@ class DefaultGraphOrchestrator:
 
                         # Dual dispatch: new runner gets full context, legacy gets 4 strings
                         if self._context_aware:
-                            result = await self._runner(exec_ctx)
+                            ctx_runner = cast(ContextAwareRunner, self._runner)
+                            result = await ctx_runner(exec_ctx)
                         else:
-                            result = await self._runner(
+                            legacy_runner = cast(AgentRunner, self._runner)
+                            result = await legacy_runner(
                                 agent_id, task_id, goal, exec_ctx.system_prompt,
                             )
 

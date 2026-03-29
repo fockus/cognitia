@@ -50,7 +50,7 @@ class CognitiaA2AAdapter:
         *,
         name: str = "Cognitia Agent",
         description: str | None = None,
-        url: str = "http://localhost:8000",
+        url: str,
         skills: list[AgentSkill] | None = None,
         version: str = "1.0",
     ) -> None:

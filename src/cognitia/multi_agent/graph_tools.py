@@ -8,12 +8,7 @@ work, or escalate issues up the chain of command.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from cognitia.protocols.agent_graph import AgentGraphStore
-    from cognitia.protocols.graph_orchestrator import GraphOrchestrator
-    from cognitia.protocols.graph_task import GraphTaskBoard
+from typing import Any
 
 from cognitia.agent.tool import ToolDefinition, tool
 from cognitia.multi_agent.graph_orchestrator_types import DelegationRequest
@@ -21,9 +16,9 @@ from cognitia.multi_agent.graph_types import AgentNode
 
 
 def create_graph_tools(
-    graph: AgentGraphStore | Any,
-    task_board: GraphTaskBoard | Any,
-    orchestrator: GraphOrchestrator | Any,
+    graph: Any,  # AgentGraphStore + AgentGraphQuery in practice
+    task_board: Any,  # GraphTaskBoard
+    orchestrator: Any,  # GraphOrchestrator
     *,
     approval_gate: Any | None = None,
     communication: Any | None = None,
@@ -198,7 +193,7 @@ def create_graph_tools(
         )
 
     return [
-        hire_agent.__tool_definition__,
-        delegate_task.__tool_definition__,
-        escalate.__tool_definition__,
+        hire_agent.__tool_definition__,  # type: ignore[attr-defined]
+        delegate_task.__tool_definition__,  # type: ignore[attr-defined]
+        escalate.__tool_definition__,  # type: ignore[attr-defined]
     ]

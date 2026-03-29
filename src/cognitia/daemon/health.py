@@ -40,7 +40,7 @@ class HealthServer:
             status_provider=daemon.get_status,
             on_pause=daemon.pause,
             on_resume=daemon.resume,
-            auth_token="my-secret-token",
+            auth_token="<your-secret-token>",
         )
         await server.start()
         ...

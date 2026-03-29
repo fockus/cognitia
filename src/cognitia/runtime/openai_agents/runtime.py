@@ -116,7 +116,7 @@ class OpenAIAgentsRuntime:
         try:
             result = Runner.run_streamed(
                 starting_agent=agent,
-                input=agent_input,
+                input=agent_input,  # type: ignore[arg-type]
                 max_turns=self._agents_config.max_turns,
             )
             async for event in result.stream_events():
@@ -228,7 +228,7 @@ class OpenAIAgentsRuntime:
             return [
                 MCPServerStdio(
                     name="Codex CLI",
-                    params=params,
+                    params=params,  # type: ignore[arg-type]
                     client_session_timeout_seconds=300,
                 )
             ]

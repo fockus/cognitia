@@ -204,12 +204,12 @@ class RuntimeAdapter:
     async def set_permission_mode(self, mode: str) -> None:
         """Set permission mode."""
         client = self._require_client()
-        await client.set_permission_mode(mode)
+        await client.set_permission_mode(mode)  # type: ignore[arg-type]
 
     async def get_mcp_status(self) -> dict[str, Any]:
         """Get mcp status."""
         client = self._require_client()
-        return await client.get_mcp_status()
+        return await client.get_mcp_status()  # type: ignore[return-value]
 
     async def rewind_files(self, user_message_id: str) -> None:
         """Rewind files."""
