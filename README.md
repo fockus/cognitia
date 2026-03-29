@@ -1,6 +1,6 @@
 # Cognitia
 
-**Production-grade Python framework for multi-agent AI systems** — hierarchical agent graphs, knowledge banks, pluggable runtimes, and LLM-agnostic architecture.
+**Provider-agnostic Python framework for AI agents** — from a single assistant to hierarchical multi-agent systems.
 
 [![PyPI version](https://img.shields.io/pypi/v/cognitia.svg)](https://pypi.org/project/cognitia/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
@@ -8,21 +8,29 @@
 [![Tests](https://img.shields.io/badge/tests-3200%2B%20passed-brightgreen.svg)](https://github.com/fockus/cognitia)
 [![Docs](https://img.shields.io/badge/docs-readthedocs-blue.svg)](https://cognitia.readthedocs.io/)
 
+> Pluggable runtimes (Anthropic, OpenAI, Google, DeepSeek), persistent memory, agent graphs with governance, knowledge banks, pipeline execution, and Clean Architecture — all in one library.
+
 ## Why Cognitia?
 
-Modern AI applications need more than a single agent calling tools. They need **teams of agents** that coordinate, delegate, share knowledge, and recover from failures — all while staying provider-agnostic and production-safe.
+Cognitia covers the full spectrum: **simple single-agent assistants** that you build in 3 lines, and **complex multi-agent systems** with org charts, task delegation, and shared knowledge — using the same API.
 
-**Cognitia is built for multi-agent orchestration from the ground up:**
+**For simple agents:**
+- 3-line quick start — `Agent` + `AgentConfig` + `query()`
+- Swap LLM provider (Anthropic, OpenAI, Google, DeepSeek) with one config change
+- Built-in tools, middleware, structured output, streaming
+- InMemory / SQLite / PostgreSQL storage — pick what fits
 
-- **Agent Graph System** — build hierarchical agent organizations with governance, delegation, and inter-agent communication across 5 backends (InMemory, SQLite, Postgres, Redis, NATS)
-- **Knowledge Bank** — universal structured knowledge storage shared across agents with search, consolidation, and verification
-- **Pipeline Engine** — multi-phase execution with budget gates, quality checks, and automatic rollback
-- **Memory that learns** — episodic + procedural + consolidation pipeline: agents remember experiences and learn tool patterns
-- **4 pluggable runtimes** — Anthropic, OpenAI, Google, DeepSeek through `thin`, `claude_sdk`, `deepagents`, or `cli` — swap with one config line
-- **Human-in-the-Loop** — approval patterns at tool, plan, and output level
-- **Default-secure** — deny-all tool policy, sandboxed execution, input validation, SSRF protection
+**For multi-agent systems:**
+- Agent Graph — hierarchical organizations with governance and delegation
+- Knowledge Bank — structured knowledge shared across agents with search
+- Pipeline Engine — multi-phase execution with budget gates and quality checks
+- Memory that learns — episodic + procedural + consolidation: agents remember and improve
+- Human-in-the-Loop — approval patterns at tool, plan, and output level
 
-Unlike monolithic agent frameworks, Cognitia follows **Clean Architecture** with 20+ ISP-compliant protocols. Swap any component — runtime, memory, communication backend — without touching business code.
+**For both:**
+- 4 pluggable runtimes — `thin`, `claude_sdk`, `deepagents`, `cli` — same business code
+- Clean Architecture with 20+ ISP-compliant protocols — swap any component without touching the rest
+- Default-secure — deny-all tool policy, sandboxed execution, input validation
 
 ### Key Differentiators
 
@@ -82,7 +90,7 @@ Important: `deepagents` does not use `openrouter:*` as a native provider prefix.
 
 ## Quick Start
 
-### One-shot query (3 lines)
+### Simple agent (3 lines)
 
 ```python
 from cognitia import Agent, AgentConfig
@@ -163,7 +171,11 @@ result = await agent.query("Hello")
 print(tracker.total_cost_usd)  # 0.002
 ```
 
-### Agent graph (multi-agent hierarchy)
+### Scale up: multi-agent systems
+
+When a single agent isn't enough, scale to teams:
+
+### Agent graph (hierarchical teams)
 
 ```python
 from cognitia.multi_agent.graph_builder import GraphBuilder
