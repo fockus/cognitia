@@ -336,3 +336,20 @@
 - Общая оценка: 5.6/10 (NEEDS_CHANGES)
 - Отчёт: reports/2026-03-29_code-audit_uncommitted.md
 - Приоритет: Tier 1 фиксы (6 CRITICAL) → Tier 2 (SERIOUS) → Tier 3 (warnings)
+
+## 2026-03-29 (сессия 2)
+
+- Полный аудит + code review библиотеки: 86 findings → все critical/serious исправлены
+- Track A (Graph Agent Config): 5 фаз — AgentExecutionContext, skills/MCP inheritance, dual-dispatch runner, governance
+- Track B (Knowledge Bank): 4 фазы — domain types, 5 ISP protocols, multi-backend storage, tools + consolidation
+- Code review graph+KB: S1 (delegate governance) + S2 (root task tracking) исправлены, S3-W7 → BACKLOG
+- Архитектурный отчёт: reports/2026-03-29_architecture_graph-agents-and-knowledge-bank.md
+- Task Progress + BLOCKED + Workflow Stages (4 фазы):
+  - TaskStatus.BLOCKED с обязательным blocked_reason
+  - progress: float с авто-расчётом из subtasks (_propagate_parent заменил _propagate_completion)
+  - stage: str для пользовательских workflow + WorkflowConfig/WorkflowStage domain types
+  - GraphTaskBlocker protocol (block_task/unblock_task) во всех 3 backend'ах
+  - DelegationRequest.stage → GraphTaskItem.stage passthrough
+- Коммиты: a33afa6..163a98f (7 коммитов)
+- Тесты: 3770 passed, ruff clean
+- Отчёты: reports/2026-03-29_review_*.md, reports/2026-03-29_feature_task-progress-stages-blocked.md

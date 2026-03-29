@@ -117,11 +117,19 @@
 - ✅ Wave 5: SKILL.md + 10 references + integration configs (claude-code/codex/opencode) + docs (4 files)
 - ✅ Wave 6: 7 E2E Use Case Tests (31 tests) + docs/use-cases.md update
 
-## Graph Agents + Knowledge Bank Review (2026-03-29)
+## Graph Agents + Knowledge Bank (2026-03-29)
+
+### Code Review Fixes
 - ✅ S1: delegate_task governance enforcement (check_delegate_allowed подключён)
 - ✅ S2: root task execution tracking (AgentExecution в start())
 - ⬜ S3: Race condition DefaultKnowledgeStore index (→ BACKLOG)
 - ⬜ S4-W7: Minor findings (→ BACKLOG)
+
+### Task Progress + BLOCKED + Workflow Stages
+- ✅ Phase 1: TaskStatus.BLOCKED + progress/stage/blocked_reason fields + WorkflowConfig
+- ✅ Phase 2: Serialization (SQLite/Postgres) + block_task/unblock_task в 3 backend'ах
+- ✅ Phase 3: Progress auto-calc с рекурсивной propagation (_propagate_parent)
+- ✅ Phase 4: Stage в delegate_task tool + exports WorkflowConfig/WorkflowStage
 
 ## Code Audit Fixes (2026-03-29)
 ⬜ C1: hmac.compare_digest в health.py

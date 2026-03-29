@@ -2,7 +2,12 @@
 
 ## Текущий фокус
 
-**Готово** — unified release-risk remediation backlog закрыт и полностью проверифицирован. Дополнительно к прошлому remediation закрыты persistence snapshot/keying defects (`SessionKey`, `InMemorySessionBackend`, `SqliteSessionBackend`, `InMemoryMemoryProvider`), Claude SDK tool-result metadata parity и dict-style portable `mcp_servers`. Follow-up hardening pass поверх текущего dirty worktree закрыл error-history persistence в `Conversation`, exception normalization в `Conversation`/`SessionManager`, `CliAgentRuntime.cancel()` semantics и актуализировал regression coverage. Следующий практический фокус — release-tail: финализация `CHANGELOG`, обновление Getting Started / mkdocs и version bump `0.5.0 -> 1.0.0-core`.
+**Graph Agents + Knowledge Bank + Task Enhancements** — завершены 3 крупных блока работ:
+1. Graph Agent Config (5 фаз): AgentExecutionContext, skills/MCP inheritance, dual-dispatch runner, builder API, governance (capabilities + limits)
+2. Knowledge Bank (4 фазы): domain types, ISP protocols, multi-backend storage (FS/SQLite/Postgres), tools + consolidation
+3. Task Progress + Workflow (4 фазы): TaskStatus.BLOCKED, progress auto-calc, extensible stages (WorkflowConfig), block/unblock в 3 backend'ах
+
+3770 тестов pass, ruff clean. Pending: version bump 0.5.0 → 1.0.0, PyPI release.
 
 ## Версии
 
@@ -29,7 +34,10 @@
 
 *Enterprise extras:*
 - ✅ Phase 9 MVP: Agent-as-tool + simple task queue + simple agent registry
-- ⬜ Phase 9 Full: Enterprise tasks + hierarchy + delegation + scheduler
+- ✅ Graph Agents: AgentExecutionContext, governance, skills/MCP inheritance, dual-dispatch runner
+- ✅ Knowledge Bank: 5 ISP protocols, multi-backend (FS/SQLite/Postgres), tools, consolidation
+- ✅ Task Enhancements: BLOCKED status, progress auto-calc, extensible workflow stages
+- ⬜ Phase 9 Full: Enterprise scheduler, advanced task policies
 
 *Platform:*
 - ✅ Phase 10A: CLI Agent Runtime (CliAgentRuntime, NdjsonParser, registry integration)
@@ -42,13 +50,13 @@
 
 ## Тесты
 
-- 2524 passed, 11 skipped, 5 deselected, 0 failed
-- Source files: 199 .py files (`mypy src/cognitia/`)
-- Coverage: 89% overall
-- Phase 6: 103 new tests (unit + integration)
-- Phase 7: 83 new tests (unit + integration)
-- Phase 8: ~120 new tests (unit + integration)
-- Phase 9 MVP + 10A: ~175 new tests (unit + integration)
+- 3770 passed, 5 deselected, 0 failed
+- Source files: ~220 .py files
+- Coverage: 89%+ overall
+- Graph Agents (A1-A5): ~102 new tests
+- Knowledge Bank (B1-B4): ~140 new tests
+- Task Progress + BLOCKED + Stages: ~50 new tests
+- Previous phases: ~480 tests (6-8, 9MVP, 10A)
 
 ## Verification Notes
 
