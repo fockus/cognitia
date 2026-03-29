@@ -492,3 +492,88 @@ class TestGovernanceInGraphTools:
             name="Dev", role="engineer", parent_id="ceo",
         )
         assert "hired" in result.lower()
+
+    async def test_delegate_blocked_by_governance(self, org_with_caps) -> None:
+        """delegate_task must enforce can_delegate via governance."""
+        from unittest.mock import AsyncMock
+
+        from cognitia.multi_agent.graph_governance import GraphGovernanceConfig
+        from cognitia.multi_agent.graph_task_board import InMemoryGraphTaskBoard
+        from cognitia.multi_agent.graph_tools import create_graph_tools
+
+        # Add agent with can_delegate=False
+        await org_with_caps.add_node(AgentNode(
+            id="restricted", name="Restricted", role="worker", parent_id="ceo",
+            capabilities=AgentCapabilities(can_delegate=False),
+        ))
+        tools = create_graph_tools(
+            graph=org_with_caps,
+            task_board=InMemoryGraphTaskBoard(),
+            orchestrator=AsyncMock(),
+            governance=GraphGovernanceConfig(),
+        )
+        delegate = next(t for t in tools if t.name == "graph_delegate_task")
+        result = await delegate.handler(
+            agent_id="cto", goal="Do work", caller_agent_id="restricted",
+        )
+        assert "governance denied" in result.lower()
+
+    async def test_delegate_allowed_by_governance(self, org_with_caps) -> None:
+        """delegate_task with can_delegate=True should succeed."""
+        from unittest.mock import AsyncMock
+
+        from cognitia.multi_agent.graph_governance import GraphGovernanceConfig
+        from cognitia.multi_agent.graph_task_board import InMemoryGraphTaskBoard
+        from cognitia.multi_agent.graph_tools import create_graph_tools
+
+        tools = create_graph_tools(
+            graph=org_with_caps,
+            task_board=InMemoryGraphTaskBoard(),
+            orchestrator=AsyncMock(),
+            governance=GraphGovernanceConfig(),
+        )
+        delegate = next(t for t in tools if t.name == "graph_delegate_task")
+        result = await delegate.handler(
+            agent_id="cto", goal="Do work", caller_agent_id="ceo",
+        )
+        assert "delegated" in result.lower()
+
+    async def test_delegate_globally_disabled(self, org_with_caps) -> None:
+        """delegate_task denied when allow_dynamic_delegation=False."""
+        from unittest.mock import AsyncMock
+
+        from cognitia.multi_agent.graph_governance import GraphGovernanceConfig
+        from cognitia.multi_agent.graph_task_board import InMemoryGraphTaskBoard
+        from cognitia.multi_agent.graph_tools import create_graph_tools
+
+        tools = create_graph_tools(
+            graph=org_with_caps,
+            task_board=InMemoryGraphTaskBoard(),
+            orchestrator=AsyncMock(),
+            governance=GraphGovernanceConfig(allow_dynamic_delegation=False),
+        )
+        delegate = next(t for t in tools if t.name == "graph_delegate_task")
+        result = await delegate.handler(
+            agent_id="cto", goal="Do work", caller_agent_id="ceo",
+        )
+        assert "governance denied" in result.lower()
+
+    async def test_delegate_without_caller_skips_governance(self, org_with_caps) -> None:
+        """Backward compat: no caller_agent_id skips governance check."""
+        from unittest.mock import AsyncMock
+
+        from cognitia.multi_agent.graph_governance import GraphGovernanceConfig
+        from cognitia.multi_agent.graph_task_board import InMemoryGraphTaskBoard
+        from cognitia.multi_agent.graph_tools import create_graph_tools
+
+        tools = create_graph_tools(
+            graph=org_with_caps,
+            task_board=InMemoryGraphTaskBoard(),
+            orchestrator=AsyncMock(),
+            governance=GraphGovernanceConfig(),
+        )
+        delegate = next(t for t in tools if t.name == "graph_delegate_task")
+        result = await delegate.handler(
+            agent_id="cto", goal="Do work",
+        )
+        assert "delegated" in result.lower()

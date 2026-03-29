@@ -117,6 +117,12 @@
 - ✅ Wave 5: SKILL.md + 10 references + integration configs (claude-code/codex/opencode) + docs (4 files)
 - ✅ Wave 6: 7 E2E Use Case Tests (31 tests) + docs/use-cases.md update
 
+## Graph Agents + Knowledge Bank Review (2026-03-29)
+- ✅ S1: delegate_task governance enforcement (check_delegate_allowed подключён)
+- ✅ S2: root task execution tracking (AgentExecution в start())
+- ⬜ S3: Race condition DefaultKnowledgeStore index (→ BACKLOG)
+- ⬜ S4-W7: Minor findings (→ BACKLOG)
+
 ## Code Audit Fixes (2026-03-29)
 ⬜ C1: hmac.compare_digest в health.py
 ⬜ C2: FTS5 sanitization в procedural_sqlite.py

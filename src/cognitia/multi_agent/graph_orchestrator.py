@@ -133,6 +133,10 @@ class DefaultGraphOrchestrator:
 
         # Launch root agent execution
         run_state = self._runs[run_id]
+        run_state.executions.append(AgentExecution(
+            agent_id=root.id,
+            task_id=root_task_id,
+        ))
         task = asyncio.create_task(
             self._execute_agent(root.id, root_task_id, goal, self._max_retries, run_state)
         )

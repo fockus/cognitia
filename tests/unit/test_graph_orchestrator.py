@@ -257,6 +257,19 @@ class TestGetStatus:
         status = await orch.get_status(run_id)
         assert status.completed_count >= 1
 
+    async def test_status_includes_root_execution(self, make_orchestrator) -> None:
+        """Root agent execution must appear in status.executions."""
+        runner = AsyncMock(return_value="Done")
+        orch = make_orchestrator(agent_runner=runner)
+        run_id = await orch.start("Build")
+        await asyncio.sleep(0.1)
+        status = await orch.get_status(run_id)
+        # Root task must be tracked in executions
+        assert len(status.executions) >= 1
+        root_exec = status.executions[0]
+        assert root_exec.agent_id == "ceo"
+        assert root_exec.task_id == status.root_task_id
+
     async def test_status_unknown_run_raises(self, make_orchestrator) -> None:
         orch = make_orchestrator()
         with pytest.raises(KeyError):

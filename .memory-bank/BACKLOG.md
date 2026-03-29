@@ -593,6 +593,50 @@ Allowlist/denylist по caller identity — первая линия защиты
 
 ---
 
+### Review findings — Graph Agents + Knowledge Bank (2026-03-29)
+
+**Источник**: Code review `.memory-bank/reports/2026-03-29_review_graph-agents-knowledge-bank.md`
+
+**S3: Race condition в DefaultKnowledgeStore index при concurrent saves**
+- Приоритет: Medium
+- Файл: `memory_bank/knowledge_store.py:113-130`
+- Два concurrent `save()` могут потерять index entry. Fix: in-memory кеш с asyncio.Lock или atomic read-modify-write.
+
+**S4: InMemoryKnowledgeSearcher ломает инкапсуляцию через store._entries**
+- Приоритет: Low
+- Файл: `memory_bank/knowledge_inmemory.py:66`
+- Добавить public итератор в InMemoryKnowledgeStore.
+
+**W1: Лишний getattr для capabilities**
+- Файл: `multi_agent/graph_context.py:150`
+- `getattr(node, "capabilities", None)` → `node.capabilities`
+
+**W2: time.strftime() без timezone в 5 модулях Knowledge Bank**
+- Файлы: knowledge_store, knowledge_search, knowledge_inmemory, knowledge_consolidation
+- Использовать `datetime.now(UTC).strftime()` для согласованных timestamps.
+
+**W3: DRY — index JSON serialization дублируется**
+- Файлы: `knowledge_store.py` + `knowledge_search.py`
+- Вынести IndexEntry ↔ JSON в shared helper.
+
+**W4: DRY — IndexEntry construction дублируется в InMemory**
+- Файл: `knowledge_inmemory.py`
+- 3 места строят IndexEntry из KnowledgeEntry одинаково.
+
+**W5: DefaultKnowledgeStore.exists() читает весь файл**
+- Файл: `knowledge_store.py:62-65`
+- Для больших файлов wasteful. Альтернатива: проверять через list_files или добавить exists в MemoryBankProvider.
+
+**W6: frontmatter.py не обрабатывает BOM и leading whitespace**
+- Файл: `frontmatter.py:29`
+- `text.startswith("---")` ломается с UTF-8 BOM.
+
+**W7: Redundant exception types в wait_for_task**
+- Файл: `graph_orchestrator.py:215`
+- `except (TimeoutError, asyncio.CancelledError, Exception)` → `except Exception`.
+
+---
+
 ## ADR
 
 - **ADR-001**: OpenAI Agents SDK — REJECTED (пересмотреть после v1.0). См. `notes/2026-03-17_ADR-001_openai-agents-sdk.md`

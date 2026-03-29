@@ -115,6 +115,7 @@ def create_graph_tools(
         agent_id: str,
         goal: str,
         parent_task_id: str = "",
+        caller_agent_id: str = "",
     ) -> str:
         """Delegate a task to an agent via the orchestrator.
 
@@ -122,8 +123,19 @@ def create_graph_tools(
             agent_id: Target agent to assign the task to.
             goal: Description of what the agent should accomplish.
             parent_task_id: Optional parent task for hierarchy.
+            caller_agent_id: Agent performing the delegation (for governance).
         """
-        # Validate agent exists
+        # Governance check on the caller
+        if governance is not None and caller_agent_id:
+            from cognitia.multi_agent.graph_governance import check_delegate_allowed
+
+            caller = await graph.get_node(caller_agent_id)
+            if caller is not None:
+                error = check_delegate_allowed(governance, caller)
+                if error:
+                    return f"Governance denied: {error}"
+
+        # Validate target agent exists
         node = await graph.get_node(agent_id)
         if node is None:
             return f"Error: agent '{agent_id}' not found in graph."
