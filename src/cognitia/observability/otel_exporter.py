@@ -72,8 +72,9 @@ class OTelExporter:
 
     def __init__(
         self,
-        tracer_provider: Any = None,
+        bus: Any = None,
         *,
+        tracer_provider: Any = None,
         service_name: str = "cognitia",
         runtime_name: str | None = None,
         session_id: str | None = None,
@@ -88,30 +89,51 @@ class OTelExporter:
         else:
             self._tracer = trace.get_tracer(service_name)
 
+        self._bus = bus
         self._runtime_name = runtime_name
         self._session_id = session_id
         self._active_spans: dict[str, Any] = {}  # key -> OTel Span
         self._sub_ids: list[str] = []
 
-    def attach(self, event_bus: Any) -> None:
-        """Subscribe to EventBus events."""
+    def attach(self, event_bus: Any = None) -> None:
+        """Subscribe to EventBus events.
+
+        Parameters
+        ----------
+        event_bus:
+            EventBus to subscribe to. If ``None``, uses the bus passed
+            to the constructor.
+        """
+        bus = event_bus or self._bus
+        if bus is None:
+            raise ValueError("No EventBus provided to attach()")
+        self._bus = bus
         self._sub_ids.append(
-            event_bus.subscribe("llm_call_start", self._on_llm_start)
+            bus.subscribe("llm_call_start", self._on_llm_start)
         )
         self._sub_ids.append(
-            event_bus.subscribe("llm_call_end", self._on_llm_end)
+            bus.subscribe("llm_call_end", self._on_llm_end)
         )
         self._sub_ids.append(
-            event_bus.subscribe("tool_call_start", self._on_tool_start)
+            bus.subscribe("tool_call_start", self._on_tool_start)
         )
         self._sub_ids.append(
-            event_bus.subscribe("tool_call_end", self._on_tool_end)
+            bus.subscribe("tool_call_end", self._on_tool_end)
         )
 
-    def detach(self, event_bus: Any) -> None:
-        """Unsubscribe from all events and end any lingering spans."""
+    def detach(self, event_bus: Any = None) -> None:
+        """Unsubscribe from all events and end any lingering spans.
+
+        Parameters
+        ----------
+        event_bus:
+            EventBus to unsubscribe from. If ``None``, uses the stored bus.
+        """
+        bus = event_bus or self._bus
+        if bus is None:
+            return
         for sid in self._sub_ids:
-            event_bus.unsubscribe(sid)
+            bus.unsubscribe(sid)
         self._sub_ids.clear()
         for span in self._active_spans.values():
             try:
