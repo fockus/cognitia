@@ -60,7 +60,6 @@ def _ep(
 
 
 class TestEpisodicContract:
-
     async def test_store_and_count(self, store) -> None:
         assert await store.count() == 0
         await store.store(_ep("e1"))
@@ -141,3 +140,39 @@ class TestEpisodicContract:
 
     async def test_implements_protocol(self, store) -> None:
         assert isinstance(store, EpisodicMemory)
+
+    async def test_episodic_concurrent_store_recall(self, store) -> None:
+        """Concurrent store() and recall() must not raise threading errors."""
+        import asyncio
+
+        episodes = [
+            _ep(f"conc-{i}", summary=f"Concurrent episode {i}") for i in range(20)
+        ]
+
+        # Store all concurrently
+        await asyncio.gather(*[store.store(ep) for ep in episodes])
+
+        # Recall concurrently while storing more
+        extra_stores = [
+            store.store(_ep(f"extra-{i}", summary=f"Extra episode {i}"))
+            for i in range(10)
+        ]
+        recalls = [store.recall("episode") for _ in range(10)]
+        counts = [store.count() for _ in range(5)]
+        recents = [store.recall_recent(5) for _ in range(5)]
+
+        results = await asyncio.gather(
+            *extra_stores,
+            *recalls,
+            *counts,
+            *recents,
+            return_exceptions=True,
+        )
+
+        # No exceptions should have been raised
+        exceptions = [r for r in results if isinstance(r, Exception)]
+        assert exceptions == [], f"Concurrent ops raised: {exceptions}"
+
+        # All episodes should be stored
+        final_count = await store.count()
+        assert final_count == 30  # 20 initial + 10 extra

@@ -254,9 +254,10 @@ class TestTracingSubscriber:
         await bus.emit("llm_call_start", {"model": "test-model"})
         await bus.emit("llm_call_end", {"model": "test-model", "tokens": 100})
 
-        # Verify span was created and ended (tracer tracks internally)
-        assert len(tracer._spans) == 1
-        span = list(tracer._spans.values())[0]
+        # Verify span was created and completed (active spans cleared, completed tracked)
+        assert len(tracer._spans) == 0
+        assert len(tracer._completed_spans) == 1
+        span = tracer._completed_spans[0]
         assert span["name"] == "llm_call"
         assert span["ended"]
 
@@ -269,8 +270,9 @@ class TestTracingSubscriber:
         await bus.emit("tool_call_start", {"name": "search"})
         await bus.emit("tool_call_end", {"name": "search", "ok": True})
 
-        assert len(tracer._spans) == 1
-        span = list(tracer._spans.values())[0]
+        assert len(tracer._spans) == 0
+        assert len(tracer._completed_spans) == 1
+        span = tracer._completed_spans[0]
         assert span["name"] == "tool_call"
         assert span["ended"]
 
@@ -285,6 +287,7 @@ class TestTracingSubscriber:
         await bus.emit("llm_call_end", {"model": "m1"})
         await bus.emit("tool_call_end", {"name": "t1"})
 
-        assert len(tracer._spans) == 2
-        names = {s["name"] for s in tracer._spans.values()}
+        assert len(tracer._spans) == 0
+        assert len(tracer._completed_spans) == 2
+        names = {s["name"] for s in tracer._completed_spans}
         assert names == {"llm_call", "tool_call"}
