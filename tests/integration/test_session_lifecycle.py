@@ -1,6 +1,7 @@
 """Integration: SessionManager + Rehydrator + RoleRouter + ModelPolicy - zhiznotnnyy tsikl sessions. Scenario: createdie sessions -> opredelenie roli -> selection models -> rehydration.
 """
 
+import warnings
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
@@ -121,7 +122,10 @@ class TestSessionLifecycle:
         mgr = InMemorySessionManager()
         key = SessionKey("u1", "t1")
         adapter = _mock_adapter()
-        state = SessionState(key=key, adapter=adapter, role_id="coach")
+        # Suppress DeprecationWarning — intentional legacy-path testing
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            state = SessionState(key=key, adapter=adapter, role_id="coach")
 
         # Create
         mgr.register(state)

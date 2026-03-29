@@ -189,6 +189,7 @@ packages = ["src/cognitia"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/cognitia/runtime/models.yaml" = "cognitia/runtime/models.yaml"
+"src/cognitia/py.typed" = "cognitia/py.typed"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

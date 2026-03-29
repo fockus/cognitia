@@ -1,6 +1,7 @@
 """Tests for InMemorySessionManager - upravlenie sessionmi agent."""
 
 import time
+import warnings
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
@@ -37,7 +38,10 @@ def _make_state(
 ) -> SessionState:
     key = SessionKey(user_id=user_id, topic_id=topic_id)
     adapter = _make_adapter(connected=connected, events=events)
-    return SessionState(key=key, adapter=adapter, role_id=role_id)
+    # Suppress DeprecationWarning — this is intentional legacy-path testing
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return SessionState(key=key, adapter=adapter, role_id=role_id)
 
 
 class _FakeRuntime:
