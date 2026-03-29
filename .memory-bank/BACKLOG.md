@@ -550,9 +550,9 @@ Allowlist/denylist по caller identity — первая линия защиты
 
 ---
 
-### IDEA-028: RAG / Retriever Protocol (2026-03-18)
+### IDEA-028: RAG / Retriever Protocol + Vector Store Connectors (2026-03-18)
 
-**Приоритет**: Medium
+**Приоритет**: **High** (upgraded 2026-03-30, confirmed by user)
 **Сложность**: Low
 **Источник**: Архитектурный review v3 (80% production agents use RAG)
 
@@ -569,9 +569,9 @@ Allowlist/denylist по caller identity — первая линия защиты
 
 ---
 
-### IDEA-029: `cognitia init` CLI scaffolding (2026-03-18)
+### IDEA-029: `swarmline create` CLI scaffolding (2026-03-18)
 
-**Приоритет**: Medium
+**Приоритет**: **High** (upgraded 2026-03-30, confirmed by user)
 **Сложность**: Low
 **Источник**: Архитектурный review v3 (Mastra/CrewAI имеют, у нас нет)
 
@@ -581,9 +581,9 @@ Allowlist/denylist по caller identity — первая линия защиты
 
 ---
 
-### IDEA-030: LiteLLM Adapter — 100+ providers (2026-03-18)
+### IDEA-030: LiteLLM Adapter — 200+ providers (2026-03-18)
 
-**Приоритет**: Low
+**Приоритет**: **High** (upgraded 2026-03-30, confirmed by user)
 **Сложность**: Low
 **Источник**: Архитектурный review v3
 
@@ -637,10 +637,179 @@ Allowlist/denylist по caller identity — первая линия защиты
 
 ---
 
+---
+
+### IDEA-031: Teachability — persistent learning via vector DB (2026-03-30)
+
+**Приоритет**: Medium
+**Сложность**: Medium
+**Источник**: Competitive analysis (AutoGen)
+
+Агент запоминает коррекции пользователя между сессиями. При поправке ("нет, я имел в виду X") сохраняет пару (ошибка → правильный ответ) как embedding в vector DB. При следующем разговоре ищет похожие ситуации и подгружает как контекст.
+
+**Реализация**: Расширение FactStore + vector search. Мы уже имеем Procedural Memory (tool sequences), Teachability — следующий уровень: предпочтения пользователя + корректировки.
+
+**Зависимости**: IDEA-028 (RAG/Vector stores)
+
+---
+
+### IDEA-032: Nested Chat — internal agent deliberation (2026-03-30)
+
+**Приоритет**: Low
+**Сложность**: Medium
+**Источник**: Competitive analysis (AutoGen)
+
+Агент может запускать внутренний диалог между другими агентами как "внутренний монолог". Main agent получает вопрос → запускает nested chat между researcher и critic → они спорят → main agent получает итоговый результат. Пользователь видит только финальный ответ.
+
+**Реализация**: "Deliberation subgraph" как tool через Graph Agents.
+
+---
+
+### IDEA-033: Carryover / History Compression при delegation (2026-03-30)
+
+**Приоритет**: Medium
+**Сложность**: Low
+**Источник**: Competitive analysis (AutoGen + OpenAI SDK `nest_handoff_history`)
+
+При делегации задачи в Graph Agents — генерировать LLM-summary контекста вместо передачи полной истории. Экономит токены, убирает шум.
+
+**Реализация**: При `delegate_task()` — опциональный `compress_history=True` → LLM summary предыдущих сообщений.
+
+---
+
+### IDEA-034: MCP HTTP Transport (2026-03-30)
+
+**Приоритет**: Medium
+**Сложность**: Low
+**Источник**: Competitive analysis (OpenAI SDK — 5 транспортов vs наш 1)
+
+Добавить HTTP Streamable transport для MCP. Позволит подключать удалённые MCP-серверы без subprocess (один httpx-клиент).
+
+**Зависимости**: нет
+
+---
+
+### IDEA-035: Tool Guardrails — modify result (2026-03-30)
+
+**Приоритет**: Medium
+**Сложность**: Low
+**Источник**: Competitive analysis (OpenAI SDK)
+
+Расширить PostToolUse hook contract чтобы мог возвращать `modified_result`. Сейчас hooks могут только наблюдать результат, но не заменять его.
+
+**Зависимости**: нет
+
+---
+
+### IDEA-036: Composable ToolPolicy chain (2026-03-30)
+
+**Приоритет**: High
+**Сложность**: Medium
+**Источник**: Competitive analysis (Claude SDK — 5-step permission eval chain)
+
+Сделать ToolPolicy composable — цепочка из нескольких policy layers, каждый может allow/deny/pass-through. Порядок: Hooks → DenyList → PolicyMode → AllowList → AppCallback. Deny всегда побеждает.
+
+**Зависимости**: нет
+
+---
+
+### IDEA-037: Extended HookRegistry — 8+ events (2026-03-30)
+
+**Приоритет**: Medium
+**Сложность**: Low
+**Источник**: Competitive analysis (Claude SDK — 12+ hooks vs наши 4)
+
+Добавить lifecycle hooks: SubagentStart, SubagentStop, PreCompact, PermissionRequest. Расширяет HookRegistry без breaking changes.
+
+**Зависимости**: нет
+
+---
+
+### IDEA-038: Session Fork/Resume (2026-03-30)
+
+**Приоритет**: Low
+**Сложность**: Medium
+**Источник**: Competitive analysis (Claude SDK)
+
+`SessionManager.fork(session_id) -> new_session_id` — копирует историю, продолжает с нового состояния. Для A/B exploration и pipeline "what if".
+
+**Зависимости**: нет
+
+---
+
+### IDEA-039: OpenAPI Plugin Import (2026-03-30)
+
+**Приоритет**: Medium
+**Сложность**: Medium
+**Источник**: Competitive analysis (Semantic Kernel)
+
+`OpenApiToolLoader("https://api.example.com/openapi.json")` → list[ToolSpec]. Parse OpenAPI spec, каждый endpoint → ToolSpec с JSON Schema, executor через httpx.
+
+**Зависимости**: нет
+
+---
+
+### IDEA-040: Named Orchestration Pattern Shortcuts (2026-03-30)
+
+**Приоритет**: Medium
+**Сложность**: Low
+**Источник**: Competitive analysis (Semantic Kernel)
+
+Фабричные функции поверх Graph Agents: `swarmline.sequential([a, b])`, `swarmline.parallel([agents])`, `swarmline.hierarchy(lead, workers)`, `swarmline.mixture([experts], aggregator=synth)`. Не замена, а shortcut поверх Graph API.
+
+**Зависимости**: нет
+
+---
+
+### IDEA-041: Prompt Render Filter (2026-03-30)
+
+**Приоритет**: Low
+**Сложность**: Low
+**Источник**: Competitive analysis (Semantic Kernel)
+
+Middleware между ContextBuilder и LLM call. Перехватывает собранный prompt после assembly, до отправки. Для dynamic RAG injection, PII redaction, semantic caching.
+
+**Зависимости**: нет
+
+---
+
+### IDEA-042: Graph.from_dsl() — string syntax (2026-03-30)
+
+**Приоритет**: Low
+**Сложность**: Low
+**Источник**: Competitive analysis (Swarms — AgentRearrange)
+
+`Graph.from_dsl("lead -> [researcher, coder] -> reviewer")` — компактный строковый синтаксис для описания agent flow. Тривиальный парсер, большой выигрыш в DX для простых случаев.
+
+**Зависимости**: нет
+
+---
+
+### IDEA-043: Monitor Microsoft Agent Framework GA (2026-03-30)
+
+**Приоритет**: Medium (tracking)
+**Сложность**: N/A
+**Источник**: Competitive analysis (AutoGen + Semantic Kernel → Agent Framework)
+
+Microsoft Agent Framework = AutoGen + Semantic Kernel merger. GA target Q1 2026. Обе компоненты в maintenance mode. Agent Framework — потенциальный крупный конкурент с enterprise backing.
+
+**Действие**: отслеживать API, архитектуру, adoption после GA. Пересмотреть позиционирование.
+
+---
+
+## Priority updates from competitive analysis (2026-03-30)
+
+- **IDEA-028** (RAG/Vector stores): Low → **High** (confirmed by user)
+- **IDEA-029** (CLI scaffolding): Medium → **High** (confirmed by user)
+- **IDEA-030** (LiteLLM adapter): Low → **High** (confirmed by user)
+
+---
+
 ## ADR
 
 - **ADR-001**: OpenAI Agents SDK — REJECTED (пересмотреть после v1.0). См. `notes/2026-03-17_ADR-001_openai-agents-sdk.md`
 
 ## Отклонённое
 
-(пусто)
+- **Graph/Flow Visualization** (2026-03-30): Использовать внешние решения вместо built-in. Источник: competitive analysis.
+- **Enterprise SaaS / Hosted Platform** (2026-03-30): Только документация + community сайт. Источник: user decision.
