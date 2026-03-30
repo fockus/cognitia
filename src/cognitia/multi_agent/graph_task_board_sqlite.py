@@ -17,11 +17,13 @@ _DDL = """
 CREATE TABLE IF NOT EXISTS graph_tasks (
     id TEXT PRIMARY KEY,
     parent_task_id TEXT,
+    namespace TEXT NOT NULL DEFAULT '',
     data TEXT NOT NULL,
     FOREIGN KEY(parent_task_id) REFERENCES graph_tasks(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_gt_parent ON graph_tasks(parent_task_id);
+CREATE INDEX IF NOT EXISTS idx_gt_namespace ON graph_tasks(namespace);
 
 CREATE TABLE IF NOT EXISTS graph_task_comments (
     id TEXT PRIMARY KEY,
@@ -32,6 +34,11 @@ CREATE TABLE IF NOT EXISTS graph_task_comments (
 );
 """
 
+_MIGRATE_NAMESPACE = (
+    "ALTER TABLE graph_tasks ADD COLUMN namespace TEXT NOT NULL DEFAULT ''",
+)
+
+
 
 class SqliteGraphTaskBoard:
     """SQLite implementation of GraphTaskBoard + TaskCommentStore.
@@ -39,12 +46,27 @@ class SqliteGraphTaskBoard:
     Uses asyncio.to_thread for non-blocking I/O.
     """
 
-    def __init__(self, db_path: str = ":memory:") -> None:
+    def __init__(self, db_path: str = ":memory:", namespace: str = "") -> None:
+        self._namespace = namespace
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._lock = threading.Lock()
         self._conn.executescript(_DDL)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Apply forward-compatible migrations for namespace column."""
+        for stmt in _MIGRATE_NAMESPACE:
+            try:
+                self._conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
+    @property
+    def namespace(self) -> str:
+        """Return the namespace this board operates on."""
+        return self._namespace
 
     # --- Serialization ---
 
@@ -55,7 +77,8 @@ class SqliteGraphTaskBoard:
             "status": task.status.value, "priority": task.priority.value,
             "assignee_agent_id": task.assignee_agent_id,
             "parent_task_id": task.parent_task_id,
-            "goal_id": task.goal_id, "dod_criteria": list(task.dod_criteria),
+            "goal_id": task.goal_id, "epic_id": task.epic_id,
+            "dod_criteria": list(task.dod_criteria),
             "dod_verified": task.dod_verified,
             "checkout_agent_id": task.checkout_agent_id,
             "dependencies": list(task.dependencies),
@@ -81,6 +104,7 @@ class SqliteGraphTaskBoard:
             assignee_agent_id=d.get("assignee_agent_id"),
             parent_task_id=d.get("parent_task_id"),
             goal_id=d.get("goal_id"),
+            epic_id=d.get("epic_id"),
             dod_criteria=tuple(d.get("dod_criteria", ())),
             dod_verified=d.get("dod_verified", False),
             checkout_agent_id=d.get("checkout_agent_id"),
@@ -103,18 +127,25 @@ class SqliteGraphTaskBoard:
     def _create_sync(self, task: GraphTaskItem) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO graph_tasks (id, parent_task_id, data) VALUES (?, ?, ?)",
-                (task.id, task.parent_task_id, self._ser(task)),
+                "INSERT INTO graph_tasks (id, parent_task_id, namespace, data) VALUES (?, ?, ?, ?)",
+                (task.id, task.parent_task_id, self._namespace, self._ser(task)),
             )
             self._conn.commit()
+
+    def _ns_filter(self, base_query: str, params: list[Any]) -> str:
+        """Append namespace filter to query when namespace is set."""
+        if self._namespace:
+            params.append(self._namespace)
+            return f"{base_query} AND namespace = ?"
+        return base_query
 
     def _checkout_sync(self, task_id: str, agent_id: str) -> GraphTaskItem | None:
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                cur = self._conn.execute(
-                    "SELECT data FROM graph_tasks WHERE id = ?", (task_id,)
-                )
+                params: list[Any] = [task_id]
+                query = self._ns_filter("SELECT data FROM graph_tasks WHERE id = ?", params)
+                cur = self._conn.execute(query, params)
                 row = cur.fetchone()
                 if not row:
                     self._conn.commit()
@@ -144,7 +175,9 @@ class SqliteGraphTaskBoard:
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                cur = self._conn.execute("SELECT data FROM graph_tasks WHERE id = ?", (task_id,))
+                params: list[Any] = [task_id]
+                query = self._ns_filter("SELECT data FROM graph_tasks WHERE id = ?", params)
+                cur = self._conn.execute(query, params)
                 row = cur.fetchone()
                 if not row:
                     self._conn.commit()
@@ -174,9 +207,9 @@ class SqliteGraphTaskBoard:
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                cur = self._conn.execute(
-                    "SELECT data FROM graph_tasks WHERE id = ?", (task_id,)
-                )
+                params: list[Any] = [task_id]
+                query = self._ns_filter("SELECT data FROM graph_tasks WHERE id = ?", params)
+                cur = self._conn.execute(query, params)
                 row = cur.fetchone()
                 if not row:
                     self._conn.commit()
@@ -209,9 +242,9 @@ class SqliteGraphTaskBoard:
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                cur = self._conn.execute(
-                    "SELECT data FROM graph_tasks WHERE id = ?", (task_id,)
-                )
+                params: list[Any] = [task_id]
+                query = self._ns_filter("SELECT data FROM graph_tasks WHERE id = ?", params)
+                cur = self._conn.execute(query, params)
                 row = cur.fetchone()
                 if not row:
                     self._conn.commit()
@@ -240,9 +273,9 @@ class SqliteGraphTaskBoard:
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                cur = self._conn.execute(
-                    "SELECT data FROM graph_tasks WHERE id = ?", (task_id,)
-                )
+                params: list[Any] = [task_id]
+                query = self._ns_filter("SELECT data FROM graph_tasks WHERE id = ?", params)
+                cur = self._conn.execute(query, params)
                 row = cur.fetchone()
                 if not row:
                     self._conn.commit()
@@ -305,14 +338,19 @@ class SqliteGraphTaskBoard:
 
     def _subtasks_sync(self, task_id: str) -> list[GraphTaskItem]:
         with self._lock:
-            cur = self._conn.execute(
-                "SELECT data FROM graph_tasks WHERE parent_task_id = ?", (task_id,)
-            )
+            params: list[Any] = [task_id]
+            query = self._ns_filter("SELECT data FROM graph_tasks WHERE parent_task_id = ?", params)
+            cur = self._conn.execute(query, params)
             return [self._deser(r[0]) for r in cur.fetchall()]
 
     def _list_sync(self) -> list[GraphTaskItem]:
         with self._lock:
-            cur = self._conn.execute("SELECT data FROM graph_tasks")
+            if self._namespace:
+                cur = self._conn.execute(
+                    "SELECT data FROM graph_tasks WHERE namespace = ?", (self._namespace,),
+                )
+            else:
+                cur = self._conn.execute("SELECT data FROM graph_tasks")
             return [self._deser(r[0]) for r in cur.fetchall()]
 
     def _add_comment_sync(self, comment: TaskComment) -> None:
@@ -364,7 +402,12 @@ class SqliteGraphTaskBoard:
 
     def _get_ready_sync(self) -> list[GraphTaskItem]:
         with self._lock:
-            cur = self._conn.execute("SELECT data FROM graph_tasks")
+            if self._namespace:
+                cur = self._conn.execute(
+                    "SELECT data FROM graph_tasks WHERE namespace = ?", (self._namespace,),
+                )
+            else:
+                cur = self._conn.execute("SELECT data FROM graph_tasks")
             all_tasks: dict[str, GraphTaskItem] = {}
             for r in cur.fetchall():
                 t = self._deser(r[0])
@@ -387,7 +430,9 @@ class SqliteGraphTaskBoard:
 
     def _get_blocked_by_sync(self, task_id: str) -> list[GraphTaskItem]:
         with self._lock:
-            cur = self._conn.execute("SELECT data FROM graph_tasks WHERE id = ?", (task_id,))
+            params: list[Any] = [task_id]
+            query = self._ns_filter("SELECT data FROM graph_tasks WHERE id = ?", params)
+            cur = self._conn.execute(query, params)
             row = cur.fetchone()
             if not row:
                 return []

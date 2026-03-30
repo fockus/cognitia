@@ -21,6 +21,7 @@ class GraphTaskItem:
     assignee_agent_id: str | None = None
     parent_task_id: str | None = None
     goal_id: str | None = None
+    epic_id: str | None = None
     dod_criteria: tuple[str, ...] = ()
     dod_verified: bool = False
     checkout_agent_id: str | None = None  # atomic lock

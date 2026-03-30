@@ -45,6 +45,9 @@ class AgentNode:
     mcp_servers: tuple[str, ...] = ()
     capabilities: AgentCapabilities = field(default_factory=AgentCapabilities)
     runtime_config: dict[str, Any] | None = None  # None = inherit from parent
+    model: str = ""
+    runtime: str = ""
+    api_key_env: str | None = None
     budget_limit_usd: float | None = None
     status: AgentStatus = AgentStatus.IDLE
     metadata: dict[str, Any] = field(default_factory=dict)

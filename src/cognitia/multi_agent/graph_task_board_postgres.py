@@ -19,9 +19,11 @@ POSTGRES_GRAPH_TASK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS graph_tasks (
     id TEXT PRIMARY KEY,
     parent_task_id TEXT REFERENCES graph_tasks(id),
+    namespace TEXT NOT NULL DEFAULT '',
     data JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_graph_tasks_parent ON graph_tasks(parent_task_id);
+CREATE INDEX IF NOT EXISTS idx_graph_tasks_namespace ON graph_tasks(namespace);
 
 CREATE TABLE IF NOT EXISTS graph_task_comments (
     id TEXT PRIMARY KEY,
@@ -36,8 +38,18 @@ CREATE INDEX IF NOT EXISTS idx_graph_task_comments_task ON graph_task_comments(t
 class PostgresGraphTaskBoard:
     """Postgres implementation of GraphTaskBoard + TaskCommentStore."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        namespace: str = "",
+    ) -> None:
         self._sf = session_factory
+        self._namespace = namespace
+
+    @property
+    def namespace(self) -> str:
+        """Return the namespace this board operates on."""
+        return self._namespace
 
     @asynccontextmanager
     async def _session(self, *, commit: bool = False) -> AsyncIterator[AsyncSession]:
@@ -112,26 +124,39 @@ class PostgresGraphTaskBoard:
 
     # --- GraphTaskBoard ---
 
+    def _ns_where(self, base: str = "") -> str:
+        """Append namespace filter when namespace is set."""
+        if not self._namespace:
+            return base
+        conjunction = " AND " if base else " WHERE "
+        return f"{base}{conjunction}namespace = :ns"
+
+    def _ns_params(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Merge namespace param into existing params dict."""
+        result = dict(params) if params else {}
+        if self._namespace:
+            result["ns"] = self._namespace
+        return result
+
     async def create_task(self, task: GraphTaskItem) -> None:
         async with self._session(commit=True) as session:
             await session.execute(
                 text(
-                    "INSERT INTO graph_tasks (id, parent_task_id, data) "
-                    "VALUES (:id, :parent_task_id, CAST(:data AS jsonb))"
+                    "INSERT INTO graph_tasks (id, parent_task_id, namespace, data) "
+                    "VALUES (:id, :parent_task_id, :namespace, CAST(:data AS jsonb))"
                 ),
                 {"id": task.id, "parent_task_id": task.parent_task_id,
+                 "namespace": self._namespace,
                  "data": json.dumps(self._serialize_task(task))},
             )
 
     async def checkout_task(self, task_id: str, agent_id: str) -> GraphTaskItem | None:
         async with self._session(commit=True) as session:
+            where = "WHERE id = :id AND (data->>'checkout_agent_id') IS NULL"
+            where = self._ns_where(where)
             row = (await session.execute(
-                text(
-                    "SELECT data FROM graph_tasks WHERE id = :id "
-                    "AND (data->>'checkout_agent_id') IS NULL "
-                    "FOR UPDATE"
-                ),
-                {"id": task_id},
+                text(f"SELECT data FROM graph_tasks {where} FOR UPDATE"),
+                self._ns_params({"id": task_id}),
             )).fetchone()
             if not row:
                 return None
@@ -151,9 +176,10 @@ class PostgresGraphTaskBoard:
 
     async def complete_task(self, task_id: str) -> bool:
         async with self._session(commit=True) as session:
+            where = self._ns_where("WHERE id = :id")
             row = (await session.execute(
-                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
-                {"id": task_id},
+                text(f"SELECT data FROM graph_tasks {where} FOR UPDATE"),
+                self._ns_params({"id": task_id}),
             )).fetchone()
             if not row:
                 return False
@@ -176,9 +202,10 @@ class PostgresGraphTaskBoard:
 
     async def get_subtasks(self, task_id: str) -> list[GraphTaskItem]:
         async with self._session() as session:
+            where = self._ns_where("WHERE parent_task_id = :id")
             rows = (await session.execute(
-                text("SELECT data FROM graph_tasks WHERE parent_task_id = :id"),
-                {"id": task_id},
+                text(f"SELECT data FROM graph_tasks {where}"),
+                self._ns_params({"id": task_id}),
             )).fetchall()
             return [self._deserialize_task(r[0]) for r in rows]
 
@@ -186,6 +213,9 @@ class PostgresGraphTaskBoard:
         async with self._session() as session:
             conditions: list[str] = []
             params: dict[str, Any] = {}
+            if self._namespace:
+                conditions.append("namespace = :ns")
+                params["ns"] = self._namespace
             if "status" in filters:
                 conditions.append("data->>'status' = :status")
                 params["status"] = filters["status"].value if hasattr(filters["status"], "value") else str(filters["status"])
@@ -204,9 +234,10 @@ class PostgresGraphTaskBoard:
     async def cancel_task(self, task_id: str) -> bool:
         """Cancel a task. Sets status to CANCELLED and releases checkout."""
         async with self._session(commit=True) as session:
+            where = self._ns_where("WHERE id = :id")
             row = (await session.execute(
-                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
-                {"id": task_id},
+                text(f"SELECT data FROM graph_tasks {where} FOR UPDATE"),
+                self._ns_params({"id": task_id}),
             )).fetchone()
             if not row:
                 return False
@@ -233,9 +264,10 @@ class PostgresGraphTaskBoard:
         if not reason or not reason.strip():
             return False
         async with self._session(commit=True) as session:
+            where = self._ns_where("WHERE id = :id")
             row = (await session.execute(
-                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
-                {"id": task_id},
+                text(f"SELECT data FROM graph_tasks {where} FOR UPDATE"),
+                self._ns_params({"id": task_id}),
             )).fetchone()
             if not row:
                 return False
@@ -258,9 +290,10 @@ class PostgresGraphTaskBoard:
     async def unblock_task(self, task_id: str) -> bool:
         """Unblock a task, returning it to TODO status."""
         async with self._session(commit=True) as session:
+            where = self._ns_where("WHERE id = :id")
             row = (await session.execute(
-                text("SELECT data FROM graph_tasks WHERE id = :id FOR UPDATE"),
-                {"id": task_id},
+                text(f"SELECT data FROM graph_tasks {where} FOR UPDATE"),
+                self._ns_params({"id": task_id}),
             )).fetchone()
             if not row:
                 return False
@@ -283,20 +316,26 @@ class PostgresGraphTaskBoard:
 
     async def get_ready_tasks(self) -> list[GraphTaskItem]:
         async with self._session() as session:
+            base_where = "WHERE data->>'status' = 'todo' AND (data->>'checkout_agent_id') IS NULL"
+            where = self._ns_where(base_where)
             rows = (await session.execute(
-                text(
-                    "SELECT data FROM graph_tasks "
-                    "WHERE data->>'status' = 'todo' "
-                    "AND (data->>'checkout_agent_id') IS NULL"
-                ),
+                text(f"SELECT data FROM graph_tasks {where}"),
+                self._ns_params(),
             )).fetchall()
             candidates = [self._deserialize_task(r[0]) for r in rows]
             if not candidates:
                 return []
-            # Load all tasks for dep resolution
-            all_rows = (await session.execute(
-                text("SELECT data FROM graph_tasks"),
-            )).fetchall()
+            # Load all tasks in namespace for dep resolution
+            list_where = self._ns_where("")
+            if list_where:
+                all_rows = (await session.execute(
+                    text(f"SELECT data FROM graph_tasks {list_where}"),
+                    self._ns_params(),
+                )).fetchall()
+            else:
+                all_rows = (await session.execute(
+                    text("SELECT data FROM graph_tasks"),
+                )).fetchall()
             statuses: dict[str, Any] = {}
             for r in all_rows:
                 t = self._deserialize_task(r[0])
@@ -316,9 +355,10 @@ class PostgresGraphTaskBoard:
 
     async def get_blocked_by(self, task_id: str) -> list[GraphTaskItem]:
         async with self._session() as session:
+            where = self._ns_where("WHERE id = :id")
             row = (await session.execute(
-                text("SELECT data FROM graph_tasks WHERE id = :id"),
-                {"id": task_id},
+                text(f"SELECT data FROM graph_tasks {where}"),
+                self._ns_params({"id": task_id}),
             )).fetchone()
             if not row:
                 return []

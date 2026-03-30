@@ -12,12 +12,23 @@ from cognitia.multi_agent.task_types import TaskStatus
 
 
 class InMemoryGraphTaskBoard:
-    """In-memory implementation of GraphTaskBoard + TaskCommentStore."""
+    """In-memory implementation of GraphTaskBoard + TaskCommentStore.
 
-    def __init__(self) -> None:
+    Supports namespace isolation: each board instance operates on its own
+    namespace. Tasks created in one namespace are invisible to boards
+    with a different namespace. Default namespace '' preserves backward compat.
+    """
+
+    def __init__(self, namespace: str = "") -> None:
+        self._namespace = namespace
         self._tasks: dict[str, GraphTaskItem] = {}
         self._comments: list[TaskComment] = []
         self._lock = asyncio.Lock()
+
+    @property
+    def namespace(self) -> str:
+        """Return the namespace this board operates on."""
+        return self._namespace
 
     # --- GraphTaskBoard (5 methods) ---
 
