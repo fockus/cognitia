@@ -60,7 +60,7 @@ class TestAgentQueryBasic:
         """query() -> Result with tekstom."""
         agent = Agent(_make_config())
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent("text_delta", text="Hello ")
             yield FakeStreamEvent("text_delta", text="World")
             yield FakeStreamEvent(
@@ -86,7 +86,7 @@ class TestAgentQueryBasic:
         config = _make_config(output_format={"type": "json_schema", "schema": {}})
         agent = Agent(config)
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent(
                 "done",
                 text="",
@@ -111,7 +111,7 @@ class TestAgentQueryBasic:
             Message(role="assistant", content="Final answer"),
         ]
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             event = FakeStreamEvent(
                 "done",
                 text="Final answer",
@@ -173,7 +173,7 @@ class TestAgentQueryBasic:
         """Runtime error → Result(ok=False, error=...)."""
         agent = Agent(_make_config())
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent("error", text="SDK crashed")
 
         with patch.object(agent, "_execute_stream", side_effect=fake_stream):
@@ -201,7 +201,7 @@ class TestAgentQueryWithMiddleware:
 
         received_prompts: list[str] = []
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             received_prompts.append(prompt)
             yield FakeStreamEvent("done", text="ok", is_final=True)
 
@@ -224,7 +224,7 @@ class TestAgentQueryWithMiddleware:
         config = _make_config(middleware=(TagMiddleware(),))
         agent = Agent(config)
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent("done", text="answer", is_final=True)
 
         with patch.object(agent, "_execute_stream", side_effect=fake_stream):
@@ -508,7 +508,7 @@ class TestAgentStream:
     async def test_stream_yields_events(self) -> None:
         agent = Agent(_make_config())
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent("text_delta", text="chunk1")
             yield FakeStreamEvent("text_delta", text="chunk2")
             yield FakeStreamEvent("done", text="chunk1chunk2", is_final=True)
@@ -528,7 +528,7 @@ class TestAgentStream:
         agent = Agent(_make_config())
         full = ""
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent("text_delta", text="Hello ")
             yield FakeStreamEvent("text_delta", text="World")
             yield FakeStreamEvent("done", text="Hello World", is_final=True)

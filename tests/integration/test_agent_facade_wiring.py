@@ -76,7 +76,7 @@ class TestAgentFullPipeline:
         agent = Agent(config)
 
         # Mock stream
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent(
                 "done",
                 text="result",

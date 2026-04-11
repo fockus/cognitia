@@ -57,10 +57,32 @@ class Agent:
         config = self._build_runtime_config(self._config.runtime, runtime_factory=factory)
         return factory.get_capabilities(config)
 
-    async def query(self, prompt: str) -> Result:
-        return await self._query_with_config(prompt, self._config)
+    async def query(
+        self,
+        prompt: str,
+        *,
+        messages: list[Message] | None = None,
+    ) -> Result:
+        """One-shot request -> Result.
 
-    async def _query_with_config(self, prompt: str, config: AgentConfig) -> Result:
+        Parameters
+        ----------
+        prompt:
+            The user prompt (appended as the final user message).
+        messages:
+            Optional conversation history to prepend before the current prompt.
+            Each message is a ``Message(role, content, ...)``.
+            If None or empty, behaves as a standalone one-shot query.
+        """
+        return await self._query_with_config(prompt, self._config, messages=messages)
+
+    async def _query_with_config(
+        self,
+        prompt: str,
+        config: AgentConfig,
+        *,
+        messages: list[Message] | None = None,
+    ) -> Result:
         """One-shot request -> Result.
 
         1. Apply middleware.before_query chain
@@ -77,9 +99,9 @@ class Agent:
 
         # 2. Execute + collect
         stream = (
-            self._execute_stream(effective_prompt)
+            self._execute_stream(effective_prompt, messages=messages)
             if config is self._config
-            else self._execute_stream(effective_prompt, config)
+            else self._execute_stream(effective_prompt, config, messages=messages)
         )
         collected = await collect_stream_result(stream)
         result_payload = dict(collected)
@@ -197,7 +219,11 @@ class Agent:
     # -----------------------------------------------------------------------
 
     async def _execute_stream(
-        self, prompt: str, config: AgentConfig | None = None
+        self,
+        prompt: str,
+        config: AgentConfig | None = None,
+        *,
+        messages: list[Message] | None = None,
     ) -> AsyncIterator[Any]:
         """Execute the prompt via the selected runtime.
 
@@ -208,22 +234,33 @@ class Agent:
         effective_config = config or self._config
         async for event in dispatch_runtime(
             effective_config.runtime,
-            lambda: self._execute_claude_sdk(prompt, effective_config),
+            lambda: self._execute_claude_sdk(prompt, effective_config, messages=messages),
             lambda runtime_name: self._execute_agent_runtime(
                 prompt,
                 runtime_name,
                 effective_config,
+                messages=messages,
             ),
         ):
             yield event
 
     async def _execute_claude_sdk(
-        self, prompt: str, config: AgentConfig | None = None
+        self,
+        prompt: str,
+        config: AgentConfig | None = None,
+        *,
+        messages: list[Message] | None = None,
     ) -> AsyncIterator[Any]:
         """Execute via Claude Agent SDK (one-shot streaming query)."""
         effective_config = config or self._config
+        effective_prompt = prompt
+        if messages:
+            history_text = "\n".join(
+                f"[{m.role}]: {m.content}" for m in messages
+            )
+            effective_prompt = f"[Conversation history]\n{history_text}\n\n[Current message]\n{prompt}"
         async for event in stream_claude_one_shot(
-            prompt,
+            effective_prompt,
             effective_config,
             runtime_factory=self.runtime_factory,
         ):
@@ -234,15 +271,23 @@ class Agent:
         prompt: str,
         runtime_name: str,
         config: AgentConfig | None = None,
+        *,
+        messages: list[Message] | None = None,
     ) -> AsyncIterator[Any]:
         """Execute via AgentRuntime (thin/deepagents)."""
-        from cognitia.runtime.types import Message
+        from cognitia.runtime.types import Message as RuntimeMessage
 
         effective_config = config or self._config
+        api_messages: list[RuntimeMessage] = []
+        if messages:
+            api_messages.extend(
+                RuntimeMessage(role=m.role, content=m.content) for m in messages
+            )
+        api_messages.append(RuntimeMessage(role="user", content=prompt))
         async for event in run_portable_runtime(
             agent_config=effective_config,
             runtime_name=runtime_name,
-            messages=[Message(role="user", content=prompt)],
+            messages=api_messages,
             system_prompt=effective_config.system_prompt,
             runtime_factory=self.runtime_factory,
             event_adapter=_RuntimeEventAdapter,

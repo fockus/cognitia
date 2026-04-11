@@ -31,7 +31,7 @@ class TestE2EOneShot:
         """Agent.query() -> mock stream -> Result with metricmi."""
         agent = Agent(AgentConfig(system_prompt="Be concise"))
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent(type="text_delta", text="Answer is 42")
             yield FakeStreamEvent(
                 type="done",
@@ -59,7 +59,7 @@ class TestE2EStreaming:
     async def test_streaming_collects_all_events(self) -> None:
         agent = Agent(AgentConfig(system_prompt="test"))
 
-        async def fake_stream(prompt):
+        async def fake_stream(prompt, **_kwargs):
             yield FakeStreamEvent(type="text_delta", text="Hello ")
             yield FakeStreamEvent(type="text_delta", text="World")
             yield FakeStreamEvent(type="done", text="Hello World", is_final=True)
@@ -189,7 +189,7 @@ class TestE2ECostTracker:
         )
         agent = Agent(config)
 
-        async def expensive_stream(prompt):
+        async def expensive_stream(prompt, **_kwargs):
             yield FakeStreamEvent(
                 type="done",
                 text="expensive answer",
@@ -213,7 +213,7 @@ class TestE2ECostTracker:
         )
         agent = Agent(config)
 
-        async def cheap_stream(prompt):
+        async def cheap_stream(prompt, **_kwargs):
             yield FakeStreamEvent(
                 type="done",
                 text="ok",
