@@ -64,6 +64,7 @@ class DaemonRunner:
             on_pause=self._scheduler.pause,
             on_resume=self._scheduler.resume,
             auth_token=config.auth_token,
+            allow_unauthenticated_local=config.allow_unauthenticated_local,
         )
 
     @property

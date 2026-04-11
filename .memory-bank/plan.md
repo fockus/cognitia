@@ -1,6 +1,13 @@
 # Plan
 
 ## Текущий приоритет
+**Audit remediation follow-up** — planned low-risk structural cleanup is completed: `ThinRuntime`, `DefaultGraphOrchestrator`, and `SessionManager` now have extracted helper/store seams, and the security/docs/boundary tranche itself is fully validated.
+
+## Следующий шаг
+1. Keep the remediated tree stable until release/tag.
+2. If continuing architecture work, treat any further refactor as optional post-tranche cleanup, not as an open remediation requirement.
+
+## Релизный контекст
 **v1.4.0 Release Candidate** — validation gate completed on `main`; next step is external publish/tag workflow.
 
 ## Активный план

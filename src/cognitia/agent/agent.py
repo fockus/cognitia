@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 
 from cognitia.agent.config import AgentConfig
 from cognitia.agent.result import Result
+from cognitia.agent.runtime_factory_port import RuntimeFactoryPort, build_runtime_factory
 from cognitia.agent.runtime_dispatch import (
     dispatch_runtime,
     run_portable_runtime,
@@ -30,12 +31,20 @@ class Agent:
     - conversation() → Conversation (multi-turn)
     """
 
-    def __init__(self, config: AgentConfig) -> None:
-        from cognitia.runtime.factory import RuntimeFactory
-
-        RuntimeFactory().validate_agent_config(config)
+    def __init__(
+        self,
+        config: AgentConfig,
+        runtime_factory: RuntimeFactoryPort | None = None,
+    ) -> None:
+        self._runtime_factory = runtime_factory
+        self.runtime_factory.validate_agent_config(config)
         self._config = config
         self._runtime: Any = None
+
+    @property
+    def runtime_factory(self) -> RuntimeFactoryPort:
+        """Application-facing runtime factory seam."""
+        return self._runtime_factory or build_runtime_factory()
 
     @property
     def config(self) -> AgentConfig:
@@ -44,10 +53,8 @@ class Agent:
     @property
     def runtime_capabilities(self) -> Any:
         """Capability descriptor for the selected runtime for app-level introspection."""
-        from cognitia.runtime.factory import RuntimeFactory
-
-        factory = RuntimeFactory()
-        config = self._build_runtime_config(self._config.runtime)
+        factory = self.runtime_factory
+        config = self._build_runtime_config(self._config.runtime, runtime_factory=factory)
         return factory.get_capabilities(config)
 
     async def query(self, prompt: str) -> Result:
@@ -215,7 +222,11 @@ class Agent:
     ) -> AsyncIterator[Any]:
         """Execute via Claude Agent SDK (one-shot streaming query)."""
         effective_config = config or self._config
-        async for event in stream_claude_one_shot(prompt, effective_config):
+        async for event in stream_claude_one_shot(
+            prompt,
+            effective_config,
+            runtime_factory=self.runtime_factory,
+        ):
             yield event
 
     async def _execute_agent_runtime(
@@ -233,6 +244,7 @@ class Agent:
             runtime_name=runtime_name,
             messages=[Message(role="user", content=prompt)],
             system_prompt=effective_config.system_prompt,
+            runtime_factory=self.runtime_factory,
             event_adapter=_RuntimeEventAdapter,
             error_factory=lambda exc: _ErrorEvent(str(exc)),
             logger=logger,
@@ -245,13 +257,18 @@ class Agent:
         effective_config = config or self._config
         return build_tools_mcp_server(effective_config.tools)
 
-    def _build_runtime_config(self, runtime_name: str, config: AgentConfig | None = None) -> Any:
+    def _build_runtime_config(
+        self,
+        runtime_name: str,
+        config: AgentConfig | None = None,
+        *,
+        runtime_factory: RuntimeFactoryPort | None = None,
+    ) -> Any:
         """Build RuntimeConfig from AgentConfig for the portable/native runtime path."""
         from cognitia.runtime.types import RuntimeConfig
-        from cognitia.runtime.factory import RuntimeFactory
 
         effective_config = config or self._config
-        factory = RuntimeFactory()
+        factory = runtime_factory or self.runtime_factory
         factory.validate_agent_config(effective_config)
 
         return RuntimeConfig(

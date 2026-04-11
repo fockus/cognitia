@@ -122,7 +122,12 @@ class InMemoryPlanStore:
 
     async def load(self, plan_id: str) -> Plan | None:
         """Load plan by ID."""
-        return self._plans.get(plan_id)
+        plan = self._plans.get(plan_id)
+        if plan is None:
+            return None
+        if not self._namespace_matches(plan_id):
+            return None
+        return plan
 
     async def list_plans(self, user_id: str, topic_id: str) -> list[Plan]:
         """List plans filtered by namespace."""
@@ -145,6 +150,16 @@ class InMemoryPlanStore:
             self._plans[plan_id] = updated
         except ValueError:
             logger.warning("update_step: step %r not found in plan %r", step.id, plan_id)
+
+    def _namespace_matches(self, plan_id: str) -> bool:
+        if not self._ns_user and not self._ns_topic:
+            return True
+        owner = self._ownership.get(plan_id)
+        if owner is None:
+            return False
+        return (not self._ns_user or owner[0] == self._ns_user) and (
+            not self._ns_topic or owner[1] == self._ns_topic
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -199,10 +214,12 @@ class SQLitePlanStore:
         """Load plan by ID."""
         from sqlalchemy import text
 
+        where, params = _namespace_filter_sql(self._ns_user, self._ns_topic)
+        params["id"] = plan_id
         async with self._session() as session:
             result = await session.execute(
-                text("SELECT * FROM plans WHERE id = :id"),
-                {"id": plan_id},
+                text(f"SELECT * FROM plans WHERE id = :id {where}"),
+                params,
             )
             row = result.first()
             return _row_to_plan(row) if row else None
@@ -298,10 +315,12 @@ class PostgresPlanStore:
         """Load plan by ID."""
         from sqlalchemy import text
 
+        where, params = _namespace_filter_sql(self._ns_user, self._ns_topic)
+        params["id"] = plan_id
         async with self._session() as session:
             result = await session.execute(
-                text("SELECT * FROM plans WHERE id = :id"),
-                {"id": plan_id},
+                text(f"SELECT * FROM plans WHERE id = :id {where}"),
+                params,
             )
             row = result.first()
             return _row_to_plan(row) if row else None
@@ -371,3 +390,17 @@ CREATE TABLE IF NOT EXISTS plans (
 );
 CREATE INDEX IF NOT EXISTS ix_plans_owner ON plans (user_id, topic_id);
 """
+
+
+def _namespace_filter_sql(user_id: str, topic_id: str) -> tuple[str, dict[str, str]]:
+    clauses: list[str] = []
+    params: dict[str, str] = {}
+    if user_id:
+        clauses.append("user_id = :ns_user_id")
+        params["ns_user_id"] = user_id
+    if topic_id:
+        clauses.append("topic_id = :ns_topic_id")
+        params["ns_topic_id"] = topic_id
+    if not clauses:
+        return "", params
+    return " AND " + " AND ".join(clauses), params

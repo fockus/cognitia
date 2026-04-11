@@ -25,6 +25,20 @@ from cognitia.runtime.types import (
 logger = logging.getLogger(__name__)
 
 
+def _build_subprocess_env(cli_config: CliConfig) -> dict[str, str]:
+    """Build subprocess env from allowlisted host vars plus explicit overrides."""
+    if cli_config.inherit_host_env:
+        env = dict(os.environ)
+    else:
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key in cli_config.env_allowlist
+        }
+    env.update(cli_config.env)
+    return env
+
+
 def _build_stdin_payload(messages: list[Message], system_prompt: str) -> str:
     """Serialize system instructions and conversation for CLI stdin."""
     sections: list[str] = []
@@ -112,8 +126,7 @@ class CliAgentRuntime:
             self._cli_config.command,
             self._cli_config.output_format,
         )
-        env = dict(os.environ)
-        env.update(self._cli_config.env)
+        env = _build_subprocess_env(self._cli_config)
 
         total_bytes = 0
         max_bytes = self._cli_config.max_output_bytes

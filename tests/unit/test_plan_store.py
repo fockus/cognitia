@@ -261,6 +261,23 @@ class TestPlanStoreContract:
 
         assert isinstance(plan_store, PlanStore)
 
+    async def test_load_respects_current_namespace(self, plan_store) -> None:
+        store = plan_store
+        plan = _make_plan()
+        await store.save(plan)
+
+        store.set_namespace("other", "topic")
+        assert await store.load(plan.id) is None
+
+    async def test_update_step_respects_current_namespace(self, plan_store) -> None:
+        store = plan_store
+        plan = _make_plan()
+        await store.save(plan)
+
+        store.set_namespace("other", "topic")
+        await store.update_step(plan.id, PlanStep(id="s1", description="step 1").complete("done"))
+        assert await store.load(plan.id) is None
+
     async def test_substeps_persist(self, plan_store) -> None:
         """Nested substeps survive save/load roundtrip."""
         plan = _make_plan_with_substeps()

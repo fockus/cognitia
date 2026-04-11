@@ -118,3 +118,15 @@ class TestFSMemoryBankIsolation:
         from cognitia.memory_bank.protocols import MemoryBankProvider
 
         assert isinstance(provider, MemoryBankProvider)
+
+    def test_invalid_user_id_rejected(self, config) -> None:
+        from cognitia.memory_bank.fs_provider import FilesystemMemoryBankProvider
+
+        with pytest.raises(ValueError, match="Invalid user_id"):
+            FilesystemMemoryBankProvider(config, user_id="../evil", topic_id="t1")
+
+    def test_invalid_topic_id_rejected(self, config) -> None:
+        from cognitia.memory_bank.fs_provider import FilesystemMemoryBankProvider
+
+        with pytest.raises(ValueError, match="Invalid topic_id"):
+            FilesystemMemoryBankProvider(config, user_id="u1", topic_id="../evil")

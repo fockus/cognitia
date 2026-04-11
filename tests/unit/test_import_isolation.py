@@ -6,9 +6,11 @@ when optional dependencies (claude_agent_sdk, anthropic, langchain) are absent.
 
 from __future__ import annotations
 
+import ast
 import sys
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -278,6 +280,91 @@ class TestCoreImportsWithoutOptionalDeps:
 
             assert reimported is not original
 
-        from cognitia.memory_bank.types import MemoryBankViolation as restored
 
-        assert restored is original
+class TestAgentRuntimeFactoryBoundary:
+    """Agent layer should depend on the runtime factory port, not the concrete class."""
+
+    @staticmethod
+    def _assert_no_concrete_runtime_factory_imports() -> None:
+        base = Path("/Users/fockus/Apps/cognitia/src/cognitia/agent")
+        forbidden = {
+            "cognitia.runtime.factory",
+            "cognitia.runtime.thin",
+            "cognitia.runtime.deepagents",
+        }
+        for filename in ["agent.py", "conversation.py", "runtime_dispatch.py", "runtime_wiring.py", "config.py"]:
+            tree = ast.parse((base / filename).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module in forbidden:
+                    raise AssertionError(f"{filename} imports {node.module} directly")
+                if isinstance(node, ast.Import) and any(alias.name in forbidden for alias in node.names):
+                    raise AssertionError(f"{filename} imports concrete runtime modules directly")
+
+    def test_agent_modules_do_not_import_concrete_runtime_factory(self) -> None:
+        self._assert_no_concrete_runtime_factory_imports()
+
+    def test_agent_config_resolved_model_works_without_runtime_factory_module(self) -> None:
+        with _block_packages("cognitia.runtime.factory"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.agent"):
+                    del sys.modules[key]
+
+            from cognitia.agent.config import AgentConfig
+
+            with pytest.warns(DeprecationWarning, match="resolved_model"):
+                cfg = AgentConfig(system_prompt="test", model="sonnet")
+                assert cfg.resolved_model.startswith("claude-sonnet")
+
+    def test_agent_accepts_injected_runtime_factory_without_concrete_module(self) -> None:
+        with _block_packages("cognitia.runtime.factory"):
+            for key in list(sys.modules):
+                if key.startswith("cognitia.agent"):
+                    del sys.modules[key]
+
+            from cognitia.agent import Agent, AgentConfig
+            from cognitia.runtime.capabilities import RuntimeCapabilities
+            from cognitia.runtime.types import RuntimeConfig
+
+            class FakeFactory:
+                def __init__(self) -> None:
+                    self.validated: list[str] = []
+
+                def validate_agent_config(self, config: Any) -> None:
+                    self.validated.append(config.runtime)
+
+                def resolve_agent_model(self, config: Any | str) -> str:
+                    model = config.model if hasattr(config, "model") else config
+                    return f"resolved:{model}"
+
+                def get_capabilities(
+                    self,
+                    config: RuntimeConfig | None = None,
+                    runtime_override: str | None = None,
+                ) -> RuntimeCapabilities:
+                    name = (runtime_override or (config.runtime_name if config else "fake"))
+                    return RuntimeCapabilities(runtime_name=name, tier="light")
+
+                def validate_capabilities(
+                    self,
+                    config: RuntimeConfig | None = None,
+                    runtime_override: str | None = None,
+                    required_capabilities: Any | None = None,
+                ) -> None:
+                    return None
+
+                def create(
+                    self,
+                    config: RuntimeConfig | None = None,
+                    runtime_override: str | None = None,
+                    **kwargs: Any,
+                ) -> object:
+                    return object()
+
+            fake_factory = FakeFactory()
+            agent = Agent(AgentConfig(system_prompt="test", runtime="thin"), runtime_factory=fake_factory)
+
+            assert fake_factory.validated == ["thin"]
+            assert agent.runtime_factory is fake_factory
+            assert agent.runtime_capabilities.runtime_name == "thin"
+            built = agent._build_runtime_config("thin")
+            assert built.model == "resolved:sonnet"

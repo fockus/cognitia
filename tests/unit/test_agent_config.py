@@ -8,6 +8,7 @@ import pytest
 from cognitia.agent import Agent
 from cognitia.agent.config import AgentConfig
 from cognitia.runtime.capabilities import CapabilityRequirements, RuntimeCapabilities
+from cognitia.runtime.types import resolve_model_name
 
 
 class TestAgentConfigDefaults:
@@ -197,19 +198,23 @@ class TestAgentConfigModelResolution:
 
     def test_alias_sonnet(self) -> None:
         cfg = AgentConfig(system_prompt="test", model="sonnet")
-        assert cfg.resolved_model.startswith("claude-sonnet")
+        with pytest.warns(DeprecationWarning, match="resolved_model"):
+            assert cfg.resolved_model == resolve_model_name("sonnet")
 
     def test_alias_opus(self) -> None:
         cfg = AgentConfig(system_prompt="test", model="opus")
-        assert cfg.resolved_model.startswith("claude-opus")
+        with pytest.warns(DeprecationWarning, match="resolved_model"):
+            assert cfg.resolved_model == resolve_model_name("opus")
 
     def test_full_name_passthrough(self) -> None:
         cfg = AgentConfig(system_prompt="test", model="claude-sonnet-4-20250514")
-        assert cfg.resolved_model == "claude-sonnet-4-20250514"
+        with pytest.warns(DeprecationWarning, match="resolved_model"):
+            assert cfg.resolved_model == "claude-sonnet-4-20250514"
 
     def test_explicit_provider_prefix_passthrough(self) -> None:
         cfg = AgentConfig(
             system_prompt="test",
             model="openrouter:anthropic/claude-3.5-haiku",
         )
-        assert cfg.resolved_model == "openrouter:anthropic/claude-3.5-haiku"
+        with pytest.warns(DeprecationWarning, match="resolved_model"):
+            assert cfg.resolved_model == "openrouter:anthropic/claude-3.5-haiku"

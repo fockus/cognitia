@@ -1,5 +1,36 @@
 # Progress
 
+## 2026-04-11: Audit remediation follow-up — SessionManager snapshot store seam
+- Extracted session snapshot serialization/persistence from `src/cognitia/session/manager.py` into `src/cognitia/session/snapshot_store.py`.
+- `_AsyncSessionCore` now delegates snapshot codec and backend load/save/delete to `SessionSnapshotStore`, while keeping cache/TTL/lifecycle orchestration in the manager core.
+- Preserved behavior that mattered for rehydration and TTL: wall-clock ↔ monotonic conversion stayed unchanged, `is_rehydrated` is still applied on snapshot load, and `close()` vs `close_all()` semantics remain distinct.
+- Verified:
+  - targeted session pack: `50 passed`
+  - repo-wide `ruff check` on touched session files/tests: green
+  - repo-wide `mypy src/cognitia`: green (`355` source files)
+  - full offline `pytest -q`: `4249 passed, 3 skipped, 5 deselected`
+
+## 2026-04-11: Audit remediation follow-up — SessionManager runtime bridge seam
+- Extracted runtime execution/legacy streaming bridge logic from `src/cognitia/session/manager.py` into `src/cognitia/session/runtime_bridge.py`.
+- `_AsyncSessionCore` now keeps locking, TTL/cache, and persistence orchestration, while runtime-specific event mapping and legacy `StreamEvent` bridging are delegated to helper functions.
+- Preserved public behavior: no signature changes for `run_turn()` / `stream_reply()`, no API expansion, and existing session semantics around terminal events, history persistence, and runtime error normalization stayed intact.
+- Verified:
+  - targeted session pack: `50 passed`
+  - repo-wide `ruff check` on touched session files/tests: green
+  - repo-wide `mypy src/cognitia`: green (`354` source files)
+  - full offline `pytest -q`: `4249 passed, 3 skipped, 5 deselected`
+
+## 2026-04-11: Audit remediation follow-up — phase-4 low-risk seams
+- Extracted `ThinRuntime` helper logic into `src/cognitia/runtime/thin/runtime_support.py` and switched `ThinRuntime` wrappers to delegate through the helper seam while preserving patchable compatibility for `runtime.default_llm_call`.
+- Extracted mutable orchestration run-state management into `src/cognitia/multi_agent/graph_orchestrator_state.py`; `DefaultGraphOrchestrator` now delegates run creation/snapshot/stop/execution bookkeeping to `GraphRunStore`.
+- Preserved public behavior and existing tests: the changes are structural only, with no API expansion and no behavior drift in runtime/orchestrator flows.
+- Verified:
+  - targeted thin-runtime pack: `42 passed`
+  - targeted graph-orchestrator pack: `83 passed`
+  - repo-wide `ruff check src tests`: green
+  - repo-wide `mypy src/cognitia`: green (`353` source files)
+  - full offline `pytest -q`: `4249 passed, 3 skipped, 5 deselected`
+
 ## 2026-04-10: Phase 0 — Swarmline + HostAdapter
 - Added LifecycleMode enum (EPHEMERAL, SUPERVISED, PERSISTENT)
 - Extended AgentCapabilities (max_depth, can_delegate_authority)
@@ -439,3 +470,14 @@
   - `python -m pip install ddgs` for the optional live search dependency, then `pytest -m live -q -rs` → `5 passed`
   - `ruff check src/ tests/` → green
   - `mypy src/cognitia/` → `Success: no issues found in 347 source files`
+[2026-04-11] Audit remediation tranche implemented and validated end-to-end.
+- Security hardening shipped: shared namespace-segment validation (`path_safety.py`) now protects filesystem-backed memory/sandbox/todo paths; `A2AServer` and `HealthServer` require auth by default with explicit loopback-only `allow_unauthenticated_local=True`; `CliAgentRuntime` now inherits only an allowlisted host env by default; MCP HTTP/SSE targets are validated against insecure HTTP and private/loopback/link-local/metadata destinations unless explicitly opted in; `PlanStore.load()/update_step()` now respect the active namespace.
+- Public contract/docs truth shipped: root `README.md` quickstarts were rewritten to the real API (`SecurityGuard`, graph agents, knowledge bank, pipeline builder), and `tests/integration/test_docs_examples_consistency.py` now executes root README quickstart Python fences to catch drift.
+- Architecture boundary shipped: added `RuntimeFactoryPort` and shared `runtime_dispatch` seams so `agent/` depends on an abstraction instead of directly on the concrete runtime factory; `AgentConfig.resolved_model` remains only as a deprecated compatibility shim over `resolve_model_name()`.
+- Low-risk phase-4 DRY slice shipped: extracted shared graph task-board serialization/comment helpers into `src/cognitia/multi_agent/graph_task_board_shared.py`, with SQLite/Postgres backends keeping their existing static wrappers and behavior.
+- Validation performed:
+  - targeted security packs green (`201 passed`, plus MCP/docs/runtime targeted packs green)
+  - targeted graph task-board regression green (`46 passed, 3 skipped`)
+  - repo-wide `ruff check src tests` → green
+  - repo-wide `mypy src/cognitia` → `Success: no issues found in 351 source files`
+  - full offline `pytest -q` → `4249 passed, 3 skipped, 5 deselected`

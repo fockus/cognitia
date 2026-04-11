@@ -97,12 +97,16 @@ from cognitia import Agent, AgentConfig
 
 agent = Agent(AgentConfig(system_prompt="You are a helpful assistant.", runtime="thin"))
 result = await agent.query("What is the capital of France?")
-print(result.text)  # "The capital of France is Paris."
+print(result.text)
 ```
 
 ### Streaming
 
 ```python
+from cognitia import Agent, AgentConfig
+
+agent = Agent(AgentConfig(system_prompt="You are a helpful assistant.", runtime="thin"))
+
 async for event in agent.stream("Explain quantum computing"):
     if event.type == "text_delta":
         print(event.text, end="", flush=True)
@@ -111,10 +115,14 @@ async for event in agent.stream("Explain quantum computing"):
 ### Multi-turn conversation
 
 ```python
+from cognitia import Agent, AgentConfig
+
+agent = Agent(AgentConfig(system_prompt="You are a helpful assistant.", runtime="thin"))
+
 async with agent.conversation() as conv:
     r1 = await conv.say("My name is Alice")
     r2 = await conv.say("What's my name?")
-    print(r2.text)  # "Your name is Alice."
+    print(r2.text)
 ```
 
 ### Custom tools
@@ -132,12 +140,14 @@ agent = Agent(AgentConfig(
     tools=(calculate,),
 ))
 result = await agent.query("What is 15 * 23?")
-print(result.text)  # "345"
+print(result.text)
 ```
 
 ### Structured output
 
 ```python
+from cognitia import Agent, AgentConfig
+
 agent = Agent(AgentConfig(
     system_prompt="Extract user info.",
     runtime="thin",
@@ -151,16 +161,17 @@ agent = Agent(AgentConfig(
     },
 ))
 result = await agent.query("John is 30 years old")
-print(result.structured_output)  # {"name": "John", "age": 30}
+print(result.structured_output)
 ```
 
 ### Middleware (cost tracking, security)
 
 ```python
+from cognitia import Agent, AgentConfig
 from cognitia.agent import CostTracker, SecurityGuard
 
 tracker = CostTracker(budget_usd=1.0)
-guard = SecurityGuard(blocked_patterns=["password", "secret"])
+guard = SecurityGuard(block_patterns=["password", "secret"])
 
 agent = Agent(AgentConfig(
     system_prompt="You are a helpful assistant.",
@@ -168,7 +179,7 @@ agent = Agent(AgentConfig(
     middleware=(tracker, guard),
 ))
 result = await agent.query("Hello")
-print(tracker.total_cost_usd)  # 0.002
+print(tracker.total_cost_usd)
 ```
 
 ### Scale up: multi-agent systems
@@ -178,52 +189,93 @@ When a single agent isn't enough, scale to teams:
 ### Agent graph (hierarchical teams)
 
 ```python
+from cognitia.multi_agent.graph_communication import InMemoryGraphCommunication
 from cognitia.multi_agent.graph_builder import GraphBuilder
-from cognitia.multi_agent.graph_orchestrator import GraphOrchestrator
+from cognitia.multi_agent.graph_orchestrator import DefaultGraphOrchestrator
+from cognitia.multi_agent.graph_store import InMemoryAgentGraph
+from cognitia.multi_agent.graph_task_board import InMemoryGraphTaskBoard
 
-# Build an agent org chart
-graph = (
-    GraphBuilder()
-    .add_agent("lead", role="lead", capabilities={"can_delegate": True, "can_hire": True})
-    .add_agent("researcher", role="researcher")
-    .add_agent("coder", role="coder")
-    .set_root("lead")
-    .connect("lead", "researcher")
-    .connect("lead", "coder")
+async def my_runner(agent_id: str, task_id: str, goal: str, system_prompt: str) -> str:
+    return f"{agent_id}: {goal}"
+
+store = InMemoryAgentGraph()
+await (
+    GraphBuilder(store)
+    .add_root("lead", "Lead", "lead", system_prompt="You lead.")
+    .add_child("researcher", "lead", "Researcher", "researcher")
+    .add_child("coder", "lead", "Coder", "coder")
     .build()
 )
 
-# Run with task delegation
-orchestrator = GraphOrchestrator(graph=graph, runner=my_runner)
-result = await orchestrator.run("Build a REST API for user management")
+orchestrator = DefaultGraphOrchestrator(
+    graph=store,
+    task_board=InMemoryGraphTaskBoard(),
+    agent_runner=my_runner,
+    communication=InMemoryGraphCommunication(store),
+)
+run_id = await orchestrator.start("Build a REST API for user management")
+result = await orchestrator.wait_for_task(f"root-{run_id}")
+print(result)
 ```
 
 ### Knowledge Bank (shared agent memory)
 
 ```python
-from cognitia.memory_bank.knowledge_inmemory import InMemoryKnowledgeStore
+from cognitia.memory_bank.knowledge_inmemory import (
+    InMemoryKnowledgeSearcher,
+    InMemoryKnowledgeStore,
+)
+from cognitia.memory_bank.knowledge_types import DocumentMeta, KnowledgeEntry
 
 store = InMemoryKnowledgeStore()
-await store.save("api-patterns", "REST API best practices: versioning, pagination, error handling",
-                 kind="reference", tags=["api", "patterns"])
+searcher = InMemoryKnowledgeSearcher(store)
 
-results = await store.search("REST API versioning")
+await store.save(
+    KnowledgeEntry(
+        path="api-patterns.md",
+        meta=DocumentMeta(kind="note", tags=("api", "patterns")),
+        content="REST API best practices: versioning, pagination, error handling",
+    )
+)
+
+results = await searcher.search("REST API versioning")
+print(results[0].path)
 ```
 
 ### Pipeline (multi-phase execution)
 
 ```python
 from cognitia.pipeline.builder import PipelineBuilder
+from cognitia.pipeline.types import BudgetPolicy
 
-pipeline = (
-    PipelineBuilder("deploy-pipeline")
-    .add_phase("test", handler=run_tests)
-    .add_phase("build", handler=build_artifacts, depends_on=["test"])
-    .add_phase("deploy", handler=deploy_to_prod, depends_on=["build"])
-    .set_budget(max_cost_usd=5.0)
+async def run_task(agent_id: str, task_id: str, goal: str, system_prompt: str) -> str:
+    return f"{agent_id}: {goal}"
+
+pipeline = await (
+    PipelineBuilder()
+    .with_agents_from_dict({
+        "id": "root",
+        "name": "Root Agent",
+        "role": "orchestrator",
+        "lifecycle": "supervised",
+        "children": [
+            {
+                "id": "worker",
+                "name": "Worker",
+                "role": "worker",
+                "lifecycle": "supervised",
+            },
+        ],
+    })
+    .with_runner(run_task)
+    .add_phase("test", "Test", "Run validation")
+    .add_phase("build", "Build", "Build artifacts")
+    .add_phase("deploy", "Deploy", "Deploy to production")
+    .with_budget(BudgetPolicy(max_total_usd=5.0))
     .build()
 )
-result = await pipeline.run()
+result = await pipeline.run("Build the system")
+print(result.status)
 ```
 
 ## Features

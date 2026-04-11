@@ -11,7 +11,7 @@ from cognitia.runtime.types import ToolSpec
 class TestMcpBridgeDiscovery:
     async def test_mcp_bridge_discover_tools(self) -> None:
         """discover_tools returns ToolSpec[] with correct prefixed names."""
-        bridge = McpBridge(mcp_servers={"my_server": "http://localhost:8080"})
+        bridge = McpBridge(mcp_servers={"my_server": "https://example.com/mcp"})
 
         mock_tools = [
             ToolSpec(name="calculator", description="Calculate", parameters={"type": "object"}),
@@ -30,7 +30,7 @@ class TestMcpBridgeDiscovery:
 
     async def test_mcp_bridge_caching_ttl(self) -> None:
         """Second call within TTL uses cache."""
-        bridge = McpBridge(mcp_servers={"srv": "http://localhost:8080"})
+        bridge = McpBridge(mcp_servers={"srv": "https://example.com/mcp"})
 
         mock_tools = [ToolSpec(name="tool1", description="T1", parameters={})]
 
@@ -49,7 +49,7 @@ class TestMcpBridgeDiscovery:
 class TestMcpBridgeCallTool:
     async def test_mcp_bridge_call_tool(self) -> None:
         """call_tool delegates to McpClient.call_tool."""
-        bridge = McpBridge(mcp_servers={"srv": "http://localhost:8080"})
+        bridge = McpBridge(mcp_servers={"srv": "https://example.com/mcp"})
 
         with patch.object(
             bridge._client,
@@ -59,7 +59,7 @@ class TestMcpBridgeCallTool:
         ) as mock_call:
             result = await bridge.call_tool("srv", "calculator", {"x": 1})
 
-        mock_call.assert_called_once_with("http://localhost:8080", "calculator", {"x": 1})
+        mock_call.assert_called_once_with("https://example.com/mcp", "calculator", {"x": 1})
         assert result == {"result": 42}
 
     async def test_mcp_bridge_server_unavailable_graceful(self) -> None:

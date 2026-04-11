@@ -8,7 +8,8 @@ SandboxViolation is raised on isolation violations.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+
+from cognitia.path_safety import build_isolated_path, validate_namespace_segment
 
 
 @dataclass(frozen=True)
@@ -29,10 +30,14 @@ class SandboxConfig:
     denied_commands: frozenset[str] | None = None
     allow_host_execution: bool = False
 
+    def __post_init__(self) -> None:
+        validate_namespace_segment(self.user_id, "user_id")
+        validate_namespace_segment(self.topic_id, "topic_id")
+
     @property
     def workspace_path(self) -> str:
         """Absolute path to the agent workspace."""
-        return str(Path(self.root_path) / self.user_id / self.topic_id / "workspace")
+        return str(build_isolated_path(self.root_path, self.user_id, self.topic_id, "workspace"))
 
 
 @dataclass(frozen=True)

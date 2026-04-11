@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import re
+import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = ROOT / "examples"
@@ -51,6 +56,54 @@ def test_examples_docs_live_mode_claim_matches_current_surface() -> None:
 def test_readme_does_not_advertise_nonexistent_cli_extra() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "`cognitia[cli]`" not in readme
+
+
+def _readme_quickstart_python_blocks() -> list[str]:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    start = readme.index("## Quick Start")
+    end = readme.index("## Features", start)
+    quickstart = readme[start:end]
+    blocks = re.findall(r"```python\n(.*?)\n```", quickstart, flags=re.S)
+    return [block.strip() for block in blocks if block.strip()]
+
+
+async def _fake_dispatch_runtime(runtime_name: str, claude_handler, portable_handler):
+    del runtime_name, claude_handler, portable_handler
+    async def _events():
+        yield SimpleNamespace(type="text_delta", text="Paris")
+        yield SimpleNamespace(
+            type="done",
+            text="Paris",
+            total_cost_usd=0.0,
+            usage={"input_tokens": 1, "output_tokens": 1},
+            structured_output={"name": "John", "age": 30},
+            new_messages=[],
+        )
+
+    async for event in _events():
+        yield event
+
+
+@pytest.mark.asyncio
+async def test_readme_quickstart_code_fences_execute_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cognitia.agent import agent as agent_module
+    from cognitia.agent import conversation as conversation_module
+
+    blocks = _readme_quickstart_python_blocks()
+    assert blocks, "Expected at least one Python quickstart block in README.md"
+
+    monkeypatch.setattr(agent_module, "dispatch_runtime", _fake_dispatch_runtime)
+    monkeypatch.setattr(conversation_module, "dispatch_runtime", _fake_dispatch_runtime)
+
+    namespace: dict[str, object] = {"__name__": "__readme_quickstart__"}
+    with contextlib.redirect_stdout(io.StringIO()):
+        for block in blocks:
+            wrapped = "async def __readme_quickstart_snippet__():\n"
+            wrapped += textwrap.indent(block, "    ")
+            exec(wrapped, namespace)
+            await namespace["__readme_quickstart_snippet__"]()
 
 
 def test_cli_runtime_docs_use_stream_json_claude_command() -> None:

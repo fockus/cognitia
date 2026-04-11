@@ -162,6 +162,33 @@ class TestCliRuntimePromptSerialization:
         assert payload == "Conversation:\nuser: hello"
 
 
+class TestCliRuntimeEnvironment:
+    def test_build_subprocess_env_redacts_host_secrets_by_default(self) -> None:
+        from cognitia.runtime.cli.runtime import _build_subprocess_env
+
+        cli_config = CliConfig(command=["claude"], env={"EXPLICIT_TOKEN": "ok"})
+        with patch.dict(
+            "os.environ",
+            {"PATH": "/usr/bin", "SECRET_TOKEN": "top-secret", "HOME": "/tmp/home"},
+            clear=True,
+        ):
+            env = _build_subprocess_env(cli_config)
+
+        assert env["PATH"] == "/usr/bin"
+        assert env["HOME"] == "/tmp/home"
+        assert env["EXPLICIT_TOKEN"] == "ok"
+        assert "SECRET_TOKEN" not in env
+
+    def test_build_subprocess_env_can_inherit_full_host_env_when_enabled(self) -> None:
+        from cognitia.runtime.cli.runtime import _build_subprocess_env
+
+        cli_config = CliConfig(command=["claude"], inherit_host_env=True)
+        with patch.dict("os.environ", {"PATH": "/usr/bin", "SECRET_TOKEN": "top-secret"}, clear=True):
+            env = _build_subprocess_env(cli_config)
+
+        assert env["SECRET_TOKEN"] == "top-secret"
+
+
 class TestCliRuntimeRun:
     """CliAgentRuntime.run() subprocess interaction."""
 

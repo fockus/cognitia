@@ -39,7 +39,7 @@ def _make_stack(agent: Any = None) -> tuple[A2AServer, Any]:
         url="http://testserver",
         skills=[AgentSkill(id="chat", name="Chat", description="General chat")],
     )
-    server = A2AServer(adapter)
+    server = A2AServer(adapter, allow_unauthenticated_local=True)
     transport = ASGITransport(app=server.app)
     return server, transport
 

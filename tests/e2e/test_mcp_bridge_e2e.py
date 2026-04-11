@@ -106,7 +106,7 @@ class TestMcpBridgeDiscoverAndCallE2E:
         client.call_tool = fake_call_tool  # type: ignore[assignment]
 
         bridge = McpBridge(
-            mcp_servers={"weather_api": "http://fake-mcp:8080/mcp"},
+            mcp_servers={"weather_api": "https://fake-mcp.test/mcp"},
         )
         bridge._client = client
 
@@ -132,7 +132,7 @@ class TestMcpBridgeDiscoverAndCallE2E:
     @pytest.mark.asyncio
     async def test_mcp_bridge_unknown_server_returns_error(self) -> None:
         """Call tool on notsushchestvuyushchem server -> error dict."""
-        bridge = McpBridge(mcp_servers={"known": "http://known:8080/mcp"})
+        bridge = McpBridge(mcp_servers={"known": "https://known.test/mcp"})
 
         result = await bridge.call_tool("unknown_server", "some_tool", {})
         assert "error" in result
@@ -151,7 +151,7 @@ class TestMcpBridgeDiscoverAndCallE2E:
 
         client.list_tools = fake_list  # type: ignore[assignment]
 
-        bridge = McpBridge(mcp_servers={"math_api": "http://math:9090/mcp"})
+        bridge = McpBridge(mcp_servers={"math_api": "https://math.test/mcp"})
         bridge._client = client
 
         tools = await bridge.discover_tools("math_api")
@@ -168,7 +168,7 @@ class TestMcpBridgeDiscoverAndCallE2E:
 
         client.call_tool = fake_call  # type: ignore[assignment]
 
-        bridge = McpBridge(mcp_servers={"api": "http://api:8080/mcp"})
+        bridge = McpBridge(mcp_servers={"api": "https://api.test/mcp"})
         bridge._client = client
 
         executor = bridge.create_tool_executor("api", "process")
@@ -205,7 +205,7 @@ class TestMcpBridgeInThinRuntimeE2E:
 
         executor = ToolExecutor(
             local_tools={},
-            mcp_servers={"translator": "http://translator:8080/mcp"},
+            mcp_servers={"translator": "https://translator.test/mcp"},
             mcp_client=client,
         )
 

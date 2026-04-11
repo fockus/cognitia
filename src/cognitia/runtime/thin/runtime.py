@@ -9,13 +9,22 @@ from collections.abc import AsyncIterator, Callable
 from functools import partial
 from typing import Any
 
-from cognitia.guardrails import GuardrailContext, GuardrailResult
 from cognitia.runtime.cost import CostTracker, load_pricing
 from cognitia.runtime.thin.builtin_tools import create_thin_builtin_tools
 from cognitia.runtime.thin.errors import ThinLlmError
 from cognitia.runtime.thin.executor import ToolExecutor
 from cognitia.runtime.thin.helpers import _should_buffer_postprocessing
 from cognitia.runtime.thin.llm_client import default_llm_call
+from cognitia.runtime.thin.runtime_support import (
+    auto_wrap_retriever,
+    budget_exceeded_event,
+    cancelled_event,
+    extract_last_user_text,
+    make_default_llm_call,
+    run_guardrails,
+    wrap_user_llm_call,
+    wrap_with_event_bus,
+)
 from cognitia.runtime.thin.modes import detect_mode
 from cognitia.runtime.thin.strategies import (
     run_conversational,
@@ -80,18 +89,7 @@ class ThinRuntime:
 
     def _auto_wrap_retriever(self) -> None:
         """Auto-wrap config.retriever into input_filters if not already present."""
-        if self._config.retriever is None:
-            return
-
-        from cognitia.rag import RagInputFilter
-
-        # Check if RagInputFilter is already in input_filters
-        for f in self._config.input_filters:
-            if isinstance(f, RagInputFilter):
-                return
-
-        rag_filter = RagInputFilter(retriever=self._config.retriever)
-        self._config.input_filters.insert(0, rag_filter)
+        auto_wrap_retriever(self._config)
 
     @staticmethod
     def _wrap_user_llm_call(user_fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -101,27 +99,7 @@ class ThinRuntime:
         Legacy callables that don't accept ``config`` have it silently stripped
         so existing code keeps working without modification.
         """
-        import inspect
-
-        sig = inspect.signature(user_fn)
-        params = sig.parameters
-        accepts_config = (
-            "config" in params
-            or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
-        )
-        if accepts_config:
-            return user_fn
-
-        async def _adapted(
-            messages: list[dict[str, str]],
-            system_prompt: str,
-            *,
-            config: RuntimeConfig | None = None,  # noqa: ARG001
-            **kwargs: Any,
-        ) -> Any:
-            return await user_fn(messages, system_prompt, **kwargs)
-
-        return _adapted
+        return wrap_user_llm_call(user_fn)
 
     def _make_default_llm_call(self) -> Callable[..., Any]:
         """Make default llm call.
@@ -130,19 +108,7 @@ class ThinRuntime:
         When provided, the per-call config is forwarded to ``default_llm_call``
         instead of the constructor config, enabling per-call model/provider overrides.
         """
-        fallback_config = self._config
-
-        async def _call(
-            messages: list[dict[str, str]],
-            system_prompt: str,
-            *,
-            config: RuntimeConfig | None = None,
-            **kwargs: Any,
-        ) -> str | AsyncIterator[str]:
-            effective = config or fallback_config
-            return await default_llm_call(effective, messages, system_prompt, **kwargs)
-
-        return _call
+        return make_default_llm_call(self._config, default_llm_call)
 
     def _wrap_with_event_bus(self, llm_call: Callable[..., Any]) -> Callable[..., Any]:
         """Wrap LLM call with EventBus emit for LLM_call_start/LLM_call_end.
@@ -150,29 +116,7 @@ class ThinRuntime:
         Forwards the ``config`` keyword so that per-call overrides reach the
         underlying ``llm_call`` and event metadata reflects the actual model.
         """
-        bus = self._config.event_bus
-        if bus is None:
-            raise ValueError("event_bus must not be None")
-        fallback_config = self._config
-
-        async def _instrumented_call(
-            messages: list[dict[str, str]],
-            system_prompt: str,
-            *,
-            config: RuntimeConfig | None = None,
-            **kwargs: Any,
-        ) -> str | AsyncIterator[str]:
-            effective = config or fallback_config
-            await bus.emit("llm_call_start", {"model": effective.model})
-            try:
-                result = await llm_call(messages, system_prompt, config=config, **kwargs)
-                await bus.emit("llm_call_end", {"model": effective.model})
-                return result
-            except Exception:
-                await bus.emit("llm_call_end", {"model": effective.model, "error": True})
-                raise
-
-        return _instrumented_call
+        return wrap_with_event_bus(llm_call, self._config)
 
     def cancel(self) -> None:
         """Cancel the current operation via CancellationToken."""
@@ -390,10 +334,7 @@ class ThinRuntime:
     @staticmethod
     def _extract_last_user_text(messages: list[Message]) -> str:
         """Extract last user text."""
-        for msg in reversed(messages):
-            if msg.role == "user" and msg.content:
-                return msg.content
-        return ""
+        return extract_last_user_text(messages)
 
     @staticmethod
     async def _run_guardrails(
@@ -402,35 +343,11 @@ class ThinRuntime:
         config: RuntimeConfig,
     ) -> RuntimeEvent | None:
         """Run guardrails in parallel. Return error event if any fails, else None."""
-        ctx = GuardrailContext(
-            model=config.model,
-            session_id=config.extra.get("session_id") if config.extra else None,
-        )
-        results: list[GuardrailResult] = await asyncio.gather(
-            *[g.check(ctx, text) for g in guardrails]
-        )
-        for result in results:
-            if not result.passed:
-                return RuntimeEvent.error(
-                    RuntimeErrorData(
-                        kind="guardrail_tripwire",
-                        message=result.reason or "Guardrail check failed",
-                        recoverable=not result.tripwire,
-                    )
-                )
-        return None
+        return await run_guardrails(guardrails, text, config)
 
     @staticmethod
     def _cancelled_event(token: Any | None) -> RuntimeEvent | None:
-        if token is None or not token.is_cancelled:
-            return None
-        return RuntimeEvent.error(
-            RuntimeErrorData(
-                kind="cancelled",
-                message="Operation cancelled",
-                recoverable=False,
-            )
-        )
+        return cancelled_event(token)
 
     @staticmethod
     def _raise_if_cancelled(token: Any | None) -> None:
@@ -450,17 +367,7 @@ class ThinRuntime:
         *,
         prefix: str,
     ) -> RuntimeEvent:
-        return RuntimeEvent.error(
-            RuntimeErrorData(
-                kind="budget_exceeded",
-                message=(
-                    f"{prefix}: "
-                    f"${tracker.total_cost_usd:.4f} spent, "
-                    f"{tracker.total_tokens} tokens used"
-                ),
-                recoverable=False,
-            )
-        )
+        return budget_exceeded_event(tracker, prefix=prefix)
 
     async def _sleep_with_cancellation(self, delay: float, token: Any | None) -> None:
         if delay <= 0:

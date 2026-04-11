@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 from cognitia.memory_bank.types import MemoryBankConfig, MemoryBankViolation, validate_memory_path
+from cognitia.path_safety import build_isolated_path, validate_namespace_segment
 
 
 class FilesystemMemoryBankProvider:
@@ -21,7 +22,9 @@ class FilesystemMemoryBankProvider:
     def __init__(self, config: MemoryBankConfig, user_id: str, topic_id: str) -> None:
         self._config = config
         root = config.root_path or Path(".")
-        self._base = Path(root) / user_id / topic_id / "memory"
+        validate_namespace_segment(user_id, "user_id")
+        validate_namespace_segment(topic_id, "topic_id")
+        self._base = build_isolated_path(root, user_id, topic_id, "memory")
 
     def _resolve(self, path: str) -> Path:
         """Разрешить путь внутри memory bank."""

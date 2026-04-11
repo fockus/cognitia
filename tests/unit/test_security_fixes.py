@@ -317,6 +317,7 @@ class TestA2AServerAuth:
             adapter,
             auth_token=auth_token,
             max_request_size=max_request_size,
+            allow_unauthenticated_local=auth_token is None,
         )
         client = TestClient(server.app)
         return server, client
@@ -366,8 +367,27 @@ class TestA2AServerAuth:
         assert resp.status_code == 200
         assert "result" in resp.json()
 
-    def test_a2a_no_auth_allows_all(self) -> None:
-        """Server without auth_token allows unauthenticated requests."""
+    def test_a2a_no_auth_requires_explicit_local_opt_in(self) -> None:
+        """Server without auth_token must fail fast unless local opt-in is explicit."""
+        pytest.importorskip("starlette")
+        from cognitia.a2a.adapter import CognitiaA2AAdapter
+        from cognitia.a2a.server import A2AServer
+        from cognitia.a2a.types import AgentSkill
+        from cognitia.agent.result import Result
+
+        agent = MagicMock()
+        agent.query = AsyncMock(return_value=Result(text="OK"))
+        adapter = CognitiaA2AAdapter(
+            agent,
+            name="AuthBot",
+            url="http://localhost:8000",
+            skills=[AgentSkill(id="test", name="Test")],
+        )
+        with pytest.raises(ValueError, match="requires auth_token by default"):
+            A2AServer(adapter, auth_token=None)
+
+    def test_a2a_no_auth_allows_explicit_local_opt_in(self) -> None:
+        """Local dev mode works only when explicitly enabled."""
         _, client = self._make_auth_server(auth_token=None)
         resp = client.post(
             "/",
@@ -379,6 +399,24 @@ class TestA2AServerAuth:
             },
         )
         assert resp.status_code == 200
+
+    def test_a2a_no_auth_non_loopback_rejected(self) -> None:
+        pytest.importorskip("starlette")
+        from cognitia.a2a.adapter import CognitiaA2AAdapter
+        from cognitia.a2a.server import A2AServer
+        from cognitia.a2a.types import AgentSkill
+        from cognitia.agent.result import Result
+
+        agent = MagicMock()
+        agent.query = AsyncMock(return_value=Result(text="OK"))
+        adapter = CognitiaA2AAdapter(
+            agent,
+            name="AuthBot",
+            url="http://localhost:8000",
+            skills=[AgentSkill(id="test", name="Test")],
+        )
+        with pytest.raises(ValueError, match="only allowed on loopback hosts"):
+            A2AServer(adapter, host="0.0.0.0", allow_unauthenticated_local=True)
 
     def test_a2a_discovery_skips_auth(self) -> None:
         """GET /.well-known/agent.json must work without auth even when token is set."""
@@ -518,6 +556,12 @@ class TestDaemonHealthAuth:
         config = DaemonConfig(auth_token="my-secret")
         assert config.auth_token == "my-secret"
 
+    def test_daemon_config_has_local_opt_in_flag(self) -> None:
+        from cognitia.daemon.types import DaemonConfig
+
+        config = DaemonConfig(allow_unauthenticated_local=True)
+        assert config.allow_unauthenticated_local is True
+
     def test_daemon_config_auth_token_default_none(self) -> None:
         """DaemonConfig.auth_token defaults to None."""
         from cognitia.daemon.types import DaemonConfig
@@ -539,14 +583,27 @@ class TestDaemonHealthAuth:
         # The health server should have the auth_token set
         assert runner._health._auth_token == "runner-secret"
 
-    def test_daemon_runner_no_auth_when_not_set(self, tmp_path: Any) -> None:
-        """DaemonRunner without auth_token creates HealthServer without auth."""
+    def test_daemon_runner_requires_explicit_local_opt_in_without_auth(self, tmp_path: Any) -> None:
+        """DaemonRunner without auth_token must not build insecure health endpoint implicitly."""
         from cognitia.daemon.runner import DaemonRunner
         from cognitia.daemon.types import DaemonConfig
 
         config = DaemonConfig(
             pid_path=str(tmp_path / "test.pid"),
             health_port=0,
+        )
+        with pytest.raises(ValueError, match="requires auth_token by default"):
+            DaemonRunner(config=config)
+
+    def test_daemon_runner_no_auth_with_explicit_local_opt_in(self, tmp_path: Any) -> None:
+        """DaemonRunner can start local-only health endpoint when explicitly opted in."""
+        from cognitia.daemon.runner import DaemonRunner
+        from cognitia.daemon.types import DaemonConfig
+
+        config = DaemonConfig(
+            pid_path=str(tmp_path / "test.pid"),
+            health_port=0,
+            allow_unauthenticated_local=True,
         )
         runner = DaemonRunner(config=config)
         assert runner._health._auth_token is None

@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from cognitia.network_safety import validate_http_endpoint_url
 from cognitia.runtime.types import ToolSpec
 
 
@@ -26,15 +27,39 @@ def resolve_mcp_server_url(
     if server is None:
         return None
     if isinstance(server, str):
-        return server
+        return _validated_server_url(server)
     if isinstance(server, dict):
         url = server.get("url")
         if isinstance(url, str) and url:
-            return url
+            return _validated_server_url(
+                url,
+                allow_private_network=bool(server.get("allow_private_network", False)),
+                allow_insecure_http=bool(server.get("allow_insecure_http", False)),
+            )
     url = getattr(server, "url", None)
     if isinstance(url, str) and url:
-        return url
+        return _validated_server_url(
+            url,
+            allow_private_network=bool(getattr(server, "allow_private_network", False)),
+            allow_insecure_http=bool(getattr(server, "allow_insecure_http", False)),
+        )
     return None
+
+
+def _validated_server_url(
+    url: str,
+    *,
+    allow_private_network: bool = False,
+    allow_insecure_http: bool = False,
+) -> str | None:
+    rejection = validate_http_endpoint_url(
+        url,
+        allow_private_network=allow_private_network,
+        allow_insecure_http=allow_insecure_http,
+    )
+    if rejection:
+        return None
+    return url
 
 
 def parse_mcp_tool_name(tool_name: str) -> tuple[str, str] | None:

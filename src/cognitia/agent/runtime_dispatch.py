@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Any, Callable, cast
 
 from cognitia.agent.config import AgentConfig
+from cognitia.agent.runtime_factory_port import RuntimeFactoryPort, build_runtime_factory
 from cognitia.runtime.types import Message
 
 logger = logging.getLogger(__name__)
@@ -69,14 +70,18 @@ def merge_hooks(config_hooks: Any, middleware: tuple[Any, ...]) -> Any:
     return merged
 
 
-async def stream_claude_one_shot(prompt: str, config: AgentConfig) -> AsyncIterator[Any]:
+async def stream_claude_one_shot(
+    prompt: str,
+    config: AgentConfig,
+    *,
+    runtime_factory: RuntimeFactoryPort | None = None,
+) -> AsyncIterator[Any]:
     """Execute a one-shot claude_sdk request with shared option wiring."""
     from cognitia.hooks.sdk_bridge import registry_to_sdk_hooks
-    from cognitia.runtime.factory import RuntimeFactory
     from cognitia.runtime.sdk_query import stream_one_shot_query
     from cognitia.runtime.adapter import StreamEvent
 
-    factory = RuntimeFactory()
+    factory = runtime_factory or build_runtime_factory()
     factory.validate_agent_config(config)
 
     mcp_servers = dict(config.mcp_servers)
@@ -114,14 +119,17 @@ async def stream_claude_one_shot(prompt: str, config: AgentConfig) -> AsyncItera
         yield StreamEvent(type="error", text=str(exc))
 
 
-async def create_claude_conversation_adapter(config: AgentConfig) -> Any:
+async def create_claude_conversation_adapter(
+    config: AgentConfig,
+    *,
+    runtime_factory: RuntimeFactoryPort | None = None,
+) -> Any:
     """Create and connect a RuntimeAdapter for multi-turn claude_sdk use."""
     from cognitia.hooks.sdk_bridge import registry_to_sdk_hooks
-    from cognitia.runtime.factory import RuntimeFactory
     from cognitia.runtime.adapter import RuntimeAdapter
     from cognitia.runtime.options_builder import ClaudeOptionsBuilder
 
-    factory = RuntimeFactory()
+    factory = runtime_factory or build_runtime_factory()
     factory.validate_agent_config(config)
 
     merged_hooks = merge_hooks(config.hooks, config.middleware)
@@ -171,6 +179,7 @@ async def run_portable_runtime(
     *,
     messages: list[Message],
     system_prompt: str,
+    runtime_factory: RuntimeFactoryPort | None = None,
     session_id: str | None = None,
     event_adapter: Callable[[Any], Any],
     error_factory: Callable[[Exception], Any],
@@ -179,14 +188,14 @@ async def run_portable_runtime(
 ) -> AsyncIterator[Any]:
     """Create, run, adapt, and cleanup a portable runtime invocation."""
     from cognitia.agent.runtime_wiring import build_portable_runtime_plan
-    from cognitia.runtime.factory import RuntimeFactory
 
     runtime_plan = build_portable_runtime_plan(
         agent_config,
         runtime_name,
         session_id=session_id,
+        runtime_factory=runtime_factory,
     )
-    factory = RuntimeFactory()
+    factory = runtime_factory or build_runtime_factory()
     runtime = factory.create(
         config=runtime_plan.config,
         **runtime_plan.create_kwargs,

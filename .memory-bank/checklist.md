@@ -1,5 +1,17 @@
 # Checklist
 
+## Audit remediation tranche (2026-04-11)
+
+- ✅ Security hardening: namespace segment validation, A2A/daemon auth defaults, CLI env redaction, MCP target validation, plan-store namespace-aware load/update
+- ✅ Root README quickstarts synchronized with shipped API and covered by executable docs test
+- ✅ Application/runtime boundary hardened via `RuntimeFactoryPort`; `AgentConfig.resolved_model` reduced to deprecation shim
+- ✅ Test strategy hardened with negative/success regressions for namespace isolation, auth defaults, CLI env policy, MCP URL policy, README drift
+- ✅ Low-risk DRY slice completed for graph task-board SQLite/Postgres serialization helpers
+- ✅ Phase-4 low-risk structural follow-up completed for `ThinRuntime` helper extraction and `DefaultGraphOrchestrator` run-state/store extraction
+- ✅ Phase-4 low-risk structural follow-up completed for `SessionManager` runtime execution bridge extraction
+- ✅ Phase-4 low-risk structural follow-up completed for `SessionManager` snapshot codec/store extraction
+- ✅ Final validation green: repo-wide `ruff`, repo-wide `mypy`, full offline `pytest -q`
+
 ## v1.4.0 stabilization tranche
 
 - ✅ README/docs/configuration/docs/getting-started/docs/migration-guide/CHANGELOG synchronized with secure-by-default defaults

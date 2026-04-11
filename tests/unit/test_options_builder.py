@@ -61,27 +61,33 @@ class TestSpecToSdkConfig:
 
     def test_unknown_transport_defaults_to_url(self) -> None:
         """Notizvestnyy transport -> fallback on url-config."""
-        spec = McpServerSpec(name="x", transport="url", url="http://fallback")
+        spec = McpServerSpec(
+            name="x",
+            transport="url",
+            url="http://127.0.0.1:8080/mcp",
+            allow_private_network=True,
+            allow_insecure_http=True,
+        )
         result = _spec_to_sdk_config(spec)
         assert "url" in result
 
-    def test_missing_url_returns_empty_string(self) -> None:
-        """Without url -> empty string."""
+    def test_missing_url_rejected_fail_fast(self) -> None:
+        """Without url builder must fail fast."""
         spec = McpServerSpec(name="x", transport="url")
-        result = _spec_to_sdk_config(spec)
-        assert result["url"] == ""
+        with pytest.raises(ValueError, match="Unsafe MCP server URL"):
+            _spec_to_sdk_config(spec)
 
 
 class TestBuildUrlConfig:
     """Otdelnye builder-funktsii."""
 
     def test_build_url(self) -> None:
-        spec = McpServerSpec(name="t", url="http://test")
-        assert _build_url_config(spec) == {"type": "http", "url": "http://test"}
+        spec = McpServerSpec(name="t", url="https://test.example")
+        assert _build_url_config(spec) == {"type": "http", "url": "https://test.example"}
 
     def test_build_sse(self) -> None:
-        spec = McpServerSpec(name="t", url="http://test")
-        assert _build_sse_config(spec) == {"type": "sse", "url": "http://test"}
+        spec = McpServerSpec(name="t", url="https://test.example")
+        assert _build_sse_config(spec) == {"type": "sse", "url": "https://test.example"}
 
     def test_build_stdio(self) -> None:
         spec = McpServerSpec(name="t", command="cmd")
@@ -107,8 +113,13 @@ class TestClaudeOptionsBuilder:
         """Sborka with MCP-serverami."""
         builder = ClaudeOptionsBuilder()
         servers = {
-            "iss": McpServerSpec(name="iss", url="http://iss.test"),
-            "fin": McpServerSpec(name="fin", url="http://fin.test"),
+            "iss": McpServerSpec(
+                name="iss",
+                url="http://127.0.0.1:9001/mcp",
+                allow_private_network=True,
+                allow_insecure_http=True,
+            ),
+            "fin": McpServerSpec(name="fin", url="https://fin.test"),
         }
         opts = builder.build(
             role_id="coach",
@@ -117,6 +128,11 @@ class TestClaudeOptionsBuilder:
         )
         assert "iss" in opts.mcp_servers
         assert "fin" in opts.mcp_servers
+
+    def test_rejects_private_network_mcp_url_by_default(self) -> None:
+        spec = McpServerSpec(name="iss", url="http://127.0.0.1:9001/mcp")
+        with pytest.raises(ValueError, match="Unsafe MCP server URL"):
+            _spec_to_sdk_config(spec)
 
     def test_build_with_custom_model_policy(self) -> None:
         """Userskaya model policy."""

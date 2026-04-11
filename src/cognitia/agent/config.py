@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -79,7 +80,13 @@ class AgentConfig:
 
     @property
     def resolved_model(self) -> str:
-        """Compatibility wrapper for model alias resolution."""
-        from cognitia.runtime.factory import RuntimeFactory
+        """Deprecated compatibility wrapper for model alias resolution."""
+        from cognitia.runtime.types import resolve_model_name
 
-        return RuntimeFactory().resolve_agent_model(self)
+        warnings.warn(
+            "AgentConfig.resolved_model is deprecated; use cognitia.runtime.types.resolve_model_name() "
+            "or inject a RuntimeFactoryPort instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return resolve_model_name(self.model)

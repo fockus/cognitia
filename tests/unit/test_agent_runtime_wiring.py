@@ -34,7 +34,7 @@ class TestBuildPortableRuntimePlan:
     def test_includes_mcp_servers_only_for_portable_runtimes(self) -> None:
         from cognitia.agent.runtime_wiring import build_portable_runtime_plan
 
-        mcp_servers = {"iss": McpServerSpec(name="iss", url="http://iss.test")}
+        mcp_servers = {"iss": McpServerSpec(name="iss", url="https://iss.test")}
         portable_config = _make_config(runtime="deepagents", mcp_servers=mcp_servers)
         cli_config = _make_config(runtime="cli", mcp_servers=mcp_servers)
 
@@ -61,7 +61,7 @@ class TestBuildPortableRuntimePlan:
     def test_preserves_dict_style_mcp_servers_for_portable_runtime(self) -> None:
         from cognitia.agent.runtime_wiring import build_portable_runtime_plan
 
-        mcp_servers = {"iss": {"type": "http", "url": "http://iss.test"}}
+        mcp_servers = {"iss": {"type": "http", "url": "https://iss.test"}}
         config = _make_config(runtime="thin", mcp_servers=mcp_servers)
 
         plan = build_portable_runtime_plan(config, "thin")
@@ -74,8 +74,8 @@ class TestResolveMcpServerUrl:
         from cognitia.runtime.thin.mcp_client import resolve_mcp_server_url
 
         url = resolve_mcp_server_url(
-            {"iss": {"type": "http", "url": "http://iss.test"}},
+            {"iss": {"type": "http", "url": "https://iss.test"}},
             "iss",
         )
 
-        assert url == "http://iss.test"
+        assert url == "https://iss.test"

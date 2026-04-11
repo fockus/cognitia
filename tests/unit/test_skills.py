@@ -81,6 +81,7 @@ class TestYamlSkillLoader:
         assert len(iss.spec.mcp_servers) == 1
         assert iss.spec.mcp_servers[0].name == "iss"
         assert iss.spec.mcp_servers[0].url == "https://calculado.ru/iss/mcp"
+        assert iss.spec.mcp_servers[0].allow_private_network is False
         assert "mcp__iss__search_bonds" in iss.spec.tool_include
 
     def test_instruction_loaded(self, skills_dir: Path) -> None:
@@ -237,7 +238,7 @@ class TestSkillRegistry:
     def test_settings_mcp_merged(self) -> None:
         """settings.json MCP merzhatsya with skill.yaml MCP (R-401, R-402)."""
         settings_mcp = {
-            "extra_server": McpServerSpec(name="extra_server", url="http://extra"),
+            "extra_server": McpServerSpec(name="extra_server", url="https://extra.example"),
         }
         skill = LoadedSkill(
             spec=SkillSpec(

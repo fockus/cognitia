@@ -101,7 +101,7 @@ class TestMcpBridgeHttpRoundtrip:
 
         # Swap httpx.AsyncClient cherez bridge with real McpClient
         bridge = McpBridge(
-            mcp_servers={"weather": "http://weather.test/mcp"},
+            mcp_servers={"weather": "https://weather.test/mcp"},
             timeout_seconds=5.0,
         )
 

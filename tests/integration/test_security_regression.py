@@ -51,6 +51,17 @@ class TestPathIsolationPrefixBypass:
         with pytest.raises(MemoryBankViolation):
             await p.read_file("../memory2/secret.md")
 
+    def test_sandbox_rejects_namespace_path_traversal(self, tmp_path) -> None:
+        with pytest.raises(ValueError, match="Invalid user_id"):
+            SandboxConfig(root_path=str(tmp_path), user_id="../escape", topic_id="t1")
+
+    def test_memory_bank_rejects_namespace_path_traversal(self, tmp_path) -> None:
+        from cognitia.memory_bank.fs_provider import FilesystemMemoryBankProvider
+
+        cfg = MemoryBankConfig(enabled=True, root_path=tmp_path)
+        with pytest.raises(ValueError, match="Invalid user_id"):
+            FilesystemMemoryBankProvider(cfg, user_id="../escape", topic_id="t1")
+
 
 class TestCrossTenantIsolation:
     """Security: cross-user and cross-topic isolation."""

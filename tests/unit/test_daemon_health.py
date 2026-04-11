@@ -83,6 +83,7 @@ class TestHealthServer:
             status_provider=status_provider,
             on_pause=on_pause,
             on_resume=on_resume,
+            allow_unauthenticated_local=True,
         )
         await srv.start()
         port = srv._server.sockets[0].getsockname()[1]
@@ -159,11 +160,11 @@ class TestHealthServer:
         assert srv.is_running is True
 
     async def test_is_not_running_after_stop(self) -> None:
-        srv = HealthServer(port=0)
+        srv = HealthServer(port=0, allow_unauthenticated_local=True)
         assert srv.is_running is False
 
     async def test_no_status_provider(self) -> None:
-        srv = HealthServer(port=0)
+        srv = HealthServer(port=0, allow_unauthenticated_local=True)
         await srv.start()
         port = srv._server.sockets[0].getsockname()[1]
 
@@ -181,7 +182,7 @@ class TestHealthServer:
 
     def test_protocol_compliance(self) -> None:
         from cognitia.daemon.protocols import HealthEndpoint
-        srv = HealthServer()
+        srv = HealthServer(allow_unauthenticated_local=True)
         assert isinstance(srv, HealthEndpoint)
 
 
@@ -254,3 +255,11 @@ class TestHealthServerAuth:
         _, port = auth_server
         status, body = await self._request(port, "GET", "/status")
         assert status == 200
+
+    def test_requires_auth_or_explicit_local_opt_in(self) -> None:
+        with pytest.raises(ValueError, match="requires auth_token by default"):
+            HealthServer()
+
+    def test_local_opt_in_rejects_non_loopback_host(self) -> None:
+        with pytest.raises(ValueError, match="only allowed on loopback hosts"):
+            HealthServer(host="0.0.0.0", allow_unauthenticated_local=True)

@@ -43,6 +43,7 @@ class DaemonConfig:
 
     # Auth
     auth_token: str | None = None
+    allow_unauthenticated_local: bool = False
 
     # Metadata
     name: str = "cognitia-daemon"

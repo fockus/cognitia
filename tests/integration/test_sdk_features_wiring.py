@@ -161,7 +161,7 @@ class TestMcpToolsToOptions:
         sdk_server = create_mcp_server("calc_svc", tools=[calc])
 
         remote_servers = {
-            "iss": McpServerSpec(name="iss", url="http://iss.test"),
+            "iss": McpServerSpec(name="iss", url="https://iss.test"),
         }
 
         builder = ClaudeOptionsBuilder()

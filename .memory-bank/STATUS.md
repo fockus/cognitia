@@ -2,6 +2,8 @@
 
 ## Текущий фокус
 
+**Audit Remediation Tranche** (2026-04-11) — security boundaries hardened, root README quickstarts made executable/truthful, application/runtime boundary moved behind `RuntimeFactoryPort`, graph task-board shared serialization extracted, and phase-4 low-risk seams landed for `ThinRuntime`, `DefaultGraphOrchestrator`, plus both `SessionManager` runtime bridging and snapshot codec/store. Full offline validation gate is green on the remediated tree.
+
 **v1.4.0 Stabilization Tranche** (2026-04-11) — secure-by-default defaults задокументированы, structured security observability добавлена, validation gate полностью пройден, release candidate готов на `main`.
 
 Включает: audit hardening, secure-by-default docs, migration recipes, changelog sync, memory-bank sync, security decision logging, Postgres/live validation.
@@ -78,6 +80,7 @@ Full validation gate завершён: offline `pytest -q`, explicit `integratio
 
 ## Тесты
 
+- Offline suite: `4249 passed, 3 skipped, 5 deselected`
 - Offline suite: `4223 passed, 3 skipped, 5 deselected`
 - Explicit integration: `31 passed, 5 skipped`
 - Live suite: `5 passed`
@@ -91,6 +94,9 @@ Full validation gate завершён: offline `pytest -q`, explicit `integratio
 
 ## Verification Notes
 
+- Full offline `pytest -q` green after audit-remediation tranche (`4249 passed, 3 skipped, 5 deselected`)
+- Repo-wide `ruff check src/ tests/` green after audit-remediation tranche
+- Repo-wide `mypy src/cognitia/` green after audit-remediation tranche (`351 source files`)
 - Full offline `pytest -q` green after stabilization + release hardening (`4223 passed, 3 skipped, 5 deselected`)
 - Explicit integration gate green (`31 passed, 5 skipped`)
 - Disposable Postgres integration harness green (`3 passed`)

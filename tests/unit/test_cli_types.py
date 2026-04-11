@@ -46,6 +46,13 @@ class TestCliConfig:
         cfg = CliConfig(command=["claude"])
         assert cfg.env == {}
 
+    def test_cli_config_defaults_host_env_redacted(self) -> None:
+        from cognitia.runtime.cli.types import CliConfig
+
+        cfg = CliConfig(command=["claude"])
+        assert cfg.inherit_host_env is False
+        assert "PATH" in cfg.env_allowlist
+
     def test_cli_config_custom_values(self) -> None:
         """CliConfig accepts custom values for all fields."""
         from cognitia.runtime.cli.types import CliConfig
@@ -56,9 +63,13 @@ class TestCliConfig:
             timeout_seconds=60.0,
             max_output_bytes=1_000_000,
             env={"API_KEY": "test"},
+            inherit_host_env=True,
+            env_allowlist=frozenset({"PATH"}),
         )
         assert cfg.command == ["my-agent", "--json"]
         assert cfg.output_format == "json"
         assert cfg.timeout_seconds == 60.0
         assert cfg.max_output_bytes == 1_000_000
         assert cfg.env == {"API_KEY": "test"}
+        assert cfg.inherit_host_env is True
+        assert cfg.env_allowlist == frozenset({"PATH"})

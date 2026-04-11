@@ -55,6 +55,8 @@ def load_mcp_from_settings(project_root: Path) -> dict[str, McpServerSpec]:
                     command=cfg.get("command"),
                     args=cfg.get("args"),
                     env=cfg.get("env"),
+                    allow_private_network=cfg.get("allow_private_network", False),
+                    allow_insecure_http=cfg.get("allow_insecure_http", False),
                 )
         except (json.JSONDecodeError, OSError) as exc:
             _log.warning("settings_parse_error", path=str(settings_path), error=str(exc))
@@ -75,6 +77,8 @@ def _parse_mcp_servers(raw_servers: list[dict]) -> list[McpServerSpec]:
                 command=srv.get("command"),
                 args=srv.get("args"),
                 env=srv.get("env"),
+                allow_private_network=srv.get("allow_private_network", False),
+                allow_insecure_http=srv.get("allow_insecure_http", False),
             )
         )
     return result

@@ -126,7 +126,8 @@ class TestAgentConfigToOptionsBuilder:
     def test_config_resolves_model(self) -> None:
         """Model alias → resolved model."""
         config = AgentConfig(system_prompt="test", model="sonnet")
-        assert config.resolved_model.startswith("claude-sonnet")
+        with pytest.warns(DeprecationWarning, match="resolved_model"):
+            assert config.resolved_model.startswith("claude-sonnet")
 
     def test_config_with_betas_and_budget(self) -> None:
         """Betas and budget from config available."""

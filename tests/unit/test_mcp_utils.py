@@ -17,8 +17,8 @@ class TestResolveMcpServerUrl:
     def test_resolve_string_url(self) -> None:
         from cognitia.runtime.thin.mcp_client import resolve_mcp_server_url
 
-        servers = {"srv": "http://localhost:8080"}
-        assert resolve_mcp_server_url(servers, "srv") == "http://localhost:8080"
+        servers = {"srv": "https://example.com/mcp"}
+        assert resolve_mcp_server_url(servers, "srv") == "https://example.com/mcp"
 
     def test_resolve_object_with_url_attr(self) -> None:
         from cognitia.runtime.thin.mcp_client import resolve_mcp_server_url
@@ -26,9 +26,30 @@ class TestResolveMcpServerUrl:
         @dataclass
         class Spec:
             url: str
+            allow_private_network: bool = False
+            allow_insecure_http: bool = False
 
         servers = {"srv": Spec(url="http://example.com")}
-        assert resolve_mcp_server_url(servers, "srv") == "http://example.com"
+        assert resolve_mcp_server_url(servers, "srv") is None
+
+    def test_resolve_private_network_requires_opt_in(self) -> None:
+        from cognitia.runtime.thin.mcp_client import resolve_mcp_server_url
+
+        servers = {"srv": {"url": "http://127.0.0.1:8080", "type": "http"}}
+        assert resolve_mcp_server_url(servers, "srv") is None
+
+    def test_resolve_private_network_with_opt_in(self) -> None:
+        from cognitia.runtime.thin.mcp_client import resolve_mcp_server_url
+
+        servers = {
+            "srv": {
+                "url": "http://127.0.0.1:8080",
+                "type": "http",
+                "allow_private_network": True,
+                "allow_insecure_http": True,
+            }
+        }
+        assert resolve_mcp_server_url(servers, "srv") == "http://127.0.0.1:8080"
 
     def test_resolve_missing_server_returns_none(self) -> None:
         from cognitia.runtime.thin.mcp_client import resolve_mcp_server_url

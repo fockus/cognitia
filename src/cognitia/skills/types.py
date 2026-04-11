@@ -18,6 +18,8 @@ class McpServerSpec:
     command: str | None = None
     args: list[str] | None = None
     env: dict[str, str] | None = None
+    allow_private_network: bool = False
+    allow_insecure_http: bool = False
 
 
 @dataclass(frozen=True)

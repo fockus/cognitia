@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 import structlog
 
+from cognitia.network_safety import is_loopback_host
+
 logger = structlog.get_logger(component="daemon.health")
 
 # Maximum request size (prevent DoS)
@@ -56,13 +58,25 @@ class HealthServer:
         on_pause: Callable[[], Any] | None = None,
         on_resume: Callable[[], Any] | None = None,
         auth_token: str | None = None,
+        allow_unauthenticated_local: bool = False,
     ) -> None:
+        if auth_token is None:
+            if not allow_unauthenticated_local:
+                raise ValueError(
+                    "HealthServer requires auth_token by default. "
+                    "Set allow_unauthenticated_local=True only for explicit local development."
+                )
+            if not is_loopback_host(host):
+                raise ValueError(
+                    "HealthServer allow_unauthenticated_local=True is only allowed on loopback hosts"
+                )
         self._host = host
         self._port = port
         self._status_provider = status_provider
         self._on_pause = on_pause
         self._on_resume = on_resume
         self._auth_token = auth_token
+        self._allow_unauthenticated_local = allow_unauthenticated_local
         self._server: asyncio.Server | None = None
         self._started_at: float = 0.0
 

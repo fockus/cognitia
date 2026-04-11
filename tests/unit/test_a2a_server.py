@@ -39,7 +39,7 @@ def _make_server(agent: Any = None) -> tuple[A2AServer, TestClient]:
         url="http://localhost:8000",
         skills=[AgentSkill(id="test", name="Test Skill")],
     )
-    server = A2AServer(adapter)
+    server = A2AServer(adapter, allow_unauthenticated_local=True)
     client = TestClient(server.app)
     return server, client
 

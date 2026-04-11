@@ -12,25 +12,11 @@ from typing import Any
 from cognitia.runtime import StreamEvent
 from cognitia.runtime.types import Message, RuntimeErrorData, RuntimeEvent, ToolSpec
 from cognitia.session.backends import SessionBackend
+from cognitia.session.runtime_bridge import run_runtime_turn, stream_runtime_reply
+from cognitia.session.snapshot_store import SessionSnapshotStore
 from cognitia.session.types import SessionKey, SessionState
 
 logger = logging.getLogger(__name__)
-
-
-def _message_from_payload(payload: Any) -> Message:
-    """Normalize a runtime history payload into a Message."""
-    if isinstance(payload, Message):
-        return payload
-    if isinstance(payload, dict):
-        return Message(**payload)
-    raise TypeError(f"Unsupported runtime message payload: {type(payload)!r}")
-
-
-def _messages_from_payloads(payloads: Any) -> list[Message]:
-    """Normalize a list of runtime history payloads."""
-    if not payloads:
-        return []
-    return [_message_from_payload(payload) for payload in payloads]
 
 
 class _AsyncSessionCore:
@@ -45,7 +31,7 @@ class _AsyncSessionCore:
         self._sessions: dict[str, SessionState] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._ttl_seconds = ttl_seconds
-        self._backend = backend
+        self._snapshots = SessionSnapshotStore(backend)
 
     def key_str(self, key: SessionKey) -> str:
         return str(key)
@@ -60,82 +46,26 @@ class _AsyncSessionCore:
     @staticmethod
     def serialize_state(state: SessionState) -> dict[str, Any]:
         """Persist only serializable session fields."""
-        return {
-            "key": {
-                "user_id": state.key.user_id,
-                "topic_id": state.key.topic_id,
-            },
-            "system_prompt": state.system_prompt,
-            "active_tools": [tool.to_dict() for tool in state.active_tools],
-            "role_id": state.role_id,
-            "active_skill_ids": list(state.active_skill_ids),
-            "runtime_messages": [
-                message.to_dict() for message in state.runtime_messages
-            ],
-            "is_rehydrated": state.is_rehydrated,
-            "tool_failure_count": state.tool_failure_count,
-            # Serialize as wall-clock so it survives process restarts
-            "last_activity_at": time.time()
-            - (time.monotonic() - state.last_activity_at),
-            "delegated_from": state.delegated_from,
-            "delegation_summary": state.delegation_summary,
-            "delegation_turn_count": state.delegation_turn_count,
-            "pending_delegation": state.pending_delegation,
-        }
+        return SessionSnapshotStore.serialize_state(state)
 
     @staticmethod
     def deserialize_state(payload: dict[str, Any]) -> SessionState:
         """Restore a serializable snapshot into a live SessionState shell."""
-        key_payload = payload.get("key", {})
-        return SessionState(
-            key=SessionKey(
-                user_id=str(key_payload.get("user_id", "")),
-                topic_id=str(key_payload.get("topic_id", "")),
-            ),
-            system_prompt=str(payload.get("system_prompt", "")),
-            active_tools=[
-                ToolSpec(**tool_payload)
-                for tool_payload in payload.get("active_tools", [])
-            ],
-            role_id=str(payload.get("role_id", "default")),
-            active_skill_ids=list(payload.get("active_skill_ids", [])),
-            runtime_messages=[
-                Message(**message_payload)
-                for message_payload in payload.get("runtime_messages", [])
-            ],
-            is_rehydrated=bool(payload.get("is_rehydrated", False)),
-            tool_failure_count=int(payload.get("tool_failure_count", 0)),
-            # Convert wall-clock back to monotonic for TTL checks
-            last_activity_at=time.monotonic()
-            - (time.time() - float(payload.get("last_activity_at", time.time()))),
-            delegated_from=payload.get("delegated_from"),
-            delegation_summary=payload.get("delegation_summary"),
-            delegation_turn_count=int(payload.get("delegation_turn_count", 0)),
-            pending_delegation=payload.get("pending_delegation"),
-        )
+        return SessionSnapshotStore.deserialize_state(payload)
 
     async def _load_snapshot(self, key: SessionKey) -> SessionState | None:
-        if self._backend is None:
+        state = await self._snapshots.load(self.key_str(key))
+        if state is None:
             return None
 
-        payload = await self._backend.load(self.key_str(key))
-        if payload is None:
-            return None
-
-        state = self.deserialize_state(payload)
-        state.is_rehydrated = True
         self._sessions[self.key_str(state.key)] = state
         return state
 
     async def _persist_state(self, state: SessionState) -> None:
-        if self._backend is None:
-            return
-        await self._backend.save(self.key_str(state.key), self.serialize_state(state))
+        await self._snapshots.save(state, self.key_str(state.key))
 
     async def _delete_snapshot(self, key: SessionKey) -> None:
-        if self._backend is None:
-            return
-        await self._backend.delete(self.key_str(key))
+        await self._snapshots.delete(self.key_str(key))
 
     async def _evict_if_expired(
         self,
@@ -248,25 +178,15 @@ class _AsyncSessionCore:
                 len(messages[-1].content) if messages else 0,
             )
             event_count = 0
-            try:
-                async for event in state.runtime.run(
-                    messages=messages,
-                    system_prompt=system_prompt,
-                    active_tools=active_tools,
-                    config=state.runtime_config,
-                    mode_hint=mode_hint,
-                ):
-                    event_count += 1
-                    yield event
-            except Exception as exc:
-                logger.exception("run_turn[%s]: runtime.run() failed", ks)
-                yield RuntimeEvent.error(
-                    RuntimeErrorData(
-                        kind="runtime_crash",
-                        message=f"Runtime execution failed: {exc}",
-                        recoverable=False,
-                    )
-                )
+            async for event in run_runtime_turn(
+                state,
+                messages=messages,
+                system_prompt=system_prompt,
+                active_tools=active_tools,
+                mode_hint=mode_hint,
+            ):
+                event_count += 1
+                yield event
             logger.info("run_turn[%s]: completed, events=%d", ks, event_count)
         logger.info("run_turn[%s]: lock released", ks)
 
@@ -283,102 +203,13 @@ class _AsyncSessionCore:
 
             # New runtime path (fallback for places that still call stream_reply).
             if state.runtime is not None and state.adapter is None:
-                state.runtime_messages.append(Message(role="user", content=user_text))
-                await self._persist_state(state)
-                full_text = ""
-                assistant_emitted = False
-                final_data: dict[str, Any] = {}
-                saw_terminal_event = False
-                try:
-                    async for runtime_event in state.runtime.run(
-                        messages=list(state.runtime_messages),
-                        system_prompt=state.system_prompt,
-                        active_tools=state.active_tools,
-                        config=state.runtime_config,
-                    ):
-                        if runtime_event.type == "assistant_delta":
-                            text = str(runtime_event.data.get("text", ""))
-                            full_text += text
-                            assistant_emitted = True
-                            yield StreamEvent(type="text_delta", text=text)
-                        elif runtime_event.type == "tool_call_started":
-                            yield StreamEvent(
-                                type="tool_use_start",
-                                tool_name=str(runtime_event.data.get("name", "")),
-                                tool_input=runtime_event.data.get("args"),
-                            )
-                        elif runtime_event.type == "tool_call_finished":
-                            yield StreamEvent(
-                                type="tool_use_result",
-                                tool_name=str(runtime_event.data.get("name", "")),
-                                tool_result=str(
-                                    runtime_event.data.get("result_summary", "")
-                                ),
-                            )
-                        elif runtime_event.type == "error":
-                            saw_terminal_event = True
-                            yield StreamEvent(
-                                type="error",
-                                text=str(
-                                    runtime_event.data.get("message", "Runtime error")
-                                ),
-                            )
-                            return
-                        elif runtime_event.type == "final":
-                            saw_terminal_event = True
-                            final_data = runtime_event.data
-                            final_text = str(runtime_event.data.get("text", ""))
-                            if final_text and not full_text:
-                                full_text = final_text
-                                yield StreamEvent(type="text_delta", text=final_text)
-                                assistant_emitted = True
-                            final_new_messages = _messages_from_payloads(
-                                runtime_event.data.get("new_messages")
-                            )
-                            if final_new_messages:
-                                state.runtime_messages.extend(final_new_messages)
-                                await self._persist_state(state)
-                            elif assistant_emitted and full_text:
-                                state.runtime_messages.append(
-                                    Message(role="assistant", content=full_text)
-                                )
-                                await self._persist_state(state)
-                            done_event = StreamEvent(
-                                type="done", text=full_text, is_final=True
-                            )
-                            done_event.session_id = final_data.get("session_id")
-                            done_event.total_cost_usd = final_data.get("total_cost_usd")
-                            done_event.usage = final_data.get("usage")
-                            done_event.structured_output = final_data.get(
-                                "structured_output"
-                            )
-                            done_event.native_metadata = final_data.get(
-                                "native_metadata"
-                            )
-                            yield done_event
-                            return
-                except Exception as exc:
-                    logger.exception(
-                        "stream_reply[%s]: runtime.run() failed", self.key_str(key)
-                    )
-                    yield StreamEvent(
-                        type="error", text=f"Runtime execution failed: {exc}"
-                    )
-                    return
-
-                if not saw_terminal_event:
-                    yield StreamEvent(
-                        type="error",
-                        text="runtime stream ended without final RuntimeEvent",
-                    )
-                    return
-
-                if assistant_emitted and full_text:
-                    state.runtime_messages.append(
-                        Message(role="assistant", content=full_text)
-                    )
-                    await self._persist_state(state)
-                yield StreamEvent(type="done", text=full_text, is_final=True)
+                async for event in stream_runtime_reply(
+                    state,
+                    user_text,
+                    persist_state=self._persist_state,
+                    session_key=self.key_str(key),
+                ):
+                    yield event
                 return
 
             if not state.adapter or not state.adapter.is_connected:

@@ -174,6 +174,7 @@ class Conversation:
             runtime_name=runtime_name,
             messages=list(self._history),
             system_prompt=self._agent.config.system_prompt,
+            runtime_factory=self._agent.runtime_factory,
             session_id=self._session_id,
             event_adapter=_RuntimeEventAdapter,
             error_factory=lambda exc: _ErrorEvent(str(exc)),
@@ -184,7 +185,10 @@ class Conversation:
 
     async def _create_adapter(self) -> Any:
         """Create and connect a RuntimeAdapter for claude_sdk."""
-        return await create_claude_conversation_adapter(self._agent.config)
+        return await create_claude_conversation_adapter(
+            self._agent.config,
+            runtime_factory=self._agent.runtime_factory,
+        )
 
     def _merge_hooks(self) -> Any:
         """Merge hooks from config.hooks + middleware.get_hooks()."""

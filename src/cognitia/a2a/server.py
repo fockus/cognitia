@@ -12,6 +12,8 @@ import json
 import logging
 from typing import Any
 
+from cognitia.network_safety import is_loopback_host
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,12 +54,20 @@ class A2AServer:
         port: int = 8000,
         auth_token: str | None = None,
         max_request_size: int = 1_048_576,
+        allow_unauthenticated_local: bool = False,
     ) -> None:
+        _validate_control_plane_auth(
+            host=host,
+            auth_token=auth_token,
+            allow_unauthenticated_local=allow_unauthenticated_local,
+            component="A2AServer",
+        )
         self._adapter = adapter
         self._host = host
         self._port = port
         self._auth_token = auth_token
         self._max_request_size = max_request_size
+        self._allow_unauthenticated_local = allow_unauthenticated_local
         self._app: Any = None
 
     @property
@@ -155,6 +165,26 @@ class A2AServer:
         )
         server = uvicorn.Server(config)
         await server.serve()
+
+
+def _validate_control_plane_auth(
+    *,
+    host: str,
+    auth_token: str | None,
+    allow_unauthenticated_local: bool,
+    component: str,
+) -> None:
+    if auth_token:
+        return
+    if not allow_unauthenticated_local:
+        raise ValueError(
+            f"{component} requires auth_token by default. "
+            "Set allow_unauthenticated_local=True only for explicit local development."
+        )
+    if not is_loopback_host(host):
+        raise ValueError(
+            f"{component} allow_unauthenticated_local=True is only allowed on loopback hosts"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ def config(tmp_path) -> DaemonConfig:
         health_port=0,  # ephemeral
         name="test-daemon",
         shutdown_timeout=5.0,
+        allow_unauthenticated_local=True,
     )
 
 
@@ -158,6 +159,7 @@ class TestDaemonRunnerCustomComponents:
         config = DaemonConfig(
             pid_path=str(tmp_path / "ignored.pid"),
             health_port=0,
+            allow_unauthenticated_local=True,
         )
         runner = DaemonRunner(config=config, pid_file=custom_pid)
 

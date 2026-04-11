@@ -61,6 +61,18 @@ class TestSandboxConfig:
         config = SandboxConfig(root_path="/data", user_id="u1", topic_id="t1")
         assert config.workspace_path == "/data/u1/t1/workspace"
 
+    def test_invalid_user_id_rejected(self) -> None:
+        from cognitia.tools.types import SandboxConfig
+
+        with pytest.raises(ValueError, match="Invalid user_id"):
+            SandboxConfig(root_path="/data", user_id="../evil", topic_id="t1")
+
+    def test_invalid_topic_id_rejected(self) -> None:
+        from cognitia.tools.types import SandboxConfig
+
+        with pytest.raises(ValueError, match="Invalid topic_id"):
+            SandboxConfig(root_path="/data", user_id="u1", topic_id="../evil")
+
 
 class TestExecutionResult:
     """Validation ExecutionResult dataclass."""

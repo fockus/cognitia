@@ -24,6 +24,7 @@ from claude_agent_sdk import (
     ToolPermissionContext,
 )
 
+from cognitia.network_safety import validate_http_endpoint_url
 from cognitia.skills.types import McpServerSpec
 
 if TYPE_CHECKING:
@@ -184,11 +185,13 @@ def _resolve_thinking(
 
 def _build_url_config(spec: McpServerSpec) -> dict[str, Any]:
     """Build url config."""
+    _validate_mcp_spec_url(spec)
     return {"type": "http", "url": spec.url or ""}
 
 
 def _build_sse_config(spec: McpServerSpec) -> dict[str, Any]:
     """Build sse config."""
+    _validate_mcp_spec_url(spec)
     return {"type": "sse", "url": spec.url or ""}
 
 
@@ -217,3 +220,14 @@ def _spec_to_sdk_config(spec: McpServerSpec) -> dict[str, Any]:
     """Spec to sdk config."""
     builder = _TRANSPORT_BUILDERS.get(spec.transport, _build_url_config)
     return builder(spec)
+
+
+def _validate_mcp_spec_url(spec: McpServerSpec) -> None:
+    url = spec.url or ""
+    rejection = validate_http_endpoint_url(
+        url,
+        allow_private_network=spec.allow_private_network,
+        allow_insecure_http=spec.allow_insecure_http,
+    )
+    if rejection:
+        raise ValueError(f"Unsafe MCP server URL for '{spec.name}': {rejection}")

@@ -10,8 +10,14 @@ import time
 from dataclasses import replace
 from typing import Any
 
+from cognitia.multi_agent.graph_task_board_shared import (
+    deserialize_graph_task_json,
+    deserialize_task_comment,
+    serialize_graph_task_json,
+    serialize_task_comment,
+)
 from cognitia.multi_agent.graph_task_types import GoalAncestry, GraphTaskItem, TaskComment
-from cognitia.multi_agent.task_types import TaskPriority, TaskStatus
+from cognitia.multi_agent.task_types import TaskStatus
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS graph_tasks (
@@ -72,55 +78,11 @@ class SqliteGraphTaskBoard:
 
     @staticmethod
     def _ser(task: GraphTaskItem) -> str:
-        return json.dumps({
-            "id": task.id, "title": task.title, "description": task.description,
-            "status": task.status.value, "priority": task.priority.value,
-            "assignee_agent_id": task.assignee_agent_id,
-            "parent_task_id": task.parent_task_id,
-            "goal_id": task.goal_id, "epic_id": task.epic_id,
-            "dod_criteria": list(task.dod_criteria),
-            "dod_verified": task.dod_verified,
-            "checkout_agent_id": task.checkout_agent_id,
-            "dependencies": list(task.dependencies),
-            "delegated_by": task.delegated_by,
-            "delegation_reason": task.delegation_reason,
-            "estimated_effort": task.estimated_effort,
-            "started_at": task.started_at,
-            "completed_at": task.completed_at,
-            "progress": task.progress,
-            "stage": task.stage,
-            "blocked_reason": task.blocked_reason,
-            "created_at": task.created_at, "updated_at": task.updated_at,
-            "metadata": task.metadata,
-        })
+        return serialize_graph_task_json(task)
 
     @staticmethod
     def _deser(raw: str) -> GraphTaskItem:
-        d = json.loads(raw)
-        return GraphTaskItem(
-            id=d["id"], title=d["title"], description=d.get("description", ""),
-            status=TaskStatus(d.get("status", "todo")),
-            priority=TaskPriority(d.get("priority", "medium")),
-            assignee_agent_id=d.get("assignee_agent_id"),
-            parent_task_id=d.get("parent_task_id"),
-            goal_id=d.get("goal_id"),
-            epic_id=d.get("epic_id"),
-            dod_criteria=tuple(d.get("dod_criteria", ())),
-            dod_verified=d.get("dod_verified", False),
-            checkout_agent_id=d.get("checkout_agent_id"),
-            dependencies=tuple(d.get("dependencies", ())),
-            delegated_by=d.get("delegated_by"),
-            delegation_reason=d.get("delegation_reason"),
-            estimated_effort=d.get("estimated_effort"),
-            started_at=d.get("started_at"),
-            completed_at=d.get("completed_at"),
-            progress=d.get("progress", 0.0),
-            stage=d.get("stage", ""),
-            blocked_reason=d.get("blocked_reason", ""),
-            created_at=d.get("created_at", 0.0),
-            updated_at=d.get("updated_at", 0.0),
-            metadata=d.get("metadata", {}),
-        )
+        return deserialize_graph_task_json(raw)
 
     # --- Sync helpers ---
 
@@ -391,11 +353,7 @@ class SqliteGraphTaskBoard:
         with self._lock:
             if self._load_task_sync(comment.task_id) is None:
                 raise ValueError("Task not found in namespace")
-            data = json.dumps({
-                "id": comment.id, "task_id": comment.task_id,
-                "author_agent_id": comment.author_agent_id,
-                "content": comment.content, "created_at": comment.created_at,
-            })
+            data = json.dumps(serialize_task_comment(comment))
             self._conn.execute(
                 "INSERT INTO graph_task_comments (id, task_id, data, created_at) VALUES (?, ?, ?, ?)",
                 (comment.id, comment.task_id, data, comment.created_at),
@@ -420,7 +378,7 @@ class SqliteGraphTaskBoard:
                     "SELECT data FROM graph_task_comments WHERE task_id = ? ORDER BY created_at",
                     (task_id,),
                 )
-            return [TaskComment(**json.loads(r[0])) for r in cur.fetchall()]
+            return [deserialize_task_comment(json.loads(r[0])) for r in cur.fetchall()]
 
     def _goal_ancestry_sync(self, task_id: str) -> GoalAncestry | None:
         with self._lock:
@@ -589,7 +547,7 @@ class SqliteGraphTaskBoard:
                 f"SELECT data FROM graph_task_comments WHERE task_id IN ({placeholders}) ORDER BY created_at",
                 task_ids,
             )
-            return [TaskComment(**json.loads(r[0])) for r in cur2.fetchall()]
+            return [deserialize_task_comment(json.loads(r[0])) for r in cur2.fetchall()]
 
     async def get_ready_tasks(self) -> list[GraphTaskItem]:
         return await asyncio.to_thread(self._get_ready_sync)
